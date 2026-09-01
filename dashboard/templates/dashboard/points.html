@@ -1,0 +1,185 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Nuqtalar — Sevimli Kassa{% endblock %}
+{% block nav_points %}on{% endblock %}
+{% block when %}{{ today|date:"d.m.Y" }}{% endblock %}
+
+{% block body %}
+
+  <h1>Nuqtalar</h1>
+  <div class="sub">Bugungi savdo — kassalar bo'yicha</div>
+
+  {# Diqqat talab qiladiganlar tepada: bular haqida bugun bir narsa qilish kerak #}
+  {% if stuck_count %}
+    <div class="alert err">
+      <span>✕</span>
+      <div>
+        <b>{{ stuck_count }} ta chek MoySklad'ga yozilmadi</b>
+        Bular o'z-o'zidan tuzalmaydi — sababini ko'rish kerak. Pastda ro'yxati bor.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if offline_count %}
+    <div class="alert warn">
+      <span>!</span>
+      <div>
+        <b>{{ offline_count }} ta kassaning aloqasi yo'q</b>
+        Kassa ishlashda davom etayotgan bo'lishi mumkin — cheklar unda saqlanadi
+        va aloqa tiklangach yuboriladi.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if queued %}
+    <div class="alert warn">
+      <span>⧗</span>
+      <div>
+        <b>{{ queued }} ta chek navbatda</b>
+        MoySklad'ga yuborilishini kutmoqda. Bu odatiy holat — bir necha
+        daqiqada o'zi ketadi.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not stuck_count and not offline_count and not queued %}
+    <div class="alert ok">
+      <span>✓</span>
+      <div><b>Hammasi joyida</b> Barcha kassalar ulangan, navbat bo'sh.</div>
+    </div>
+  {% endif %}
+
+  <div class="tiles">
+    <div class="tile hero">
+      <div class="label">Bugungi savdo</div>
+      <div class="value num">{{ day.total|som }}</div>
+      <div class="note num">{{ day.receipts }} chek</div>
+    </div>
+    <div class="tile">
+      <div class="label">Naqd</div>
+      <div class="value num">{{ day.cash|som }}</div>
+      <div class="note">so'm</div>
+    </div>
+    <div class="tile">
+      <div class="label">Naqdsiz</div>
+      <div class="value num">{{ day.cashless|som }}</div>
+      <div class="note">so'm</div>
+    </div>
+    <div class="tile">
+      <div class="label">Sarflanmagan ballar</div>
+      <div class="value num">{{ bonus_total|som }}</div>
+      <div class="note">majburiyat</div>
+    </div>
+  </div>
+
+  <h2>Kassalar</h2>
+  <table>
+    <tr>
+      <th>Nuqta</th>
+      <th>Kassa</th>
+      <th>Holat</th>
+      <th>Smena</th>
+      <th class="right">Chek</th>
+      <th class="right">Naqd</th>
+      <th class="right">Naqdsiz</th>
+      <th class="right">Jami</th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.point }}</td>
+        <td>{{ r.register.name }}</td>
+        <td>
+          {% if r.offline %}
+            <span class="badge off">Aloqa yo'q</span>
+          {% else %}
+            <span class="badge ok">Ulangan</span>
+          {% endif %}
+          {% if r.pending %}
+            <span class="badge warn num">navbat {{ r.pending }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.shift %}
+            <a href="/smena/{{ r.shift.pk }}/">#{{ r.shift.number }}</a>
+            <div class="sec">{{ r.shift.cashier }}</div>
+          {% else %}
+            <span class="sec">yopiq</span>
+          {% endif %}
+        </td>
+        <td class="right num">{{ r.receipts }}</td>
+        <td class="right num">{{ r.cash|som }}</td>
+        <td class="right num">{{ r.cashless|som }}</td>
+        <td class="right num"><b>{{ r.total|som }}</b></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="empty">
+        Kassa qo'shilmagan.<br>
+        <span class="sec">python manage.py add_register --store "..." --name "Kassa-1"</span>
+      </td></tr>
+    {% endfor %}
+    {% if rows %}
+      <tr class="total">
+        <td colspan="4">Jami</td>
+        <td class="right num">{{ day.receipts }}</td>
+        <td class="right num">{{ day.cash|som }}</td>
+        <td class="right num">{{ day.cashless|som }}</td>
+        <td class="right num">{{ day.total|som }}</td>
+      </tr>
+    {% endif %}
+  </table>
+
+  {% if by_method %}
+    <h2>To'lov turlari</h2>
+    <table>
+      <tr><th>Tur</th><th class="right">Chek</th><th class="right">Summa</th></tr>
+      {% for m in by_method %}
+        <tr>
+          <td>{{ m.name }}{% if m.is_cash %} <span class="sec">· naqd</span>{% endif %}</td>
+          <td class="right num">{{ m.n }}</td>
+          <td class="right num">{{ m.total|som }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if stuck %}
+    <h2>Yozilmagan cheklar</h2>
+    <table>
+      <tr><th>Chek</th><th>Vaqt</th><th class="right">Summa</th><th>Sabab</th></tr>
+      {% for s in stuck %}
+        <tr>
+          <td>
+            {{ s.shift.register.store.name }}<br>
+            <span class="sec">{{ s.shift.register.name }} · #{{ s.number }}</span>
+          </td>
+          <td class="num">{{ s.created_at|date:"d.m H:i" }}</td>
+          <td class="right num">{{ s.net_sum|som }}</td>
+          <td class="sec">{{ s.sync_error|truncatechars:160 }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  <h2>Katalog</h2>
+  <table>
+    <tr><th>Nima</th><th>Oxirgi sinxronizatsiya</th><th class="right">Soni</th></tr>
+    {% for s in sync_rows %}
+      <tr>
+        <td>{{ s.entity }}</td>
+        <td class="num">{{ s.last_success_at|date:"d.m.Y H:i"|default:"—" }}</td>
+        <td class="right num">{{ s.rows_synced }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty">
+        Hali sinxronizatsiya bo'lmagan.<br>
+        <span class="sec">python manage.py sync_catalog --full</span>
+      </td></tr>
+    {% endfor %}
+    <tr class="total">
+      <td colspan="2">Tovarlar / mijozlar</td>
+      <td class="right num">{{ products }} / {{ customers }}</td>
+    </tr>
+  </table>
+
+{% endblock %}

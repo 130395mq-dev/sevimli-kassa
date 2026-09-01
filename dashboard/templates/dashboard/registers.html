@@ -1,0 +1,89 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Kassalar — Sevimli Kassa{% endblock %}
+{% block nav_registers %}on{% endblock %}
+
+{% block body %}
+  <h1>Kassalar</h1>
+  <div class="sub">Har bir kassaning o'z nomi va login-paroli bor</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <h2>Yangi kassa</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="fields">
+      <label>
+        <span>Savdo nuqtasi</span>
+        <select name="store" required>
+          {% for s in stores %}<option value="{{ s.pk }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Kassa nomi</span>
+        <input name="name" required placeholder="Kassa-1">
+      </label>
+      <label>
+        <span>Login</span>
+        <input name="login" required placeholder="chilonzor-1">
+      </label>
+      <label>
+        <span>Parol</span>
+        <input name="password" required placeholder="kamida 4 belgi">
+      </label>
+    </div>
+    <button type="submit">Qo'shish</button>
+  </form>
+
+  <h2>Ro'yxat</h2>
+  <table>
+    <tr>
+      <th>Nuqta</th><th>Kassa</th><th>Login</th>
+      <th>Oxirgi aloqa</th><th></th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.store.name }}</td>
+        <td>{{ r.name }}</td>
+        <td class="num">{{ r.login|default:"—" }}</td>
+        <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
+        <td class="right">
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="password">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <input name="password" placeholder="yangi parol" size="12">
+            <button type="submit" class="small">Almashtirish</button>
+          </form>
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="rotate">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost">Aloqani uzish</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">Kassa qo'shilmagan.</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Kassa qanday ulanadi</b>
+      Kassa ilovasi birinchi ochilganda server manzili, login va parolni
+      so'raydi. Undan keyin so'ramaydi — kalitni o'zi saqlab qo'yadi.
+      «Aloqani uzish» o'sha kalitni bekor qiladi: kassa qayta ulanishi kerak
+      bo'ladi.
+    </div>
+  </div>
+{% endblock %}

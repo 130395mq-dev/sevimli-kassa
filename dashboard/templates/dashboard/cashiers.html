@@ -1,0 +1,94 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Kassirlar — Sevimli Kassa{% endblock %}
+{% block nav_cashiers %}on{% endblock %}
+
+{% block body %}
+  <h1>Kassirlar</h1>
+  <div class="sub">Kassaga kim kira olishini shu yerdan boshqarasiz</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <h2>Yangi kassir</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="fields">
+      <label>
+        <span>Ism familiya</span>
+        <input name="name" required placeholder="Rahimova Nilufar">
+      </label>
+      <label>
+        <span>Login</span>
+        <input name="login" placeholder="bo'sh qoldirsangiz ismdan olinadi">
+      </label>
+      <label>
+        <span>PIN (4–6 raqam)</span>
+        <input name="pin" required inputmode="numeric" pattern="[0-9]{4,6}"
+               placeholder="1234">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="is_manager">
+        <span>Katta huquqlar — qaytarish, chegirma, inkassatsiya</span>
+      </label>
+    </div>
+    <button type="submit">Qo'shish</button>
+  </form>
+
+  <h2>Ro'yxat</h2>
+  <table>
+    <tr>
+      <th>Ism</th><th>Login</th><th>Huquq</th>
+      <th class="right">Smena</th><th>Oxirgi kirish</th><th>Holat</th><th></th>
+    </tr>
+    {% for c in rows %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td class="num">{{ c.login }}</td>
+        <td>{% if c.is_manager %}<span class="badge warn">katta</span>
+            {% else %}<span class="sec">oddiy</span>{% endif %}</td>
+        <td class="right num">{{ c.shift_count }}</td>
+        <td class="num">{{ c.last_login_at|date:"d.m H:i"|default:"—" }}</td>
+        <td>{% if c.active %}<span class="badge ok">faol</span>
+            {% else %}<span class="badge off">o'chirilgan</span>{% endif %}</td>
+        <td class="right">
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="pin">
+            <input type="hidden" name="id" value="{{ c.pk }}">
+            <input name="pin" placeholder="yangi PIN" size="8"
+                   inputmode="numeric" pattern="[0-9]{4,6}">
+            <button type="submit" class="small">Almashtirish</button>
+          </form>
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="id" value="{{ c.pk }}">
+            <button type="submit" class="small ghost">
+              {% if c.active %}O'chirish{% else %}Yoqish{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">Kassir qo'shilmagan.</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>PIN faqat bir marta ko'rsatiladi</b>
+      Bazada u ochiq saqlanmaydi, shuning uchun unutilsa tiklab bo'lmaydi —
+      yangisini berish kerak.
+    </div>
+  </div>
+{% endblock %}

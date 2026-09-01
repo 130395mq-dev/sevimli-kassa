@@ -1,0 +1,40 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Smena #{{ shift.number }} — Sevimli Kassa{% endblock %}
+{% block nav_shifts %}on{% endblock %}
+
+{% block body %}
+  <h1>Smena #{{ shift.number }}</h1>
+  <div class="sub">
+    {{ shift.register.store.name }} · {{ shift.register.name }} · {{ shift.cashier }}
+  </div>
+
+  <h2>Kassadagi chek</h2>
+  <div class="sub">Kassada chiqqan chekning aynan o'zi — bu yerda qayta hisoblanmaydi.</div>
+  <pre class="receipt">{{ receipt_text }}</pre>
+
+  <h2>Cheklar</h2>
+  <table>
+    <tr>
+      <th>№</th><th>Vaqt</th><th>Mijoz</th>
+      <th class="right">Summa</th><th>MoySklad</th>
+    </tr>
+    {% for s in sales %}
+      <tr>
+        <td class="num">{% if s.kind == "return" %}Q{% endif %}{{ s.number }}</td>
+        <td class="num">{{ s.created_at|date:"H:i" }}</td>
+        <td>{{ s.customer.name|default:"—" }}</td>
+        <td class="right num">{{ s.net_sum|som }}</td>
+        <td>
+          {% if s.sync_status == "sent" %}<span class="badge ok">yozildi</span>
+          {% elif s.sync_status == "stuck" %}<span class="badge err">xato</span>
+          {% else %}<span class="badge warn">navbatda</span>{% endif %}
+          {% if s.sync_error %}<div class="sec">{{ s.sync_error|truncatechars:120 }}</div>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">Chek yo'q.</td></tr>
+    {% endfor %}
+  </table>
+{% endblock %}

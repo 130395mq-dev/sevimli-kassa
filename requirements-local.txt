@@ -1,0 +1,12 @@
+# Bitta kompyuterda sinash uchun — yengil ro'yxat.
+#
+# Bu yerda PostgreSQL drayveri (psycopg) va gunicorn YO'Q:
+#   - psycopg faqat Railway'dagi serverga kerak, lokalda SQLite ishlaydi
+#   - gunicorn Windows'da umuman ishlamaydi
+#
+# Server uchun to'liq ro'yxat: requirements.txt
+
+Django>=5.1,<5.3
+dj-database-url>=2.3
+whitenoise>=6.8
+requests>=2.32

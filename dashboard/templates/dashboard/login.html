@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kirish — Sevimli Kassa</title>
+  <style>
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; background: #F7F6F3; color: #1C1517;
+      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    }
+    .box {
+      background: #fff; border: 1px solid #E2E0DA; border-radius: 14px;
+      padding: 34px 32px; width: 340px;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #6B7672; font-size: 14px; margin-bottom: 22px; }
+    label { display: block; font-size: 13px; color: #6B7672; margin-bottom: 5px; }
+    input {
+      width: 100%; box-sizing: border-box; border: 1px solid #CFCEC6;
+      border-radius: 9px; padding: 11px 13px; font-size: 15px;
+      margin-bottom: 15px; font-family: inherit; background: #FBFAF7;
+    }
+    button {
+      width: 100%; background: #8E1F2F; color: #fff; border: none;
+      border-radius: 9px; padding: 13px; font-size: 16px; font-weight: 700;
+      cursor: pointer; font-family: inherit;
+    }
+    .err {
+      background: #FDF1E3; border: 1px solid #EDD3B0; color: #7A4A0B;
+      border-radius: 9px; padding: 11px 14px; font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .note { color: #8A938F; font-size: 12.5px; margin-top: 16px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <form class="box" method="post">
+    {% csrf_token %}
+    <h1>Sevimli Kassa</h1>
+    <div class="sub">Boshqaruv paneli</div>
+
+    {% if form.errors %}
+      <div class="err">Login yoki parol noto'g'ri</div>
+    {% endif %}
+
+    <label>Login</label>
+    <input name="username" autofocus autocomplete="username">
+
+    <label>Parol</label>
+    <input name="password" type="password" autocomplete="current-password">
+
+    <button type="submit">Kirish</button>
+
+    <div class="note">
+      Bu panel — do'kon egasi va buxgalter uchun.
+      Kassirlar bu yerga kirmaydi, ular kassa ilovasiga PIN bilan kiradi.
+    </div>
+  </form>
+</body>
+</html>
