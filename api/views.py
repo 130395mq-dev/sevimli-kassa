@@ -21,6 +21,8 @@ Hamma summa **tiyinda**, butun son. Kasr yo'q.
 from __future__ import annotations
 
 import json
+import logging
+import threading
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -46,6 +48,49 @@ from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
 
 from .auth import error, register_required
+
+logger = logging.getLogger("api")
+
+
+def _push_sale_now(sale_id: int) -> None:
+    """Savdoni MoySklad'ga DARHOL yozadi (fon oqimida, so'rovni kutdirmay).
+
+    Shu tufayli chek MoySklad'da 5 daqiqalik cron'ni kutmasdan, 1-2
+    soniyada paydo bo'ladi. Xato bo'lsa — jimgina qoldiriladi va
+    `sync_sales` cron'i keyin qayta urinadi (backoff bilan). syncId
+    tufayli ikki marta yozilmaydi.
+    """
+    from django.conf import settings as s
+
+    if not getattr(s, "MOYSKLAD_TOKEN", ""):
+        return
+
+    from django.db import connection
+    from django.utils import timezone as tz
+
+    from moysklad.client import MoySkladClient
+    from sales.writer import SaleWriter
+
+    try:
+        sale = (
+            Sale.objects.select_related("shift__register__store", "customer")
+            .filter(pk=sale_id)
+            .first()
+        )
+        if not sale or sale.sync_status == Sale.SENT:
+            return
+        SaleWriter(MoySkladClient(token=s.MOYSKLAD_TOKEN)).send(sale)
+        sale.sync_status = Sale.SENT
+        sale.synced_at = tz.now()
+        sale.sync_error = ""
+        sale.next_attempt_at = None
+        sale.save(update_fields=[
+            "sync_status", "synced_at", "sync_error", "next_attempt_at"
+        ])
+    except Exception as e:  # cron baribir qayta urinadi
+        logger.info("Darhol yozilmadi (cron qayta urinadi): %s", e)
+    finally:
+        connection.close()
 
 PAGE_SIZE = 500
 
@@ -696,6 +741,15 @@ def _save_sale(shift, data, items, payments, local_uuid):
             tendered=raw.get("tendered"),
             change=raw.get("change"),
         )
+
+    # Chek saqlandi. Tranzaksiya tasdiqlangach — darhol MoySklad'ga
+    # yozamiz (fon oqimida). So'rov kutmaydi; cron zaxira bo'lib qoladi.
+    sale_id = sale.pk
+    transaction.on_commit(
+        lambda: threading.Thread(
+            target=_push_sale_now, args=(sale_id,), daemon=True
+        ).start()
+    )
 
     return JsonResponse({"id": sale.pk, "number": sale.number, "duplicate": False},
                         status=201)

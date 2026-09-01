@@ -57,12 +57,33 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **o):
+        # To'lov turlari — har doim kerak (haqiqiy va sinov ikkalasida ham)
         for code, name, is_cash, sort in METHODS:
             PaymentMethod.objects.get_or_create(
                 code=code,
                 defaults={"name": name, "is_cash": is_cash, "sort": sort},
             )
 
+        # Panelga kirish uchun foydalanuvchi — har doim kerak
+        from django.contrib.auth.models import User
+
+        if not User.objects.filter(username="admin").exists():
+            User.objects.create_superuser("admin", "", "admin")
+
+        # HAQIQIY REJIM: MoySklad ulangan bo'lsa (MOYSKLAD_TOKEN bor) —
+        # soxta demo ma'lumot yaratilmaydi va borini tozalaymiz. Aks holda
+        # har deploy'da «Sinov filiali» qaytadan paydo bo'lib, 404 xato
+        # berib turadi va panelni chalkashtiradi.
+        from django.conf import settings as dj_settings
+
+        if getattr(dj_settings, "MOYSKLAD_TOKEN", ""):
+            removed = self._cleanup_demo()
+            self.stdout.write(
+                self.style.SUCCESS(f"✓ Haqiqiy rejim. Demo tozalandi ({removed} savdo).")
+            )
+            return
+
+        # --- Quyidagilar faqat LOKAL SINOV uchun (MoySklad ulanmaganda) ---
         store, _ = RetailStore.objects.get_or_create(
             ms_id=STORE_ID,
             defaults={
@@ -141,6 +162,35 @@ class Command(BaseCommand):
                     "  (kassa avvaldan bor edi, tokeni o'zgarmadi)"
                 )
             )
+
+    def _cleanup_demo(self) -> int:
+        """Soxta demo ma'lumotni o'chiradi — faqat qat'iy demo ID lar.
+
+        Haqiqiy do'konlar (Shaxar 1 va h.k.) va ulardagi savdolar TEGILMAYDI:
+        o'chiriladigan narsalar aniq belgilangan demo kod/ID lar bilan
+        chegaralangan. Tartib FK himoyasiga mos: savdo → smena → kassa → do'kon.
+        """
+        from sales.models import Register, Sale, Shift
+
+        demo_store_ids = [
+            "00000000-0000-0000-0000-00000000ffff",  # Sinov filiali
+            "00000000-0000-0000-0000-00000000fffe",  # Yunusobod filiali
+        ]
+        demo_reg_codes = ["sinov-kassa", "sinov-kassa-2"]
+        demo_product_ids = [f"00000000-0000-0000-0000-{i:012d}" for i in range(1, 13)]
+
+        removed_sales = 0
+        regs = Register.objects.filter(code__in=demo_reg_codes)
+        for reg in regs:
+            # Savdo (SaleItem/Payment CASCADE bilan ketadi)
+            removed_sales += Sale.objects.filter(shift__register=reg).delete()[0]
+            Shift.objects.filter(register=reg).delete()
+        regs.delete()
+
+        RetailStore.objects.filter(ms_id__in=demo_store_ids).delete()
+        Product.objects.filter(ms_id__in=demo_product_ids).delete()
+
+        return removed_sales
 
     def make_sales(self, store, register):
         """Panel bo'sh ko'rinmasin — bugungi savdolarni o'ylab topamiz.
