@@ -309,3 +309,88 @@ def registers(request):
         "rows": Register.objects.select_related("store"),
         "stores": RetailStore.objects.filter(active=True),
     })
+
+
+# Sozlash oynasidagi checkbox maydonlar — hammasi shu yerda ro'yxatda.
+# Yangi checkbox qo'shsangiz — shu ro'yxatga qo'shing, boshqa joyni
+# o'zgartirish shart emas.
+_SETTINGS_BOOLS = [
+    "enabled",
+    "allow_choose_cashier",
+    "allow_price_edit",
+    "allow_delete_line", "allow_discount",
+    "allow_create_product", "track_stock", "track_reserves",
+    "add_customers_to_groups", "upload_customers_offline",
+    "req_fio", "req_phone", "req_card", "req_email", "req_birthday", "req_gender",
+    "require_fiscal_receipt", "test_print_modes",
+    "autoprint_nonfiscal", "autoprint_fiscal",
+    "shift_create_incoming_cashless", "shift_create_cash_order",
+    "allow_returns_closed_shift", "allow_returns_no_reason",
+    "orders_enabled", "allow_advances", "allow_certificates",
+    "credit_sales_enabled", "expense_receipts_enabled",
+]
+_SETTINGS_TEXT = [
+    "organization", "bank_account", "address", "access_group",
+    "price_type", "warehouse", "card_acquirer", "qr_acquirer",
+    "sales_channel", "sales_prefix_1c",
+]
+_SETTINGS_DECIMAL = ["max_discount", "card_commission"]
+_SETTINGS_CHOICE = ["show_product_groups", "show_customer_groups"]
+
+
+@login_required
+def register_edit(request, pk: int):
+    """Bitta kassani sozlash — MoySklad «Точка продаж» tahrirlash oynasi.
+
+    Chap tomonda bo'limlar ro'yxati, o'ngda «Точка продаж» kartasi,
+    o'rtada bo'limlar. Har bir bo'lim — o'sha ekrandagidek.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from sales.models import RegisterSettings
+
+    try:
+        reg = Register.objects.select_related("store").get(pk=pk)
+    except Register.DoesNotExist:
+        raise Http404("Kassa topilmadi")
+
+    st, _ = RegisterSettings.objects.get_or_create(register=reg)
+
+    if request.method == "POST":
+        for name in _SETTINGS_BOOLS:
+            setattr(st, name, bool(request.POST.get(name)))
+        for name in _SETTINGS_TEXT:
+            setattr(st, name, (request.POST.get(name) or "").strip())
+        for name in _SETTINGS_DECIMAL:
+            raw = (request.POST.get(name) or "0").replace(",", ".").strip()
+            try:
+                setattr(st, name, Decimal(raw))
+            except InvalidOperation:
+                setattr(st, name, Decimal("0"))
+        for name in _SETTINGS_CHOICE:
+            val = request.POST.get(name)
+            if val in (RegisterSettings.GROUP_ALL, RegisterSettings.GROUP_SELECTED):
+                setattr(st, name, val)
+
+        # Kassa nomini ham shu yerdan o'zgartirish mumkin
+        new_name = (request.POST.get("register_name") or "").strip()
+        if new_name:
+            reg.name = new_name
+        reg.active = st.enabled
+        reg.save(update_fields=["name", "active"])
+
+        st.save()
+
+        # Kassirlar — belgilanganlari
+        ids = request.POST.getlist("cashiers")
+        st.allowed_cashiers.set(Cashier.objects.filter(pk__in=ids))
+
+        messages.success(request, f"{reg.name}: sozlamalar saqlandi")
+        return redirect("dashboard:register-edit", pk=reg.pk)
+
+    return render(request, "dashboard/register_edit.html", {
+        "reg": reg,
+        "st": st,
+        "cashiers": Cashier.objects.filter(active=True),
+        "allowed_ids": set(st.allowed_cashiers.values_list("pk", flat=True)),
+    })

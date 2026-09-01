@@ -56,6 +56,7 @@
         <td class="num">{{ r.login|default:"—" }}</td>
         <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
         <td class="right">
+          <a href="{% url 'dashboard:register-edit' r.pk %}" class="badge ok" style="padding:6px 12px;">Sozlash</a>
           <form method="post" class="inline">
             {% csrf_token %}
             <input type="hidden" name="action" value="password">

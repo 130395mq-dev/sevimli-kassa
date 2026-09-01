@@ -1,0 +1,348 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}{{ reg.name }} — sozlash{% endblock %}
+{% block nav_registers %}on{% endblock %}
+
+{% block body %}
+<style>
+  .ed-bar {
+    position: sticky; top: 0; z-index: 20; margin: -26px -24px 22px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+  }
+  .ed-bar h1 { font-size: 20px; margin: 0; }
+  .ed-bar .name-in {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
+    font-size: 16px; font-weight: 600; font-family: inherit; color: var(--text);
+    background: #FBFAF7; width: 220px;
+  }
+  .ed-bar .spacer { flex: 1; }
+  .ed-bar .save { margin: 0; }
+  .ed-bar .close {
+    margin: 0; background: var(--surface); color: var(--soft);
+    border: 1px solid var(--border);
+  }
+
+  .ed-grid { display: grid; grid-template-columns: 190px 1fr 300px; gap: 24px; align-items: start; }
+  @media (max-width: 1100px) { .ed-grid { grid-template-columns: 1fr; } .ed-nav, .ed-side { position: static !important; } }
+
+  .ed-nav { position: sticky; top: 78px; display: flex; flex-direction: column; gap: 1px; }
+  .ed-nav a {
+    color: var(--soft); font-size: 14px; font-weight: 500; padding: 7px 12px;
+    border-radius: 8px; border-left: 2px solid transparent;
+  }
+  .ed-nav a:hover { background: var(--line); text-decoration: none; color: var(--text); }
+
+  .ed-side { position: sticky; top: 78px; }
+  .ed-side .card { margin: 0; }
+  .ed-side h3 { margin: 0 0 14px; font-size: 16px; }
+
+  .sec-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; scroll-margin-top: 82px;
+  }
+  .sec-card h3 { margin: 0 0 14px; font-size: 16px; }
+  .sec-card h3.tog { display: flex; align-items: center; gap: 10px; }
+
+  .chk { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; font-size: 14.5px; color: var(--text); cursor: pointer; }
+  .chk input { width: 17px; height: 17px; margin-top: 1px; accent-color: var(--accent); flex-shrink: 0; }
+  .chk .hint { display: block; color: var(--faint); font-size: 12.5px; margin-top: 2px; }
+
+  .fld { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; font-size: 13px; color: var(--muted); }
+  .fld input, .fld select {
+    border: 1px solid #CFCEC6; border-radius: 8px; padding: 10px 12px;
+    font-size: 15px; color: var(--text); background: #FBFAF7; font-family: inherit;
+  }
+  .fld.pct { max-width: 140px; }
+
+  .req-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 6px; }
+  .seg label { padding: 8px 16px; font-size: 14px; cursor: pointer; color: var(--soft); background: var(--surface); }
+  .seg input { display: none; }
+  .seg input:checked + span { background: var(--accent); color: #fff; }
+  .seg label span { display: block; margin: -8px -16px; padding: 8px 16px; }
+  .lbl { font-weight: 700; font-size: 13px; margin: 4px 0 2px; }
+</style>
+
+{% if messages %}
+  {% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+      <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+
+  <div class="ed-bar">
+    <h1>Sozlash:</h1>
+    <input class="name-in" name="register_name" value="{{ reg.name }}">
+    <span class="sec">{{ reg.store.name }}</span>
+    <span class="spacer"></span>
+    <button type="submit" class="save">Saqlash</button>
+    <a href="{% url 'dashboard:registers' %}" class="button close">Yopish</a>
+  </div>
+
+  <div class="ed-grid">
+
+    <!-- ============ CHAP: bo'limlar ro'yxati ============ -->
+    <nav class="ed-nav">
+      <a href="#kassirlar">Kassirlar</a>
+      <a href="#narxlar">Narxlar</a>
+      <a href="#sotuvlar">Sotuvlar</a>
+      <a href="#tovarlar">Tovarlar</a>
+      <a href="#mijozlar">Mijozlar</a>
+      <a href="#kassa-cheklari">Kassa cheklari</a>
+      <a href="#tovar-cheklari">Tovar cheklari</a>
+      <a href="#tolov">To'lov usullari</a>
+      <a href="#smena">Smena</a>
+      <a href="#qaytarish">Qaytarishlar</a>
+      <a href="#buyurtma">Buyurtma va oldindan to'lov</a>
+      <a href="#avans">Avans va sertifikatlar</a>
+      <a href="#qarz">Qarzga sotish</a>
+      <a href="#xarajat">Xarajat cheklari</a>
+      <a href="#hisob">Hisob</a>
+    </nav>
+
+    <!-- ============ O'RTA: bo'limlar ============ -->
+    <div>
+
+      <div class="sec-card" id="kassirlar">
+        <h3>Kassirlar</h3>
+        <div class="sec" style="margin-bottom:10px;">Faqat shu xodimlar bu kassaga kira oladi va sotuv qila oladi</div>
+        {% for c in cashiers %}
+          <label class="chk">
+            <input type="checkbox" name="cashiers" value="{{ c.pk }}" {% if c.pk in allowed_ids %}checked{% endif %}>
+            <span>{{ c.name }} <span class="hint">login: {{ c.login }}{% if c.is_manager %} · katta huquqlar{% endif %}</span></span>
+          </label>
+        {% empty %}
+          <div class="empty">Kassir yo'q. «Kassirlar» bo'limida qo'shing.</div>
+        {% endfor %}
+        <label class="chk" style="margin-top:8px;">
+          <input type="checkbox" name="allow_choose_cashier" {% if st.allow_choose_cashier %}checked{% endif %}>
+          <span>Sotuvni rasmiylashtirishda kassirni tanlashga ruxsat</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="narxlar">
+        <h3>Narxlar</h3>
+        <label class="fld">Narx turi
+          <input name="price_type" value="{{ st.price_type }}" placeholder="Chakana narx">
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_price_edit" {% if st.allow_price_edit %}checked{% endif %}>
+          <span>Sotuvda narxni o'zgartirishga ruxsat</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="sotuvlar">
+        <h3>Sotuvlar</h3>
+        <label class="chk">
+          <input type="checkbox" name="allow_delete_line" {% if st.allow_delete_line %}checked{% endif %}>
+          <span>Chekdan alohida qatorlarni o'chirishga ruxsat</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_discount" {% if st.allow_discount %}checked{% endif %}>
+          <span>Chekka va alohida qatorlarga chegirma berishga ruxsat</span>
+        </label>
+        <label class="fld pct">Eng ko'p chegirma
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="text" name="max_discount" value="{{ st.max_discount|floatformat:'-2' }}" style="width:80px;">
+            <span>%</span>
+          </div>
+        </label>
+      </div>
+
+      <div class="sec-card" id="tovarlar">
+        <h3>Tovarlar</h3>
+        <label class="fld">Ombor
+          <input name="warehouse" value="{{ st.warehouse }}" placeholder="Sevimli shahar">
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_create_product" {% if st.allow_create_product %}checked{% endif %}>
+          <span>Kassada tovar yaratishga ruxsat</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="track_stock" {% if st.track_stock %}checked{% endif %}>
+          <span>Qoldiqni hisobga olish</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="track_reserves" {% if st.track_reserves %}checked{% endif %}>
+          <span>Rezervni hisobga olish <span class="hint">Qoldiq hisobisiz ishlamaydi</span></span>
+        </label>
+        <div class="lbl">Kassada ko'rsatiladigan tovar guruhlari</div>
+        <div class="seg">
+          <label><input type="radio" name="show_product_groups" value="all" {% if st.show_product_groups == 'all' %}checked{% endif %}><span>Barcha guruhlar</span></label>
+          <label><input type="radio" name="show_product_groups" value="selected" {% if st.show_product_groups == 'selected' %}checked{% endif %}><span>Tanlangan guruhlar</span></label>
+        </div>
+      </div>
+
+      <div class="sec-card" id="mijozlar">
+        <h3>Mijozlar</h3>
+        <label class="chk">
+          <input type="checkbox" name="add_customers_to_groups" {% if st.add_customers_to_groups %}checked{% endif %}>
+          <span>Yangi mijozlarni guruhlarga qo'shish</span>
+        </label>
+        <div class="lbl">Kassada ko'rsatiladigan mijoz guruhlari</div>
+        <div class="seg">
+          <label><input type="radio" name="show_customer_groups" value="all" {% if st.show_customer_groups == 'all' %}checked{% endif %}><span>Barcha guruhlar</span></label>
+          <label><input type="radio" name="show_customer_groups" value="selected" {% if st.show_customer_groups == 'selected' %}checked{% endif %}><span>Tanlangan guruhlar</span></label>
+        </div>
+        <label class="chk" style="margin-top:10px;">
+          <input type="checkbox" name="upload_customers_offline" {% if st.upload_customers_offline %}checked{% endif %}>
+          <span>Mijozlarni oflayn ishlash uchun yuklab qo'yish</span>
+        </label>
+        <div class="lbl" style="margin-top:12px;">Kassada mijoz yaratishda majburiy maydonlar</div>
+        <div class="req-grid">
+          <label class="chk"><input type="checkbox" name="req_fio" {% if st.req_fio %}checked{% endif %}><span>F.I.Sh</span></label>
+          <label class="chk"><input type="checkbox" name="req_email" {% if st.req_email %}checked{% endif %}><span>Elektron pochta</span></label>
+          <label class="chk"><input type="checkbox" name="req_phone" {% if st.req_phone %}checked{% endif %}><span>Telefon</span></label>
+          <label class="chk"><input type="checkbox" name="req_birthday" {% if st.req_birthday %}checked{% endif %}><span>Tug'ilgan sana</span></label>
+          <label class="chk"><input type="checkbox" name="req_card" {% if st.req_card %}checked{% endif %}><span>Bonus karta raqami</span></label>
+          <label class="chk"><input type="checkbox" name="req_gender" {% if st.req_gender %}checked{% endif %}><span>Jins</span></label>
+        </div>
+      </div>
+
+      <div class="sec-card" id="kassa-cheklari">
+        <h3>Kassa cheklari</h3>
+        <label class="chk">
+          <input type="checkbox" name="require_fiscal_receipt" {% if st.require_fiscal_receipt %}checked{% endif %}>
+          <span>Kassa cheklarini majburiy shakllantirish</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="test_print_modes" {% if st.test_print_modes %}checked{% endif %}>
+          <span>Kassada chek chop etish rejimlarini sinash</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="tovar-cheklari">
+        <h3>Tovar cheklari</h3>
+        <div class="lbl">Tovar chekini avtomatik chop etish</div>
+        <label class="chk">
+          <input type="checkbox" name="autoprint_nonfiscal" {% if st.autoprint_nonfiscal %}checked{% endif %}>
+          <span>Nofiskal operatsiyalar uchun</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="autoprint_fiscal" {% if st.autoprint_fiscal %}checked{% endif %}>
+          <span>Fiskal operatsiyalar uchun</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="tolov">
+        <h3>To'lov usullari</h3>
+        <div class="lbl">Karta orqali to'lov</div>
+        <label class="fld">Bank-ekvayer
+          <input name="card_acquirer" value="{{ st.card_acquirer }}" placeholder="SEVIMLI SUPER MARKET">
+        </label>
+        <label class="fld pct">Ekvayer komissiyasi
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="text" name="card_commission" value="{{ st.card_commission|floatformat:'-2' }}" style="width:80px;">
+            <span>%</span>
+          </div>
+        </label>
+        <div class="lbl" style="margin-top:12px;">QR-kod orqali to'lov</div>
+        <label class="fld">Bank-ekvayer
+          <input name="qr_acquirer" value="{{ st.qr_acquirer }}" placeholder="Bankni tanlang">
+        </label>
+      </div>
+
+      <div class="sec-card" id="smena">
+        <h3>Smena</h3>
+        <div class="lbl">Smena yopilganda yaratish</div>
+        <label class="chk">
+          <input type="checkbox" name="shift_create_incoming_cashless" {% if st.shift_create_incoming_cashless %}checked{% endif %}>
+          <span>Naqdsiz tushum uchun kirim to'lov</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="shift_create_cash_order" {% if st.shift_create_cash_order %}checked{% endif %}>
+          <span>Naqd tushum uchun kirim order</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="qaytarish">
+        <h3>Qaytarishlar</h3>
+        <label class="chk">
+          <input type="checkbox" name="allow_returns_closed_shift" {% if st.allow_returns_closed_shift %}checked{% endif %}>
+          <span>Yopilgan smenalarda qaytarishga ruxsat</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_returns_no_reason" {% if st.allow_returns_no_reason %}checked{% endif %}>
+          <span>Asossiz qaytarishga ruxsat</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="buyurtma">
+        <h3 class="tog">
+          <input type="checkbox" name="orders_enabled" {% if st.orders_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
+          Buyurtma va oldindan to'lov
+        </h3>
+        <div class="sec">Kassada buyurtma va oldindan to'lov bilan ishlash uchun yoqing</div>
+      </div>
+
+      <div class="sec-card" id="avans">
+        <h3>Avans va sertifikatlar</h3>
+        <label class="chk">
+          <input type="checkbox" name="allow_advances" {% if st.allow_advances %}checked{% endif %}>
+          <span>Avans qabul qilish va undan xaridni to'lashga ruxsat</span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_certificates" {% if st.allow_certificates %}checked{% endif %}>
+          <span>Sovg'a sertifikatlarini sotish va qabul qilishga ruxsat</span>
+        </label>
+      </div>
+
+      <div class="sec-card" id="qarz">
+        <h3 class="tog">
+          <input type="checkbox" name="credit_sales_enabled" {% if st.credit_sales_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
+          Qarzga sotish
+        </h3>
+        <div class="sec">Kassada qarzga sotishga ruxsat berish uchun yoqing</div>
+      </div>
+
+      <div class="sec-card" id="xarajat">
+        <h3 class="tog">
+          <input type="checkbox" name="expense_receipts_enabled" {% if st.expense_receipts_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
+          Xarajat cheklari
+        </h3>
+        <div class="sec">Kassadan xarajatlarni rasmiylashtirish uchun yoqing</div>
+      </div>
+
+      <div class="sec-card" id="hisob">
+        <h3>Hisob</h3>
+        <label class="fld">Savdo kanali
+          <input name="sales_channel" value="{{ st.sales_channel }}" placeholder="Shahar">
+        </label>
+        <label class="fld">1C ga yuklash uchun savdo raqami prefiksi
+          <input name="sales_prefix_1c" value="{{ st.sales_prefix_1c }}">
+        </label>
+      </div>
+
+    </div>
+
+    <!-- ============ O'NG: Savdo nuqtasi kartasi ============ -->
+    <aside class="ed-side">
+      <div class="card">
+        <h3>Savdo nuqtasi</h3>
+        <label class="chk" style="margin-bottom:12px;">
+          <input type="checkbox" name="enabled" {% if st.enabled %}checked{% endif %}>
+          <span>Yoqilgan</span>
+        </label>
+        <label class="fld">Tashkilot
+          <input name="organization" value="{{ st.organization }}" placeholder="SEVIMLI SUPER MARKET">
+        </label>
+        <label class="fld">Hisob raqam
+          <input name="bank_account" value="{{ st.bank_account }}" placeholder="XALQ BANK">
+        </label>
+        <label class="fld">Manzil
+          <input name="address" value="{{ st.address }}">
+        </label>
+        <label class="fld">Kirish
+          <input name="access_group" value="{{ st.access_group }}" placeholder="SEVIMLI, Asosiy">
+        </label>
+      </div>
+    </aside>
+
+  </div>
+</form>
+{% endblock %}

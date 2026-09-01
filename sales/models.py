@@ -148,6 +148,158 @@ class Register(models.Model):
 
         return bool(password) and check_password(password, self.password_hash)
 
+    @property
+    def settings(self) -> "RegisterSettings":
+        """Kassaning sozlamalari. Yo'q bo'lsa — standart bilan yaratiladi.
+
+        Har bir kassaning o'z sozlamasi bor (MoySklad'dagi «Точка продаж»
+        tahrirlash oynasi). Kassa ilovasi shu sozlamalarga qarab ishlaydi:
+        chegirma chegarasi, majburiy maydonlar, qaytarish qoidalari va h.k.
+        """
+        obj, _ = RegisterSettings.objects.get_or_create(register=self)
+        return obj
+
+
+class RegisterSettings(models.Model):
+    """Bitta kassaning to'liq sozlamasi — MoySklad «Точка продаж» oynasi.
+
+    Bu model MoySklad'ning savdo nuqtasini tahrirlash ekranini to'liq
+    takrorlaydi. Har bir bo'lim — o'sha ekrandagi bo'lim. Kassa ilovasi
+    `hello` orqali shularni oladi va shunga mos ishlaydi.
+
+    Sozlama yo'q kassaga `Register.settings` standart qiymatlar bilan
+    o'zi yaratadi — eski kassalar ham ishlab ketaveradi.
+    """
+
+    GROUP_ALL = "all"
+    GROUP_SELECTED = "selected"
+    GROUP_CHOICES = [(GROUP_ALL, "Barcha guruhlar"), (GROUP_SELECTED, "Tanlangan guruhlar")]
+
+    register = models.OneToOneField(
+        Register, on_delete=models.CASCADE, related_name="settings_row"
+    )
+
+    # ------------------------------------------------ Точка продаж (o'ng panel)
+    enabled = models.BooleanField("Yoqilgan", default=True)
+    organization = models.CharField("Tashkilot", max_length=128, blank=True, default="")
+    bank_account = models.CharField("Hisob raqam", max_length=128, blank=True, default="")
+    address = models.CharField("Manzil", max_length=256, blank=True, default="")
+    access_group = models.CharField("Kirish", max_length=128, blank=True, default="")
+
+    # ------------------------------------------------ Кассиры
+    allowed_cashiers = models.ManyToManyField(
+        Cashier, blank=True, related_name="registers",
+        help_text="Faqat shu kassirlar kira oladi. Bo'sh — hamma kira oladi.",
+    )
+    allow_choose_cashier = models.BooleanField(
+        "Sotuvda kassirni tanlashga ruxsat", default=False
+    )
+
+    # ------------------------------------------------ Цены
+    price_type = models.CharField("Narx turi", max_length=64, blank=True, default="Chakana narx")
+    allow_price_edit = models.BooleanField("Sotuvda narxni o'zgartirishga ruxsat", default=False)
+
+    # ------------------------------------------------ Продажи
+    allow_delete_line = models.BooleanField("Chekdan alohida qatorni o'chirishga ruxsat", default=True)
+    allow_discount = models.BooleanField("Chek va qatorlarga chegirma berishga ruxsat", default=True)
+    max_discount = models.DecimalField("Eng ko'p chegirma (%)", max_digits=5, decimal_places=2, default=1)
+
+    # ------------------------------------------------ Товары
+    warehouse = models.CharField("Ombor", max_length=128, blank=True, default="")
+    allow_create_product = models.BooleanField("Kassada tovar yaratishga ruxsat", default=False)
+    track_stock = models.BooleanField("Qoldiqni hisobga olish", default=False)
+    track_reserves = models.BooleanField("Rezervni hisobga olish", default=False)
+    show_product_groups = models.CharField(
+        "Kassada ko'rsatiladigan tovar guruhlari", max_length=16,
+        choices=GROUP_CHOICES, default=GROUP_ALL,
+    )
+
+    # ------------------------------------------------ Покупатели
+    add_customers_to_groups = models.BooleanField("Yangi mijozlarni guruhga qo'shish", default=False)
+    show_customer_groups = models.CharField(
+        "Kassada ko'rsatiladigan mijoz guruhlari", max_length=16,
+        choices=GROUP_CHOICES, default=GROUP_ALL,
+    )
+    upload_customers_offline = models.BooleanField("Mijozlarni oflayn ish uchun yuklash", default=True)
+    # Kassada mijoz yaratishda majburiy maydonlar
+    req_fio = models.BooleanField("F.I.Sh majburiy", default=True)
+    req_phone = models.BooleanField("Telefon majburiy", default=True)
+    req_card = models.BooleanField("Bonus karta raqami majburiy", default=True)
+    req_email = models.BooleanField("Elektron pochta majburiy", default=False)
+    req_birthday = models.BooleanField("Tug'ilgan sana majburiy", default=False)
+    req_gender = models.BooleanField("Jins majburiy", default=False)
+
+    # ------------------------------------------------ Кассовые чеки
+    require_fiscal_receipt = models.BooleanField("Kassa cheklarini majburiy shakllantirish", default=False)
+    test_print_modes = models.BooleanField("Kassada chek chop etish rejimlarini sinash", default=False)
+
+    # ------------------------------------------------ Товарные чеки
+    autoprint_nonfiscal = models.BooleanField("Nofiskal operatsiyalar uchun tovar chekini avto chop etish", default=True)
+    autoprint_fiscal = models.BooleanField("Fiskal operatsiyalar uchun tovar chekini avto chop etish", default=False)
+
+    # ------------------------------------------------ Способы оплаты
+    card_acquirer = models.CharField("Karta — bank-ekvayer", max_length=128, blank=True, default="")
+    card_commission = models.DecimalField("Ekvayer komissiyasi (%)", max_digits=5, decimal_places=2, default=0)
+    qr_acquirer = models.CharField("QR — bank-ekvayer", max_length=128, blank=True, default="")
+
+    # ------------------------------------------------ Смена
+    shift_create_incoming_cashless = models.BooleanField("Smena yopilganda naqdsiz tushum uchun kirim to'lov", default=True)
+    shift_create_cash_order = models.BooleanField("Smena yopilganda naqd tushum uchun kirim order", default=True)
+
+    # ------------------------------------------------ Возвраты
+    allow_returns_closed_shift = models.BooleanField("Yopiq smenalarda qaytarishga ruxsat", default=False)
+    allow_returns_no_reason = models.BooleanField("Asossiz qaytarishga ruxsat", default=False)
+
+    # ------------------------------------------------ Заказы и предоплаты
+    orders_enabled = models.BooleanField("Buyurtma va oldindan to'lov", default=False)
+
+    # ------------------------------------------------ Авансы и сертификаты
+    allow_advances = models.BooleanField("Avans qabul qilish va undan to'lash", default=False)
+    allow_certificates = models.BooleanField("Sovg'a sertifikatlarini sotish va qabul qilish", default=False)
+
+    # ------------------------------------------------ Продажи в долг
+    credit_sales_enabled = models.BooleanField("Qarzga sotish", default=False)
+
+    # ------------------------------------------------ Чеки расходов
+    expense_receipts_enabled = models.BooleanField("Xarajat cheklari", default=False)
+
+    # ------------------------------------------------ Учет
+    sales_channel = models.CharField("Savdo kanali", max_length=128, blank=True, default="")
+    sales_prefix_1c = models.CharField("1C uchun savdo raqami prefiksi", max_length=32, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Kassa sozlamasi"
+        verbose_name_plural = "Kassa sozlamalari"
+
+    def __str__(self) -> str:
+        return f"{self.register.name} sozlamalari"
+
+    def as_kassa_dict(self) -> dict:
+        """Kassa ilovasi tushunadigan ko'rinish — `hello` javobiga qo'shiladi."""
+        return {
+            "allow_choose_cashier": self.allow_choose_cashier,
+            "allow_price_edit": self.allow_price_edit,
+            "allow_delete_line": self.allow_delete_line,
+            "allow_discount": self.allow_discount,
+            "max_discount": float(self.max_discount),
+            "allow_create_product": self.allow_create_product,
+            "track_stock": self.track_stock,
+            "required_customer_fields": [
+                f for f, on in (
+                    ("fio", self.req_fio), ("phone", self.req_phone),
+                    ("card", self.req_card), ("email", self.req_email),
+                    ("birthday", self.req_birthday), ("gender", self.req_gender),
+                ) if on
+            ],
+            "autoprint_nonfiscal": self.autoprint_nonfiscal,
+            "allow_returns_closed_shift": self.allow_returns_closed_shift,
+            "allow_returns_no_reason": self.allow_returns_no_reason,
+            "orders_enabled": self.orders_enabled,
+            "credit_sales_enabled": self.credit_sales_enabled,
+        }
+
 
 class Shift(models.Model):
     """Smena. Ochilgandan yopilgunicha hamma chek shunga tegishli."""

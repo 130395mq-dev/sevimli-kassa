@@ -155,6 +155,13 @@ def version(request):
 def hello(request):
     reg = request.register
     shift = reg.shifts.filter(status=Shift.OPEN).first()
+    st = reg.settings
+
+    # Kassirlar: agar shu kassaga aniq kassirlar biriktirilgan bo'lsa —
+    # faqat o'shalar kira oladi (MoySklad «Кассиры» bo'limi). Bo'sh
+    # bo'lsa — hamma faol kassir kira oladi (eski holat).
+    allowed = st.allowed_cashiers.filter(active=True)
+    cashier_qs = allowed if allowed.exists() else Cashier.objects.filter(active=True)
 
     return JsonResponse(
         {
@@ -173,8 +180,11 @@ def hello(request):
             # xavfsizlikni kamaytirmaydi, lekin kirishni tezlashtiradi.
             "cashiers": [
                 {"login": c.login, "name": c.name}
-                for c in Cashier.objects.filter(active=True)
+                for c in cashier_qs
             ],
+            # Kassaning sozlamalari — ilova shunga qarab ishlaydi
+            # (chegirma chegarasi, majburiy maydonlar, qaytarish va h.k.).
+            "settings": st.as_kassa_dict(),
         }
     )
 

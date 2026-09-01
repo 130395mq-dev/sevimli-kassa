@@ -70,7 +70,12 @@ def _ms_id(meta: dict | None) -> str | None:
     if not meta:
         return None
     href = (meta.get("meta") or meta).get("href", "")
-    return href.rstrip("/").split("/")[-1] if href else None
+    if not href:
+        return None
+    # `report/stock/bystore` da href ba'zan `?expand=...` bilan keladi —
+    # so'rov qismini olib tashlaymiz, aks holda UUID buziladi.
+    tail = href.rstrip("/").split("/")[-1]
+    return tail.split("?")[0]
 
 
 class CatalogSync:
