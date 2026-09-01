@@ -328,6 +328,16 @@
           <input type="checkbox" name="enabled" {% if st.enabled %}checked{% endif %}>
           <span>Yoqilgan</span>
         </label>
+        <label class="fld" style="margin-bottom:4px;">Do'kon (MoySklad)
+          <select name="store">
+            {% for s in stores %}
+              <option value="{{ s.pk }}" {% if s.pk == reg.store_id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="sec" style="font-size:12px; margin-bottom:12px;">
+          Kassa shu do'kon nomidan MoySklad'ga savdo yozadi
+        </div>
         <label class="fld">Tashkilot
           <input name="organization" value="{{ st.organization }}" placeholder="SEVIMLI SUPER MARKET">
         </label>

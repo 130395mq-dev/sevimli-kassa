@@ -347,6 +347,7 @@ def register_edit(request, pk: int):
     """
     from decimal import Decimal, InvalidOperation
 
+    from catalog.models import RetailStore
     from sales.models import RegisterSettings
 
     try:
@@ -377,7 +378,17 @@ def register_edit(request, pk: int):
         if new_name:
             reg.name = new_name
         reg.active = st.enabled
-        reg.save(update_fields=["name", "active"])
+
+        # Savdo nuqtasi (haqiqiy MoySklad do'koni). Kassa shu do'kon
+        # nomidan MoySklad'ga yozadi — «Sinov filiali» dan haqiqiyga
+        # o'tkazish shu yerdan.
+        store_id = request.POST.get("store")
+        if store_id:
+            new_store = RetailStore.objects.filter(pk=store_id, active=True).first()
+            if new_store:
+                reg.store = new_store
+
+        reg.save(update_fields=["name", "active", "store"])
 
         st.save()
 
@@ -388,9 +399,20 @@ def register_edit(request, pk: int):
         messages.success(request, f"{reg.name}: sozlamalar saqlandi")
         return redirect("dashboard:register-edit", pk=reg.pk)
 
+    # Do'konlar ro'yxati: MoySklad'dan kelgan haqiqiy do'konlar (org id si
+    # bor). Joriy do'kon ro'yxatda bo'lmasa (masalan «Sinov filiali») —
+    # uni ham qo'shamiz, tanlangani ko'rinib tursin.
+    real_stores = list(
+        RetailStore.objects.filter(active=True, organization_ms_id__isnull=False)
+        .order_by("name")
+    )
+    if reg.store_id and all(s.pk != reg.store_id for s in real_stores):
+        real_stores.insert(0, reg.store)
+
     return render(request, "dashboard/register_edit.html", {
         "reg": reg,
         "st": st,
         "cashiers": Cashier.objects.filter(active=True),
         "allowed_ids": set(st.allowed_cashiers.values_list("pk", flat=True)),
+        "stores": real_stores,
     })
