@@ -292,14 +292,64 @@ class SaleWriter:
     def _agent(self, sale: Sale) -> dict:
         if sale.customer_id and sale.customer.ms_id:
             return meta("counterparty", sale.customer.ms_id)
+        return meta("counterparty", self._retail_agent_id())
 
-        default = getattr(settings, "MOYSKLAD_RETAIL_CUSTOMER_ID", "")
-        if not default:
-            raise WriteError(
-                "Mijozsiz savdo uchun MOYSKLAD_RETAIL_CUSTOMER_ID sozlanmagan "
-                "(«Розничный покупатель» kontragentining ID'si)"
-            )
-        return meta("counterparty", default)
+    # Bitta sync_sales ishida takror qidirmaslik uchun jarayon ichida keshlanadi
+    _retail_id_cache: str | None = None
+
+    def _retail_agent_id(self) -> str:
+        """Mijozsiz savdo uchun «Розничный покупатель» kontragenti ID'si.
+
+        Tartib: (1) sozlamadagi ID, (2) lokal bazadagi mos kontragent,
+        (3) MoySklad'dan qidirish, (4) topilmasa — yaratish. Topilgach
+        lokalga yoziladi va keyingi savdolar qayta qidirmaydi. Shu tufayli
+        do'kon egasi hech qanday ID qo'lda kiritmaydi.
+        """
+        if SaleWriter._retail_id_cache:
+            return SaleWriter._retail_id_cache
+
+        from catalog.models import Customer
+
+        configured = (getattr(settings, "MOYSKLAD_RETAIL_CUSTOMER_ID", "") or "").strip()
+        if configured:
+            SaleWriter._retail_id_cache = configured
+            return configured
+
+        local = (
+            Customer.objects.filter(name__iexact="Розничный покупатель").first()
+            or Customer.objects.filter(name__icontains="Розничный покупатель").first()
+        )
+        if local and local.ms_id:
+            SaleWriter._retail_id_cache = str(local.ms_id)
+            return SaleWriter._retail_id_cache
+
+        # Lokalda yo'q — MoySklad'dan qidiramiz
+        try:
+            rows = (
+                self.client.get("entity/counterparty", search="Розничный покупатель", limit=5)
+                or {}
+            ).get("rows") or []
+        except MoySkladError:
+            rows = []
+        for row in rows:
+            if "розничн" in (row.get("name", "").lower()):
+                Customer.objects.update_or_create(
+                    ms_id=row["id"],
+                    defaults={"name": row.get("name", "Розничный покупатель")},
+                )
+                SaleWriter._retail_id_cache = row["id"]
+                return row["id"]
+
+        # Umuman yo'q — yaratamiz (bir marta)
+        created = self.client.post(
+            "entity/counterparty", {"name": "Розничный покупатель"}
+        )
+        Customer.objects.update_or_create(
+            ms_id=created["id"],
+            defaults={"name": created.get("name", "Розничный покупатель")},
+        )
+        SaleWriter._retail_id_cache = created["id"]
+        return created["id"]
 
     # ------------------------------------------------------------ to'lov
 
