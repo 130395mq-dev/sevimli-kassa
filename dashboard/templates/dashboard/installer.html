@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sevimli Kassa — o'rnatish</title>
+  <style>
+    /*
+      Yangi kassaga dasturni o'rnatish sahifasi.
+
+      Bu sahifa kirishsiz ochiladi — yangi monoblokda hech qanday login
+      yo'q. Faqat bitta tugma: faylni oladi. Fayl o'zi o'rnatadi va
+      login/parol so'raydi, shuning uchun fayl o'z-o'zidan hech narsa
+      ochmaydi.
+    */
+    :root {
+      --wine:      #8E1F2F;
+      --wine-deep: #5E1220;
+      --gold:      #D99A2B;
+      --gold-deep: #A8741A;
+      --ink:       #1B1618;
+      --muted:     #756D6B;
+      --line:      rgba(255,255,255,.16);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      font-size: 16px; line-height: 1.6; color: #fff;
+      background:
+        radial-gradient(1100px 700px at 85% -10%, rgba(217,154,43,.20), transparent 60%),
+        linear-gradient(165deg, #8E1F2F 0%, #6C1523 55%, #4A0E1A 100%);
+      display: flex; align-items: center; justify-content: center;
+      padding: 32px 20px;
+    }
+    .wrap { width: 100%; max-width: 640px; }
+
+    .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+    .mark {
+      width: 46px; height: 46px; border-radius: 13px; flex: none;
+      background: linear-gradient(150deg, var(--gold), var(--gold-deep));
+      color: #3A1009; font-weight: 800; font-size: 22px;
+      display: grid; place-items: center;
+      box-shadow: 0 6px 18px rgba(0,0,0,.28);
+    }
+    .brand .name { font-weight: 700; font-size: 19px; letter-spacing: .2px; }
+    .brand .sub  { font-size: 13px; color: #E8B8BF; margin-top: -2px; }
+
+    .card {
+      background: rgba(255,255,255,.07);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 32px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 24px 60px rgba(0,0,0,.30);
+    }
+    h1 { margin: 0 0 6px; font-size: 27px; line-height: 1.25; letter-spacing: -.3px; }
+    .lead { margin: 0 0 26px; color: #F0D6DA; font-size: 15.5px; }
+
+    .ver {
+      display: inline-flex; align-items: baseline; gap: 10px;
+      padding: 7px 14px; border-radius: 999px;
+      background: rgba(217,154,43,.18);
+      border: 1px solid rgba(217,154,43,.42);
+      color: #FBE3B4; font-size: 13.5px; margin-bottom: 22px;
+    }
+    .ver b { font-size: 15px; color: #fff; }
+
+    a.get, .get {
+      display: flex; align-items: center; justify-content: center; gap: 12px;
+      width: 100%; padding: 19px 22px; border-radius: 15px;
+      background: linear-gradient(150deg, #E9AC3C, var(--gold-deep));
+      color: #3A1009; font-weight: 700; font-size: 18px;
+      text-decoration: none; border: none; cursor: pointer;
+      box-shadow: 0 10px 26px rgba(0,0,0,.30);
+      transition: transform .12s ease, box-shadow .12s ease;
+    }
+    a.get:hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(0,0,0,.34); }
+    a.get:active { transform: translateY(1px); }
+    .get .arrow { font-size: 21px; }
+
+    .size { text-align: center; color: #E0BDC3; font-size: 13px; margin-top: 12px; }
+
+    .none {
+      padding: 20px; border-radius: 14px; text-align: center;
+      background: rgba(0,0,0,.22); border: 1px solid var(--line); color: #F0D6DA;
+    }
+
+    ol { margin: 30px 0 0; padding: 0; list-style: none; counter-reset: s; }
+    ol li {
+      counter-increment: s; position: relative;
+      padding: 0 0 18px 44px; font-size: 15px; color: #F4E2E5;
+    }
+    ol li:last-child { padding-bottom: 0; }
+    ol li::before {
+      content: counter(s);
+      position: absolute; left: 0; top: 1px;
+      width: 28px; height: 28px; border-radius: 9px;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,.12); border: 1px solid var(--line);
+      color: #fff; font-weight: 700; font-size: 13.5px;
+    }
+    ol li b { color: #fff; }
+
+    .note {
+      margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line);
+      color: #DBB6BC; font-size: 13.5px;
+    }
+    code {
+      font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px;
+      background: rgba(0,0,0,.26); padding: 2px 7px; border-radius: 6px; color: #FBE3B4;
+    }
+    .foot { text-align: center; margin-top: 22px; color: #C79AA2; font-size: 12.5px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark">S</div>
+      <div>
+        <div class="name">Sevimli Kassa</div>
+        <div class="sub">yangi kassaga o'rnatish</div>
+      </div>
+    </div>
+
+    <div class="card">
+      {% if rel %}
+        <div class="ver">versiya <b>{{ rel.version }}</b>{% if rel.notes %} · {{ rel.notes }}{% endif %}</div>
+      {% endif %}
+
+      <h1>Bitta fayl — boshqa hech narsa kerak emas</h1>
+      <p class="lead">
+        Faylni yuklab oling va ishga tushiring. Dastur o'zini o'rnatadi,
+        ish stoliga yorliq qo'yadi va sizdan <b>login va parol</b> so'raydi.
+        Server manzili, sozlama, o'rnatuvchi — hech biri kerak emas.
+      </p>
+
+      {% if rel %}
+        <a class="get" href="{% url 'dashboard:installer-download' %}">
+          <span class="arrow">↓</span> SevimliKassa.exe ni yuklab olish
+        </a>
+        <div class="size">{{ rel.size|filesizeformat }} · Windows 10 va undan yuqori</div>
+      {% else %}
+        <div class="none">
+          Hali birorta versiya chiqarilmagan.<br>
+          Panel → <b>Versiyalar</b> bo'limiga SevimliKassa.exe ni yuklang.
+        </div>
+      {% endif %}
+
+      <ol>
+        <li>Faylni yuklab oling va <b>ishga tushiring</b>. Windows ogohlantirsa —
+          «Batafsil» → «Baribir ishga tushirish».</li>
+        <li>Dastur o'zini o'rnatadi va <b>login/parol</b> so'raydi.</li>
+        <li>Login va parolni panelda siz yaratasiz: <b>Kassalar</b> → kassani
+          qo'shing va omborni tanlang, keyin <b>Kassirlar</b>.</li>
+        <li>Kirdingiz — kassa qaysi ombordan sotishini o'zi biladi, tovarlar
+          va narxlar MoySklad'dan keladi.</li>
+      </ol>
+
+      <div class="note">
+        Keyingi yangilanishlar o'z-o'zidan bo'ladi — dasturni qayta
+        yuklab olish shart emas. Bu sahifa manzili:
+        <code>{{ host }}/ornatish/</code>
+      </div>
+    </div>
+
+    <div class="foot">Sevimli Market · ichki foydalanish uchun</div>
+  </div>
+</body>
+</html>

@@ -3,6 +3,8 @@
 {% block title %}{{ reg.name }} — sozlash{% endblock %}
 {% block nav_registers %}on{% endblock %}
 
+{% block crumb %}Kassa sozlamalari{% endblock %}
+
 {% block body %}
 <style>
   .ed-bar {
@@ -342,23 +344,27 @@
 
     </div>
 
-    <!-- ============ O'NG: Savdo nuqtasi kartasi ============ -->
+    <!-- ============ O'NG: Kassa kartasi ============ -->
     <aside class="ed-side">
       <div class="card">
-        <h3>Savdo nuqtasi</h3>
-        <label class="chk" style="margin-bottom:12px;">
+        <h3>Kassa</h3>
+        <label class="chk" style="margin-bottom:14px;">
           <input type="checkbox" name="enabled" {% if st.enabled %}checked{% endif %}>
           <span>Yoqilgan</span>
         </label>
-        <label class="fld" style="margin-bottom:4px;">Do'kon (MoySklad)
-          <select name="store">
-            {% for s in stores %}
-              <option value="{{ s.pk }}" {% if s.pk == reg.store_id %}selected{% endif %}>{{ s.name }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div class="sec" style="font-size:12px; margin-bottom:12px;">
-          Kassa shu do'kon nomidan MoySklad'ga savdo yozadi
+
+        <div style="background:var(--wine-soft); border:1px solid #F0DADE; border-radius:12px;
+                    padding:12px 14px; margin-bottom:14px;">
+          <div style="font-size:11px; font-weight:700; letter-spacing:.9px;
+                      text-transform:uppercase; color:var(--wine);">Ombor (sklad)</div>
+          <div style="font-size:16px; font-weight:700; margin-top:3px;">
+            {% if effective_warehouse %}{{ effective_warehouse }}
+            {% else %}<span style="color:var(--danger);">tanlanmagan</span>{% endif %}
+          </div>
+          <div class="sec" style="font-size:12px; margin-top:3px;">
+            Qoldiq shundan, savdo shundan chiqadi.
+            <a href="#tovarlar">Tovarlar</a> bo'limida o'zgartiriladi.
+          </div>
         </div>
         <label class="fld">Tashkilot — savdo kimning nomidan yoziladi
           <select name="organization_ms_id">

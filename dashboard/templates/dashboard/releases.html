@@ -3,6 +3,8 @@
 {% block title %}Versiyalar — Sevimli Kassa{% endblock %}
 {% block nav_releases %}on{% endblock %}
 
+{% block crumb %}Versiyalar{% endblock %}
+
 {% block body %}
   <h1>Kassa ilovasi versiyalari</h1>
   <div class="sub">
@@ -36,6 +38,17 @@
       <div class="label">Eskirgan</div>
       <div class="value" style="color: {% if outdated %}var(--warn){% else %}var(--ok){% endif %};">{{ outdated|length }}</div>
       <div class="note">{% if outdated %}yangilanishi kerak{% else %}hammasi yangi{% endif %}</div>
+    </div>
+  </div>
+
+  <div class="alert ok" style="margin-top: 18px;">
+    <span>↓</span>
+    <div>
+      <b>Yangi kassaga o'rnatish</b>
+      Yangi monoblokda brauzerni ochib
+      <code class="token">{{ request.get_host }}/ornatish/</code> ni yozing —
+      bitta fayl chiqadi, ishga tushirsangiz o'zi o'rnatilib login/parol so'raydi.
+      <a href="{% url 'dashboard:installer' %}" target="_blank">Sahifani ochish →</a>
     </div>
   </div>
 

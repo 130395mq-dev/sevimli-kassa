@@ -576,3 +576,44 @@ def register_edit(request, pk: int):
         "organization_id": str(st.organization_ms_id or ""),
         "effective_warehouse": reg.warehouse_name,
     })
+
+
+# ---------------------------------------------------------------- o'rnatish
+
+
+def installer(request):
+    """Yangi kassaga dasturni o'rnatish sahifasi — kirishsiz ochiladi.
+
+    Yangi monoblok keldi. Unda hech narsa yo'q: na dastur, na sozlama.
+    Brauzerni ochib shu manzilni yozadi, tugmani bosadi, chiqqan
+    SevimliKassa.exe ni ishga tushiradi — dastur o'zini
+    %LOCALAPPDATA%\\SevimliKassa ga ko'chiradi, yorliq yasaydi va
+    login/parol so'raydi. Boshqa hech narsa kerak emas.
+
+    Kirish talab qilinmaydi: faylning o'zi hech narsa ochmaydi —
+    login va parolsiz kassa ishga tushmaydi.
+    """
+    from sales.models import KassaRelease
+
+    rel = KassaRelease.latest()
+    return render(request, "dashboard/installer.html", {
+        "rel": rel,
+        "host": request.get_host(),
+    })
+
+
+def installer_download(request):
+    """Eng yangi SevimliKassa.exe ni beradi."""
+    from django.http import FileResponse
+
+    from sales.models import KassaRelease
+
+    rel = KassaRelease.latest()
+    if not rel or not rel.file:
+        raise Http404("Hali versiya chiqarilmagan")
+    return FileResponse(
+        rel.file.open("rb"),
+        as_attachment=True,
+        filename="SevimliKassa.exe",
+        content_type="application/octet-stream",
+    )

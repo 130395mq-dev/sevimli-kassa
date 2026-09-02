@@ -3,6 +3,8 @@
 {% block title %}Kassalar — Sevimli Kassa{% endblock %}
 {% block nav_registers %}on{% endblock %}
 
+{% block crumb %}Kassalar{% endblock %}
+
 {% block body %}
   <h1>Kassalar</h1>
   <div class="sub">Har bir kassaning o'z nomi va login-paroli bor</div>
@@ -54,11 +56,11 @@
       <tr>
         <td>{% if r.wh_name %}<b>{{ r.wh_name }}</b>
             {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
-        <td>{{ r.name }}</td>
-        <td class="num">{{ r.login|default:"—" }}</td>
+        <td class="tight">{{ r.name }}</td>
+        <td class="num tight">{{ r.login|default:"—" }}</td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
         <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
-        <td class="right">
+        <td class="actions">
           <a href="{% url 'dashboard:register-edit' r.pk %}" class="badge ok" style="padding:6px 12px;">Sozlash</a>
           <form method="post" class="inline">
             {% csrf_token %}

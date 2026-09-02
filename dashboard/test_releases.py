@@ -78,3 +78,31 @@ class RegisterCreateTest(TestCase):
         reg = Register.objects.get()
         self.assertEqual(str(reg.warehouse_ms_id), str(self.wh.ms_id))
         self.assertEqual(reg.warehouse_name, "Sevimli Shaxar")
+
+
+class InstallerPageTest(TestCase):
+    """Yangi kassaga o'rnatish sahifasi — kirishsiz ochilishi kerak."""
+
+    def test_versiyasiz_ochiladi(self):
+        r = self.client.get("/ornatish/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("chiqarilmagan", r.content.decode())
+        # Fayl yo'q — 404
+        self.assertEqual(self.client.get("/ornatish/fayl/").status_code, 404)
+
+    def test_faylni_beradi(self):
+        content = b"MZ" + b"x" * 1_100_000
+        with tempfile.TemporaryDirectory() as d, self.settings(MEDIA_ROOT=d):
+            rel = KassaRelease(version="1.2.0", size=len(content),
+                               sha256=hashlib.sha256(content).hexdigest())
+            rel.file.save("SevimliKassa-1.2.0.exe",
+                          SimpleUploadedFile("x.exe", content), save=True)
+
+            r = self.client.get("/ornatish/")
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("1.2.0", r.content.decode())
+
+            r = self.client.get("/ornatish/fayl/")
+            self.assertEqual(r.status_code, 200)
+            self.assertIn("SevimliKassa.exe", r["Content-Disposition"])
+            self.assertEqual(b"".join(r.streaming_content), content)
