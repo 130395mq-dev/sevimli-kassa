@@ -40,7 +40,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--only",
             choices=["folders", "products", "customers", "stock", "retail_stores",
-                     "price_types", "reconcile"],
+                     "price_types", "warehouses", "reconcile"],
             help="Faqat bitta turni sinxronlaydi "
                  "(reconcile — MoySklad'da o'chirilgan tovarlarni arxivlaydi)",
         )
@@ -136,6 +136,7 @@ class Command(BaseCommand):
             "retail_stores": lambda: sync.sync_retail_stores(full),
             "stock": sync.sync_stock,
             "price_types": lambda: sync.sync_price_types(full),
+            "warehouses": lambda: sync.sync_warehouses(full),
             "reconcile": sync.reconcile_deleted,
         }[kind]
         return {kind: method()}
@@ -148,6 +149,7 @@ class Command(BaseCommand):
         "retail_stores": "retailstore",
         "stock": "stock",
         "price_types": "pricetype",
+        "warehouses": "store",
         "reconcile": "reconcile",
     }
 

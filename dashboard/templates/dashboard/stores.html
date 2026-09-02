@@ -1,0 +1,110 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Filiallar — Sevimli Kassa{% endblock %}
+{% block nav_stores %}on{% endblock %}
+
+{% block body %}
+  <h1>Filiallar va omborlar</h1>
+  <div class="sub">
+    Kassa filialga, filial omborga biriktiriladi — savdo aynan shu ombordan hisobdan chiqadi
+  </div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if missing %}
+    <div class="alert err">
+      <span>✕</span>
+      <div>
+        <b>{{ missing|length }} ta filialda ombor tanlanmagan</b>
+        Bu filiallardagi kassalarda smena ochilmaydi va savdo MoySklad'ga yozilmaydi.
+        Quyidagi jadvaldan omborni tanlang.
+      </div>
+    </div>
+  {% endif %}
+
+  <table>
+    <tr>
+      <th>Filial (savdo nuqtasi)</th>
+      <th>Kassalar</th>
+      <th>Ombor</th>
+      <th>Manba</th>
+      <th>Omborni almashtirish</th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td><b>{{ r.name }}</b></td>
+        <td class="num">{{ r.register_count }}</td>
+        <td>
+          {% if r.wh %}<span class="badge ok">{{ r.wh.name }}</span>
+          {% elif r.wh_id %}<span class="badge warn">MoySklad'dan topilmadi</span>
+          {% else %}<span class="badge err">tanlanmagan</span>{% endif %}
+        </td>
+        <td class="sec">
+          {% if r.wh_manual %}qo'lda tanlangan
+          {% elif r.wh_id %}MoySklad savdo nuqtasidan
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <select name="warehouse">
+              <option value="">MoySklad savdo nuqtasidan</option>
+              {% for w in warehouses %}
+                <option value="{{ w.ms_id }}"
+                  {% if r.wh_manual and r.wh_id == w.ms_id|stringformat:"s" %}selected{% endif %}>
+                  {{ w.name }}
+                </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="small">Saqlash</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr>
+        <td colspan="5" class="empty">
+          Savdo nuqtalari yo'q. MoySklad'dan tortilishini kuting yoki
+          <code class="token">sync_catalog --only retail_stores</code> ni ishga tushiring.
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+
+  <h2>MoySklad omborlari</h2>
+  {% if warehouses %}
+    <table>
+      <tr><th>Ombor</th><th>To'liq yo'l</th></tr>
+      {% for w in warehouses %}
+        <tr><td>{{ w.name }}</td><td class="sec">{{ w.path_name|default:"—" }}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <div class="alert warn">
+      <span>i</span>
+      <div>
+        <b>Omborlar hali tortilmagan</b>
+        Ular MoySklad'dan har soatda o'zi tortiladi. Kutmaslik uchun serverda
+        <code class="token">python manage.py sync_catalog --only warehouses</code>.
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Qanday ishlaydi</b>
+      Odatda hech narsa tanlash shart emas: MoySklad'da har savdo nuqtasiga ombor
+      biriktirilgan bo'ladi va biz o'shani olamiz. Agar MoySklad'dagi bog'lanish
+      noto'g'ri bo'lsa yoki umuman yo'q bo'lsa — shu yerdan omborni qo'lda tanlaysiz,
+      va bizning tanlovimiz keyingi sinxronizatsiyalarda ham saqlanib qoladi.
+    </div>
+  </div>
+{% endblock %}

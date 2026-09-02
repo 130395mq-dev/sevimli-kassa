@@ -288,8 +288,14 @@ class SaleWriter:
             "positions": positions,
         }
 
-        if store.store_ms_id:
-            payload["store"] = meta("store", store.store_ms_id)
+        # Ombor — filialga biriktirilgani. Busiz MoySklad tovarni
+        # hisobdan chiqarmaydi, ya'ni qoldiq yolg'on bo'lib qoladi.
+        if not store.warehouse_ms_id:
+            raise WriteError(
+                f"«{store.name}» uchun ombor tanlanmagan. "
+                "Panel → Filiallar bo'limida omborni tanlang."
+            )
+        payload["store"] = meta("store", store.warehouse_ms_id)
 
         return payload
 

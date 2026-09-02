@@ -31,6 +31,7 @@ from .models import (
     Barcode,
     Customer,
     PriceType,
+    Warehouse,
     Product,
     ProductFolder,
     RetailStore,
@@ -410,6 +411,27 @@ class CatalogSync:
                     pt.delete()
         return count
 
+    # ---------------------------------------------------------------- omborlar
+
+    def sync_warehouses(self, full: bool = False) -> int:
+        return self._run("store", True, self._sync_warehouses)
+
+    def _sync_warehouses(self, state: SyncState, full: bool) -> int:
+        """`entity/store` — MoySklad omborlari («Склады»)."""
+        count = 0
+        for row in self.client.iter_list("entity/store"):
+            Warehouse.objects.update_or_create(
+                ms_id=row["id"],
+                defaults={
+                    "name": row.get("name", "") or "",
+                    "path_name": (row.get("pathName") or "")[:512],
+                    "archived": row.get("archived", False),
+                    "updated": _parse_ms_datetime(row.get("updated")),
+                },
+            )
+            count += 1
+        return count
+
     # --------------------------------------------------------- savdo nuqtalari
 
     def sync_retail_stores(self, full: bool = False) -> int:
@@ -508,6 +530,7 @@ class CatalogSync:
         # nuqtaning narx turi kerak.
         return {
             "price_types": self.sync_price_types(full),
+            "warehouses": self.sync_warehouses(full),
             "retail_stores": self.sync_retail_stores(full),
             "folders": self.sync_folders(full),
             "products": self.sync_products(full),

@@ -313,6 +313,7 @@ def registers(request):
     latest = KassaRelease.latest()
     rows = list(Register.objects.select_related("store"))
     for r in rows:
+        r.warehouse_name = r.store.warehouse_name
         # Panelda: yashil — eng yangi, sariq — eskirgan, kulrang — noma'lum
         if not r.app_version:
             r.version_state = "off"
@@ -325,6 +326,62 @@ def registers(request):
         "rows": rows,
         "stores": RetailStore.objects.filter(active=True),
         "latest": latest,
+    })
+
+
+@login_required
+def stores(request):
+    """Filiallar — har savdo nuqtasi qaysi ombordan sotadi.
+
+    Kassa filialga biriktirilgan, filial esa omborga. Chek MoySklad'ga
+    yozilganda tovar aynan shu ombordan chiqadi va kassadagi qoldiq ham
+    shuniki. MoySklad'da savdo nuqtasiga ombor biriktirilgan bo'ladi —
+    biz uni o'qiymiz; noto'g'ri bo'lsa shu yerdan boshqasini tanlash
+    mumkin (bizning tanlovimiz sinxronizatsiyada ustun turadi).
+    """
+    from catalog.models import RetailStore, Warehouse
+
+    if request.method == "POST":
+        store = RetailStore.objects.filter(pk=request.POST.get("id")).first()
+        if not store:
+            messages.error(request, "Filial topilmadi")
+        else:
+            raw = (request.POST.get("warehouse") or "").strip()
+            if not raw:
+                store.manual_warehouse_ms_id = None
+                store.save(update_fields=["manual_warehouse_ms_id"])
+                messages.success(
+                    request,
+                    f"{store.name}: ombor MoySklad'dagi savdo nuqtasidan olinadi"
+                    + (f" ({store.warehouse_name})" if store.warehouse_ms_id else ""),
+                )
+            elif Warehouse.objects.filter(ms_id=raw).exists():
+                store.manual_warehouse_ms_id = raw
+                store.save(update_fields=["manual_warehouse_ms_id"])
+                messages.success(request, f"{store.name}: ombor — {store.warehouse_name}")
+            else:
+                messages.error(request, "Bunday ombor yo'q")
+        return redirect("dashboard:stores")
+
+    rows = list(
+        RetailStore.objects.filter(active=True).prefetch_related("registers")
+    )
+    warehouses = list(Warehouse.objects.filter(archived=False))
+    by_id = {str(w.ms_id): w for w in warehouses}
+
+    for r in rows:
+        ms_id = str(r.warehouse_ms_id) if r.warehouse_ms_id else ""
+        r.wh = by_id.get(ms_id)
+        r.wh_manual = bool(r.manual_warehouse_ms_id)
+        r.wh_id = ms_id
+        r.register_count = r.registers.count()
+
+    missing = [r for r in rows if not r.wh]
+
+    return render(request, "dashboard/stores.html", {
+        "rows": rows,
+        "warehouses": warehouses,
+        "missing": missing,
     })
 
 

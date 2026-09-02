@@ -224,6 +224,28 @@ class Customer(models.Model):
         return max(self.balance, 0) / 100
 
 
+class Warehouse(models.Model):
+    """Ombor — MoySklad «Склады».
+
+    Har filialning o'z ombori bor. Chek MoySklad'ga yozilganda tovar
+    aynan shu ombordan hisobdan chiqadi, kassadagi qoldiq ham shuniki.
+    """
+
+    ms_id = models.UUIDField(unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    path_name = models.CharField(max_length=512, blank=True)
+    archived = models.BooleanField(default=False)
+    updated = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Ombor"
+        verbose_name_plural = "Omborlar"
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class PriceType(models.Model):
     """Narx turi — MoySklad «Типы цен» (Чакана нарх, Улугржи нархи …)."""
 
@@ -252,6 +274,15 @@ class RetailStore(models.Model):
     # narx emas (u ulgurji bo'lib chiqishi mumkin).
     price_type_ms_id = models.UUIDField(null=True, blank=True)
     price_type_name = models.CharField(max_length=255, blank=True)
+
+    # Ombor qo'lda tanlangan bo'lsa — shu. Bo'sh bo'lsa MoySklad'dagi
+    # savdo nuqtasiga biriktirilgan ombor (`store_ms_id`) ishlatiladi.
+    # Alohida maydon kerak: `store_ms_id` har sinxronizatsiyada
+    # MoySklad'dan qayta yoziladi, qo'lda tanlangani esa qolishi kerak.
+    manual_warehouse_ms_id = models.UUIDField(
+        null=True, blank=True, verbose_name="Qo'lda tanlangan ombor"
+    )
+
     active = models.BooleanField(default=True)
     updated = models.DateTimeField(null=True, blank=True)
 
@@ -262,3 +293,21 @@ class RetailStore(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def warehouse_ms_id(self):
+        """Bu filial qaysi ombordan sotadi. Kassa ham, MoySklad yozuvi ham
+        shu qiymatga qaraydi — bitta manba, ikki joyda ishlatilmaydi."""
+        return self.manual_warehouse_ms_id or self.store_ms_id
+
+    @property
+    def warehouse(self) -> "Warehouse | None":
+        ms_id = self.warehouse_ms_id
+        return Warehouse.objects.filter(ms_id=ms_id).first() if ms_id else None
+
+    @property
+    def warehouse_name(self) -> str:
+        wh = self.warehouse
+        if wh:
+            return wh.name
+        return "" if not self.warehouse_ms_id else "(MoySklad'dan topilmadi)"

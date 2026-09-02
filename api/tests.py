@@ -569,3 +569,34 @@ class CashierLoginTest(ApiTestCase):
         no = self.post("/api/v1/login", {"login": "aziz", "password": "1234"})
         self.assertEqual(no.status_code, 403)
         self.assertIn("ruxsat", no.json()["error"])
+
+
+class WarehouseGuardTest(ApiTestCase):
+    """Ombor tanlanmagan filialda smena ochilmaydi."""
+
+    def test_omborsiz_smena_ochilmaydi(self):
+        self.store.store_ms_id = None
+        self.store.save()
+        r = self.open_shift()
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("ombor", r.json()["error"].lower())
+
+    def test_ombor_bor_bolsa_ochiladi(self):
+        self.assertEqual(self.open_shift().status_code, 201)
+
+    def test_qoldiq_filial_ombori_boyicha(self):
+        from catalog.models import Stock
+
+        boshqa = "00000000-0000-0000-0000-0000000000cc"
+        Stock.objects.create(product=self.product, store_ms_id=self.store.store_ms_id,
+                             quantity=7)
+        Stock.objects.create(product=self.product, store_ms_id=boshqa, quantity=99)
+
+        r = self.client.get("/api/v1/catalog", **self.auth()).json()
+        self.assertEqual(r["products"][0]["stock"], 7.0)
+
+        # Ombor qo'lda boshqasiga o'zgartirilsa — qoldiq ham o'sha ombornikiga
+        self.store.manual_warehouse_ms_id = boshqa
+        self.store.save()
+        r = self.client.get("/api/v1/catalog", **self.auth()).json()
+        self.assertEqual(r["products"][0]["stock"], 99.0)

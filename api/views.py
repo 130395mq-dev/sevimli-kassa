@@ -450,7 +450,7 @@ def catalog(request):
     stock = {
         s.product_id: s.quantity
         for s in Stock.objects.filter(
-            product__in=rows, store_ms_id=request.register.store.store_ms_id
+            product__in=rows, store_ms_id=request.register.store.warehouse_ms_id
         )
     }
 
@@ -650,6 +650,15 @@ def shift_open(request):
 
     if reg.shifts.filter(status=Shift.OPEN).exists():
         return error("Bu kassada ochiq smena bor", status=409)
+
+    # Ombor tanlanmagan bo'lsa savdo MoySklad'ga yozilmaydi — smenani
+    # umuman ochmaymiz, aks holda kun oxirida «cheklar ketmabdi» bo'ladi.
+    if not reg.store.warehouse_ms_id:
+        return error(
+            f"«{reg.store.name}» uchun ombor tanlanmagan. "
+            "Panel → Filiallar bo'limida omborni tanlang.",
+            status=409,
+        )
 
     # Smenani faqat kirgan kassir ocha oladi
     cashier_ref = None
