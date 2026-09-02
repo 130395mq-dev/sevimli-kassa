@@ -342,6 +342,64 @@ class CatalogSync:
             count += 1
         return count
 
+    # ------------------------------------------- o'chirilgan tovarlar (reconcile)
+
+    def reconcile_deleted(self) -> int:
+        return self._run("reconcile", True, self._reconcile_deleted)
+
+    def _reconcile_deleted(self, state: SyncState, full: bool) -> int:
+        """
+        MoySklad'dan BUTUNLAY o'chirilgan (yoki arxivlangan) tovarlarni topadi.
+
+        Delta sync `updated` bo'yicha ishlaydi — lekin o'chirilgan tovar
+        ro'yxatda umuman kelmaydi, u haqida hech qanday signal yo'q.
+        Shuning uchun vaqti-vaqti bilan MoySklad'dagi jonli ID'lar ro'yxatini
+        olib, bizda bor-u u yerda yo'q tovarlarni `archived=True` qilamiz.
+        Kassa keyingi delta'da ularni o'chirib tashlaydi.
+
+        Xavfsizlik: MoySklad kutilmaganda juda oz qaytarsa (API nosozligi,
+        yarim javob) — hech narsa o'chirmaymiz. Aks holda bir xato bilan
+        butun katalog «o'chirilgan» bo'lib qolardi.
+        """
+        live: set[str] = set()
+        for row in self.client.iter_list("entity/assortment"):
+            ms_id = row.get("id")
+            if ms_id:
+                live.add(str(ms_id).lower())
+
+        local = {
+            str(u).lower()
+            for u in Product.objects.filter(archived=False).values_list("ms_id", flat=True)
+        }
+        if not local:
+            return 0
+
+        # Himoya: MoySklad lokaldagining yarmidan kamini qaytarsa — shubhali.
+        if len(live) < len(local) // 2:
+            logger.warning(
+                "Reconcile to'xtatildi: MoySklad %s ta, lokal %s ta — juda katta farq",
+                len(live), len(local),
+            )
+            return 0
+
+        missing = local - live
+        if not missing:
+            return 0
+
+        now = dj_timezone.now()
+        count = 0
+        missing_list = sorted(missing)
+        # Katta IN-ro'yxatni bo'lib yuboramiz
+        for i in range(0, len(missing_list), 500):
+            chunk = missing_list[i:i + 500]
+            # queryset.update() auto_now'ni ishlatmaydi — synced_at ni
+            # qo'lda qo'yamiz, aks holda kassa delta'si buni ko'rmaydi.
+            count += Product.objects.filter(ms_id__in=chunk).update(
+                archived=True, synced_at=now
+            )
+        logger.info("Reconcile: %s ta tovar MoySklad'da yo'q — arxivlandi", count)
+        return count
+
     # ------------------------------------------------------------------ hammasi
 
     @transaction.atomic

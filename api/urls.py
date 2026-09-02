@@ -10,6 +10,7 @@ urlpatterns = [
     path("hello", views.hello, name="hello"),
     path("version", views.version, name="version"),
     path("catalog", views.catalog, name="catalog"),
+    path("catalog/refresh", views.catalog_refresh, name="catalog-refresh"),
     path("customers", views.customers, name="customers"),
     path("customers/create", views.create_customer, name="customer-create"),
     path("shift/open", views.shift_open, name="shift-open"),

@@ -9,6 +9,7 @@ Endpointlar:
 
     GET  /api/v1/hello              kassa kim, smena ochiqmi
     GET  /api/v1/catalog?since=     tovarlar (o'zgarganlari)
+    POST /api/v1/catalog/refresh    MoySklad'dan darhol tortish (tugma)
     GET  /api/v1/customers?q=       mijoz qidirish
     POST /api/v1/shift/open         smena ochish
     POST /api/v1/shift/close        smena yopish, chek matni qaytadi
@@ -333,13 +334,17 @@ def catalog(request):
     Kassa birinchi marta hammasini oladi, keyin faqat farqni. Katalog
     katta bo'lgani uchun sahifalab beriladi.
     """
-    qs = Product.objects.filter(archived=False)
-
     since = request.GET.get("since")
-    if since:
-        dt = parse_datetime(since)
-        if dt:
-            qs = qs.filter(synced_at__gte=dt)
+    dt = parse_datetime(since) if since else None
+
+    if dt:
+        # Delta: arxivlangan/o'chirilganlar HAM keladi (`archived: true`) —
+        # kassa ularni lokal bazadan o'chiradi. Aks holda buxgalter
+        # o'chirgan tovar kassada abadiy qolib ketardi.
+        qs = Product.objects.filter(synced_at__gte=dt)
+    else:
+        # To'liq yuklash: faqat tiriklari
+        qs = Product.objects.filter(archived=False)
 
     after = request.GET.get("after")
     if after:
@@ -373,6 +378,7 @@ def catalog(request):
                     "tracked": p.tracked,
                     "barcode": codes.get(p.pk, ""),
                     "stock": float(stock.get(p.pk, 0)),
+                    "archived": p.archived,
                 }
                 for p in rows
             ],
@@ -380,6 +386,66 @@ def catalog(request):
             "server_time": timezone.now().isoformat(),
         }
     )
+
+
+# Bir vaqtda bitta yangilanish — 10 ta kassa birdan bossa ham MoySklad'ga
+# bitta so'rov to'plami ketadi, qolganlari «band» javobini oladi va
+# shunchaki delta'ni tortadi (birinchisi tugagach o'zgarishlar tayyor).
+_refresh_lock = threading.Lock()
+REFRESH_COOLDOWN_SEC = 30
+
+
+@csrf_exempt
+@require_POST
+@register_required
+def catalog_refresh(request):
+    """Kassadagi «Ma'lumotlarni yangilash» — MoySklad'dan DARHOL tortadi.
+
+    Cron 5 daqiqada bir yuradi; buxgalter narxni o'zgartirib «hozir
+    yangilansin» desa — kassir shu tugmani bosadi. Delta (faqat
+    o'zgarganlar) tortiladi: odatda 1-3 soniya.
+
+    Javob:
+        {"ran": true,  "products": 12, "customers": 0}   — tortildi
+        {"ran": false, "reason": "busy"|"cooldown"}       — hozirgina tortilgan
+        {"ran": false, "reason": "error", "error": "..."} — MoySklad xatosi
+    Har qanday holatda kassa keyin GET /catalog?since= bilan farqni oladi.
+    """
+    from datetime import timedelta
+
+    from catalog.models import SyncState
+    from catalog.sync import CatalogSync
+    from moysklad.client import MoySkladClient, MoySkladError
+
+    token = getattr(settings, "MOYSKLAD_TOKEN", "")
+    if not token:
+        return JsonResponse({"ran": False, "reason": "no_token"})
+
+    # Hozirgina tortilgan bo'lsa — MoySklad limitini bekorga sarflamaymiz
+    state = SyncState.objects.filter(entity="assortment").first()
+    if state and state.last_success_at and (
+        timezone.now() - state.last_success_at < timedelta(seconds=REFRESH_COOLDOWN_SEC)
+    ):
+        return JsonResponse({"ran": False, "reason": "cooldown"})
+
+    if not _refresh_lock.acquire(blocking=False):
+        return JsonResponse({"ran": False, "reason": "busy"})
+    try:
+        sync = CatalogSync(MoySkladClient(token=token))
+        try:
+            products = sync.sync_products()
+            customers = sync.sync_customers()
+        except MoySkladError as exc:
+            logger.warning("Kassa yangilanishi: MoySklad xatosi: %s", exc)
+            return JsonResponse({"ran": False, "reason": "error", "error": str(exc)[:200]})
+    finally:
+        _refresh_lock.release()
+
+    logger.info(
+        "Kassa %s yangilanish so'radi: %s tovar, %s mijoz",
+        request.register.code, products, customers,
+    )
+    return JsonResponse({"ran": True, "products": products, "customers": customers})
 
 
 @require_GET

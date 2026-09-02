@@ -39,8 +39,18 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--only",
-            choices=["folders", "products", "customers", "stock", "retail_stores"],
-            help="Faqat bitta turni sinxronlaydi",
+            choices=["folders", "products", "customers", "stock", "retail_stores",
+                     "reconcile"],
+            help="Faqat bitta turni sinxronlaydi "
+                 "(reconcile — MoySklad'da o'chirilgan tovarlarni arxivlaydi)",
+        )
+        parser.add_argument(
+            "--if-due",
+            type=int,
+            metavar="DAQIQA",
+            default=0,
+            help="--only bilan: oxirgi muvaffaqiyatdan shuncha daqiqa "
+                 "o'tmagan bo'lsa — hech narsa qilmaydi (cron uchun)",
         )
 
     def handle(self, *args, **options):
@@ -59,6 +69,15 @@ class Command(BaseCommand):
 
         sync = CatalogSync(client)
         started = time.monotonic()
+
+        if options["only"] and options["if_due"] and not self._is_due(
+            options["only"], options["if_due"]
+        ):
+            self.stdout.write(
+                f"«{options['only']}» hali navbati kelmadi "
+                f"({options['if_due']} daqiqa o'tmagan) — o'tkazib yuborildi"
+            )
+            return
 
         try:
             if options["only"]:
@@ -91,8 +110,31 @@ class Command(BaseCommand):
             "customers": lambda: sync.sync_customers(full),
             "retail_stores": lambda: sync.sync_retail_stores(full),
             "stock": sync.sync_stock,
+            "reconcile": sync.reconcile_deleted,
         }[kind]
         return {kind: method()}
+
+    # SyncState.entity nomlari `--only` qiymatidan farq qiladi
+    _ENTITY = {
+        "folders": "productfolder",
+        "products": "assortment",
+        "customers": "counterparty",
+        "retail_stores": "retailstore",
+        "stock": "stock",
+        "reconcile": "reconcile",
+    }
+
+    def _is_due(self, kind: str, minutes: int) -> bool:
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from catalog.models import SyncState
+
+        state = SyncState.objects.filter(entity=self._ENTITY[kind]).first()
+        if not state or not state.last_success_at:
+            return True
+        return timezone.now() - state.last_success_at >= timedelta(minutes=minutes)
 
     def _check(self, client: MoySkladClient) -> None:
         try:

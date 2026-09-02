@@ -249,6 +249,64 @@ class CatalogTest(ApiTestCase):
         r = self.client.get("/api/v1/catalog", **self.auth())
         self.assertEqual(r.json()["products"], [])
 
+    def test_deltada_arxivlangan_tovar_archived_bayrogi_bilan_keladi(self):
+        """Buxgalter o'chirgan tovar kassaga «o'chir» signali bilan yetadi."""
+        from datetime import timedelta
+
+        since = (timezone.now() - timedelta(minutes=1)).isoformat()
+        self.product.archived = True
+        self.product.save()
+        r = self.client.get("/api/v1/catalog", {"since": since}, **self.auth())
+        products = r.json()["products"]
+        self.assertEqual(len(products), 1)
+        self.assertTrue(products[0]["archived"])
+
+    def test_refresh_tokensiz_xatosiz_qaytadi(self):
+        with self.settings(MOYSKLAD_TOKEN=""):
+            r = self.post("/api/v1/catalog/refresh", {})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.json()["ran"])
+
+    def test_refresh_hozirgina_bolgan_bolsa_cooldown(self):
+        from catalog.models import SyncState
+
+        SyncState.objects.create(entity="assortment", last_success_at=timezone.now())
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            r = self.post("/api/v1/catalog/refresh", {})
+        self.assertEqual(r.json(), {"ran": False, "reason": "cooldown"})
+
+
+class ReconcileTest(TestCase):
+    """MoySklad'dan butunlay o'chirilgan tovar lokalda arxivlanadi."""
+
+    def _sync(self, live_ids):
+        from unittest.mock import MagicMock
+
+        from catalog.sync import CatalogSync
+
+        client = MagicMock()
+        client.iter_list.return_value = iter([{"id": i} for i in live_ids])
+        return CatalogSync(client)
+
+    def test_yoq_tovar_arxivlanadi(self):
+        a = Product.objects.create(ms_id="00000000-0000-0000-0000-0000000000a1", name="A")
+        b = Product.objects.create(ms_id="00000000-0000-0000-0000-0000000000b1", name="B")
+        old_synced = b.synced_at
+        count = self._sync([str(a.ms_id)]).reconcile_deleted()
+        self.assertEqual(count, 1)
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertFalse(a.archived)
+        self.assertTrue(b.archived)
+        # synced_at yangilangan — kassa delta'si buni ko'radi
+        self.assertGreater(b.synced_at, old_synced)
+
+    def test_moysklad_bosh_qaytarsa_hech_narsa_ochirilmaydi(self):
+        Product.objects.create(ms_id="00000000-0000-0000-0000-0000000000a1", name="A")
+        Product.objects.create(ms_id="00000000-0000-0000-0000-0000000000b1", name="B")
+        count = self._sync([]).reconcile_deleted()
+        self.assertEqual(count, 0)
+        self.assertEqual(Product.objects.filter(archived=True).count(), 0)
+
 
 class CustomerTest(ApiTestCase):
     def test_qisqa_sorov_rad_etiladi(self):
