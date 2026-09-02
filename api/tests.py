@@ -493,7 +493,8 @@ class PriceTypeTest(ApiTestCase):
                          ["Улугржи нархи", "Чакана нарх"])
         # Nuqtada tur yo'q, sozlamada yo'q → «чакана» so'zi bo'yicha
         self.assertEqual(data["default_price_type"], "00000000-0000-0000-0000-00000000bbbb")
-        self.assertTrue(data["settings"]["allow_price_type_switch"])
+        # Kassada almashtirish tugmasi yo'q — narx paneldan biriktiriladi
+        self.assertFalse(data["settings"]["allow_price_type_switch"])
 
     def test_nuqta_narx_turi_ustun(self):
         self.store.price_type_ms_id = "00000000-0000-0000-0000-00000000aaaa"

@@ -340,6 +340,57 @@ def registers(request):
 
 
 @login_required
+def prices(request):
+    """Qaysi kassa qaysi narxda sotadi — chakana yoki ulgurji.
+
+    Ilgari buni kassir kassaning o'zida almashtirardi. Bu xato manbai
+    edi: chakana mijozga ulgurji narx berib yuborish uchun bitta noto'g'ri
+    bosish yetardi va buni faqat kun oxirida sezilardi.
+
+    Endi narxni shu yerdan biriktiriladi. Kassada tugma umuman
+    ko'rinmaydi — kassir narxni o'zgartira olmaydi.
+    """
+    from catalog.models import PriceType
+    from sales.models import RegisterSettings
+
+    types = list(PriceType.objects.all())
+
+    if request.method == "POST":
+        changed = 0
+        for reg in Register.objects.all():
+            value = request.POST.get(f"pt-{reg.pk}")
+            if value is None:
+                continue
+            st = reg.settings
+            if st.price_type != value or st.allow_price_type_switch:
+                st.price_type = value
+                # Kassada almashtirish tugmasi chiqmasin
+                st.allow_price_type_switch = False
+                st.save(update_fields=["price_type", "allow_price_type_switch"])
+                changed += 1
+        messages.success(
+            request,
+            f"{changed} ta kassaning narxi yangilandi. Kassalar bir daqiqada oladi."
+            if changed else "O'zgarish yo'q.",
+        )
+        return redirect("dashboard:prices")
+
+    rows = []
+    for reg in Register.objects.select_related("settings_row").order_by("name"):
+        st = reg.settings
+        rows.append({
+            "reg": reg,
+            "current": (st.price_type or "").strip(),
+            "warehouse": reg.warehouse_name,
+        })
+
+    return render(request, "dashboard/prices.html", {
+        "rows": rows,
+        "types": types,
+    })
+
+
+@login_required
 def releases(request):
     """Kassa ilovasining versiyalari.
 

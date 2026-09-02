@@ -1,0 +1,81 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Sotuv narxi — Sevimli Kassa{% endblock %}
+{% block nav_prices %}on{% endblock %}
+
+{% block crumb %}Sotuv narxi{% endblock %}
+
+{% block body %}
+  <h1>Sotuv narxi</h1>
+  <div class="sub">Qaysi kassa qaysi narxda sotadi — chakana yoki ulgurji</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if not types %}
+    <div class="alert err">
+      <span>✕</span>
+      <div>
+        <b>Narx turlari hali yuklanmagan</b>
+        MoySklad'dan narx turlari kelmagan. «Bugungi savdo» sahifasidagi
+        yangilashni ishga tushiring yoki 5 daqiqa kuting.
+      </div>
+    </div>
+  {% else %}
+    <form method="post">
+      {% csrf_token %}
+      <table>
+        <tr><th>Ombor (sklad)</th><th>Kassa</th><th>Sotuv narxi</th></tr>
+        {% for r in rows %}
+          <tr>
+            <td>{% if r.warehouse %}<b>{{ r.warehouse }}</b>
+                {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
+            <td class="tight">
+              {{ r.reg.name }}
+              {% if not r.reg.active %}<span class="badge off">bloklangan</span>{% endif %}
+            </td>
+            <td>
+              <select name="pt-{{ r.reg.pk }}">
+                {% for t in types %}
+                  <option value="{{ t.name }}" {% if r.current == t.name %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="empty">Kassa qo'shilmagan.</td></tr>
+        {% endfor %}
+      </table>
+
+      {% if rows %}
+        <button type="submit" style="margin-top: 18px;">Saqlash</button>
+      {% endif %}
+    </form>
+  {% endif %}
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Kassada narx almashtirilmaydi</b>
+      Kassir kassaning o'zida chakana va ulgurji o'rtasida almashtira
+      olmaydi — tugma umuman ko'rinmaydi. Narx faqat shu yerdan
+      belgilanadi. Shu tufayli chakana mijozga ulgurji narx ketib
+      qolmaydi.
+      <br><br>
+      <b>Qachon ta'sir qiladi</b>
+      Saqlaganingizdan keyin kassalar bir daqiqa ichida yangi narxni oladi.
+      Ochiq chek bo'lsa — u tugagach.
+      <br><br>
+      <b>Ulgurji do'kon</b>
+      Ulgurji sotadigan filialga alohida kassa yaratib, shu yerda unga
+      «Ulgurji» narxini belgilaysiz. Chakana do'konlar chakana narxda
+      qolaveradi.
+    </div>
+  </div>
+{% endblock %}

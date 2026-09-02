@@ -180,3 +180,50 @@ class RegistersPageTest(TestCase):
 
     def test_kassirlar_sahifasi_yoq(self):
         self.assertEqual(self.client.get("/kassirlar/").status_code, 404)
+
+
+class PricesPageTest(TestCase):
+    """Sotuv narxi: kassa qaysi narxda sotishi paneldan belgilanadi."""
+
+    def setUp(self):
+        from catalog.models import PriceType, Warehouse
+
+        User.objects.create_superuser("admin3", "a3@a.uz", "admin")
+        self.client.login(username="admin3", password="admin")
+        self.wh = Warehouse.objects.create(
+            ms_id="22222222-2222-2222-2222-222222222222", name="Ulgurji"
+        )
+        PriceType.objects.create(
+            ms_id="33333333-3333-3333-3333-333333333333", name="Чакана нарх", sort=1
+        )
+        PriceType.objects.create(
+            ms_id="44444444-4444-4444-4444-444444444444", name="Улгуржи нархи", sort=2
+        )
+        self.client.post("/kassalar/", {
+            "action": "create", "warehouse": str(self.wh.ms_id),
+        })
+
+    def test_narx_biriktiriladi_va_tugma_ochadi(self):
+        from sales.models import Register
+
+        reg = Register.objects.get()
+        st = reg.settings
+        st.allow_price_type_switch = True
+        st.save()
+
+        r = self.client.post("/narxlar/", {
+            f"pt-{reg.pk}": "Улгуржи нархи",
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)
+
+        st.refresh_from_db()
+        self.assertEqual(st.price_type, "Улгуржи нархи")
+        # Kassada almashtirish tugmasi chiqmaydi
+        self.assertFalse(st.allow_price_type_switch)
+
+    def test_sahifa_kassalarni_korsatadi(self):
+        r = self.client.get("/narxlar/")
+        self.assertEqual(r.status_code, 200)
+        body = r.content.decode()
+        self.assertIn("Ulgurji", body)
+        self.assertIn("Чакана нарх", body)

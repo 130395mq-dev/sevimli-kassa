@@ -10,6 +10,7 @@ urlpatterns = [
     path("smena/<int:pk>/", views.shift_detail, name="shift-detail"),
     path("kassalar/", views.registers, name="registers"),
     path("kassa/<int:pk>/sozlash/", views.register_edit, name="register-edit"),
+    path("narxlar/", views.prices, name="prices"),
     path("versiyalar/", views.releases, name="releases"),
     path("ornatish/", views.installer, name="installer"),
     path("ornatish/fayl/", views.installer_download, name="installer-download"),

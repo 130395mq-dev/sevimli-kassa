@@ -272,10 +272,13 @@ class RegisterSettings(models.Model):
     price_type = models.CharField("Narx turi", max_length=64, blank=True, default="")
     allow_price_edit = models.BooleanField("Sotuvda narxni o'zgartirishga ruxsat", default=False)
     # Kassir kassada narx turini almashtira oladimi (chakana ↔ ulgurji).
-    # Ulgurji mijoz kelganda kassir «Ulgurji» ni tanlaydi — chek shu
-    # narxda chiqadi. Ruxsat bo'lmasa — faqat asosiy tur.
+    #
+    # Endi standart — YO'Q. Narx panelning «Sotuv narxi» sahifasidan
+    # biriktiriladi. Sabab: kassada tugma turganida chakana mijozga
+    # ulgurji narx berib yuborish uchun bitta noto'g'ri bosish yetardi,
+    # va buni faqat kun oxirida sezilardi.
     allow_price_type_switch = models.BooleanField(
-        "Kassirga narx turini almashtirishga ruxsat", default=True
+        "Kassirga narx turini almashtirishga ruxsat", default=False
     )
 
     # ------------------------------------------------ Продажи

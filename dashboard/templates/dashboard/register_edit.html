@@ -121,10 +121,10 @@
             {% endfor %}
           </select>
         </label>
-        <label class="chk">
-          <input type="checkbox" name="allow_price_type_switch" {% if st.allow_price_type_switch %}checked{% endif %}>
-          <span>Kassirga narx turini almashtirishga ruxsat (chakana ↔ ulgurji) — kassada tugma chiqadi</span>
-        </label>
+        <div class="sec" style="margin: 6px 0 10px;">
+          Narxni kassir kassada almashtira olmaydi. Hamma kassaning narxini
+          bir joyda ko'rish uchun: <a href="{% url 'dashboard:prices' %}">Sotuv narxi</a>
+        </div>
         <label class="chk">
           <input type="checkbox" name="allow_price_edit" {% if st.allow_price_edit %}checked{% endif %}>
           <span>Sotuvda narxni o'zgartirishga ruxsat</span>
