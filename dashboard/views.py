@@ -435,7 +435,7 @@ def releases(request):
 _SETTINGS_BOOLS = [
     "enabled",
     "allow_choose_cashier",
-    "allow_price_edit",
+    "allow_price_edit", "allow_price_type_switch",
     "allow_delete_line", "allow_discount",
     "allow_create_product", "track_stock", "track_reserves",
     "add_customers_to_groups", "upload_customers_offline",
@@ -527,10 +527,14 @@ def register_edit(request, pk: int):
     if reg.store_id and all(s.pk != reg.store_id for s in real_stores):
         real_stores.insert(0, reg.store)
 
+    from catalog.models import PriceType
+
     return render(request, "dashboard/register_edit.html", {
         "reg": reg,
         "st": st,
         "cashiers": Cashier.objects.filter(active=True),
         "allowed_ids": set(st.allowed_cashiers.values_list("pk", flat=True)),
         "stores": real_stores,
+        "price_types": PriceType.objects.all(),
+        "store_price_type": reg.store.price_type_name or "",
     })

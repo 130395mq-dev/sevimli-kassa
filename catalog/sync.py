@@ -30,6 +30,7 @@ from moysklad.client import MoySkladClient, MoySkladError
 from .models import (
     Barcode,
     Customer,
+    PriceType,
     Product,
     ProductFolder,
     RetailStore,
@@ -169,6 +170,7 @@ class CatalogSync:
         """
         params = self._delta_filter(state, full)
         count = 0
+        preferred = self._preferred_price_types()
 
         for row in self.client.iter_list("entity/assortment", **params):
             kind = row.get("meta", {}).get("type", Product.KIND_PRODUCT)
@@ -202,7 +204,8 @@ class CatalogSync:
                     "plu": plu_val,
                     "article": row.get("article", "") or "",
                     "folder": folder,
-                    "sale_price": self._first_sale_price(row),
+                    "sale_price": self._retail_price(row, preferred),
+                    "prices": self._all_prices(row),
                     "uom_name": uom_name,
                     "is_weight": is_weight,
                     "vat": row.get("vat"),
@@ -216,14 +219,72 @@ class CatalogSync:
 
         return count
 
+    # Narx turi nomida shu so'zlar bo'lsa — bu chakana narx
+    RETAIL_WORDS = ("чакана", "chakana", "розничн", "retail")
+
     @staticmethod
-    def _first_sale_price(row: dict) -> int:
-        """Birinchi sotuv narxini tiyinlarda qaytaradi."""
+    def _all_prices(row: dict) -> dict[str, int]:
+        """Hamma sotuv narxlari: {narx_turi_id: tiyin}."""
+        out: dict[str, int] = {}
+        for p in row.get("salePrices") or []:
+            pt = p.get("priceType") or {}
+            pid = str(pt.get("id") or _ms_id(pt) or "").lower()
+            if not pid:
+                continue
+            v = p.get("value")
+            out[pid] = int(v) if v is not None else 0
+        return out
+
+    @staticmethod
+    def _preferred_price_types() -> tuple[set[str], set[str]]:
+        """Savdo nuqtalariga biriktirilgan narx turlari: (id'lar, nomlar)."""
+        ids: set[str] = set()
+        names: set[str] = set()
+        for pid, pname in RetailStore.objects.filter(active=True).values_list(
+            "price_type_ms_id", "price_type_name"
+        ):
+            if pid:
+                ids.add(str(pid).lower())
+            if pname:
+                names.add(pname.strip().lower())
+        return ids, names
+
+    @classmethod
+    def _retail_price(cls, row: dict, preferred: tuple[set[str], set[str]]) -> int:
+        """Kassa sotadigan narx (tiyinlarda).
+
+        MoySklad'da bir tovarda bir nechta sotuv narxi bo'ladi («Чакана
+        нарх», «Улугржи нархи» …) va ro'yxatdagi tartib — narx turlari
+        yaratilgan tartib, ya'ni birinchisi ulgurji bo'lib chiqishi mumkin.
+        Shuning uchun tanlash tartibi:
+
+            1. savdo nuqtasiga biriktirilgan narx turi (id bo'yicha)
+            2. o'sha narx turining nomi bo'yicha
+            3. nomida «чакана» / «розничная» bo'lgan narx
+            4. birinchisi (boshqa iloj yo'q)
+        """
         prices = row.get("salePrices") or []
         if not prices:
             return 0
-        value = prices[0].get("value")
-        return int(value) if value is not None else 0
+
+        def value(p: dict) -> int:
+            v = p.get("value")
+            return int(v) if v is not None else 0
+
+        ids, names = preferred
+        for p in prices:
+            pt = p.get("priceType") or {}
+            if str(pt.get("id", "")).lower() in ids:
+                return value(p)
+        for p in prices:
+            pt = p.get("priceType") or {}
+            if (pt.get("name") or "").strip().lower() in names:
+                return value(p)
+        for p in prices:
+            name = ((p.get("priceType") or {}).get("name") or "").lower()
+            if any(w in name for w in cls.RETAIL_WORDS):
+                return value(p)
+        return value(prices[0])
 
     @staticmethod
     def _sync_barcodes(product: Product, barcodes: list[dict]) -> None:
@@ -320,6 +381,35 @@ class CatalogSync:
                     continue
         return Decimal("0")
 
+    # ------------------------------------------------------------ narx turlari
+
+    def sync_price_types(self, full: bool = False) -> int:
+        return self._run("pricetype", True, self._sync_price_types)
+
+    def _sync_price_types(self, state: SyncState, full: bool) -> int:
+        """`context/companysettings/pricetype` — ro'yxat, sahifalanmagan."""
+        rows = self.client.get("context/companysettings/pricetype") or []
+        if isinstance(rows, dict):
+            rows = rows.get("rows") or []
+        count = 0
+        seen: list[str] = []
+        for i, row in enumerate(rows):
+            ms_id = row.get("id") or _ms_id(row)
+            if not ms_id:
+                continue
+            PriceType.objects.update_or_create(
+                ms_id=ms_id,
+                defaults={"name": row.get("name", "") or "", "sort": i},
+            )
+            seen.append(str(ms_id).lower())
+            count += 1
+        # MoySklad'da o'chirilgan narx turlari bizda ham qolmasin
+        if seen:
+            for pt in PriceType.objects.all():
+                if str(pt.ms_id).lower() not in seen:
+                    pt.delete()
+        return count
+
     # --------------------------------------------------------- savdo nuqtalari
 
     def sync_retail_stores(self, full: bool = False) -> int:
@@ -328,12 +418,15 @@ class CatalogSync:
     def _sync_retail_stores(self, state: SyncState, full: bool) -> int:
         count = 0
         for row in self.client.iter_list("entity/retailstore"):
+            price_type = row.get("priceType") or {}
             RetailStore.objects.update_or_create(
                 ms_id=row["id"],
                 defaults={
                     "name": row.get("name", ""),
                     "store_ms_id": _ms_id(row.get("store")),
                     "organization_ms_id": _ms_id(row.get("organization")),
+                    "price_type_ms_id": _ms_id(price_type) or price_type.get("id"),
+                    "price_type_name": (price_type.get("name") or "")[:255],
                     "active": row.get("active", True),
                     "updated": _parse_ms_datetime(row.get("updated")),
                 },
@@ -411,10 +504,13 @@ class CatalogSync:
         o'sha qulfni kutib 90 soniya osilib qolardi. Har bir tur o'zi
         alohida yakunlanadi — biri to'xtasa, qolganlari yozilib bo'lgan.
         """
+        # Savdo nuqtalari tovarlardan OLDIN — tovar narxini tanlash uchun
+        # nuqtaning narx turi kerak.
         return {
+            "price_types": self.sync_price_types(full),
+            "retail_stores": self.sync_retail_stores(full),
             "folders": self.sync_folders(full),
             "products": self.sync_products(full),
             "customers": self.sync_customers(full),
-            "retail_stores": self.sync_retail_stores(full),
             "stock": self.sync_stock(),
         }

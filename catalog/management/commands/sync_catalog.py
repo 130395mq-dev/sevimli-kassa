@@ -40,9 +40,16 @@ class Command(BaseCommand):
         parser.add_argument(
             "--only",
             choices=["folders", "products", "customers", "stock", "retail_stores",
-                     "reconcile"],
+                     "price_types", "reconcile"],
             help="Faqat bitta turni sinxronlaydi "
                  "(reconcile — MoySklad'da o'chirilgan tovarlarni arxivlaydi)",
+        )
+        parser.add_argument(
+            "--once",
+            metavar="KALIT",
+            default="",
+            help="Shu kalit bilan avval bajarilgan bo'lsa — o'tkazib yuboradi "
+                 "(bir martalik to'liq qayta yuklash uchun: --full --once narx-v1)",
         )
         parser.add_argument(
             "--if-due",
@@ -70,6 +77,15 @@ class Command(BaseCommand):
         sync = CatalogSync(client)
         started = time.monotonic()
 
+        once = (options.get("once") or "").strip()
+        if once:
+            from catalog.models import SyncState
+
+            key = f"once:{once}"
+            if SyncState.objects.filter(entity=key, last_success_at__isnull=False).exists():
+                self.stdout.write(f"«{once}» allaqachon bajarilgan — o'tkazib yuborildi")
+                return
+
         if options["only"] and options["if_due"] and not self._is_due(
             options["only"], options["if_due"]
         ):
@@ -93,6 +109,15 @@ class Command(BaseCommand):
                 )
             raise CommandError("Sinxronizatsiya to'xtadi")
 
+        if once:
+            from django.utils import timezone
+
+            from catalog.models import SyncState
+
+            SyncState.objects.update_or_create(
+                entity=f"once:{once}", defaults={"last_success_at": timezone.now()}
+            )
+
         elapsed = time.monotonic() - started
         self._ok(f"Tayyor — {elapsed:.1f} soniya")
         for name, count in result.items():
@@ -110,6 +135,7 @@ class Command(BaseCommand):
             "customers": lambda: sync.sync_customers(full),
             "retail_stores": lambda: sync.sync_retail_stores(full),
             "stock": sync.sync_stock,
+            "price_types": lambda: sync.sync_price_types(full),
             "reconcile": sync.reconcile_deleted,
         }[kind]
         return {kind: method()}
@@ -121,6 +147,7 @@ class Command(BaseCommand):
         "customers": "counterparty",
         "retail_stores": "retailstore",
         "stock": "stock",
+        "price_types": "pricetype",
         "reconcile": "reconcile",
     }
 

@@ -464,3 +464,55 @@ class UpdateTest(ApiTestCase):
         self.assertLess(version_key("1.9.0"), version_key("1.10.0"))
         self.assertEqual(version_key("2"), (2, 0, 0))
         self.assertEqual(version_key("v1.2.3-beta"), (1, 2, 3))
+
+
+class PriceTypeTest(ApiTestCase):
+    """Narx turlari: hello ro'yxat beradi, katalog hamma narxni beradi."""
+
+    def setUp(self):
+        super().setUp()
+        from catalog.models import PriceType
+
+        self.ulgurji = PriceType.objects.create(
+            ms_id="00000000-0000-0000-0000-00000000aaaa", name="Улугржи нархи", sort=0
+        )
+        self.chakana = PriceType.objects.create(
+            ms_id="00000000-0000-0000-0000-00000000bbbb", name="Чакана нарх", sort=1
+        )
+        self.product.prices = {
+            "00000000-0000-0000-0000-00000000aaaa": 5200000,
+            "00000000-0000-0000-0000-00000000bbbb": 5500000,
+        }
+        self.product.save()
+
+    def test_hello_narx_turlari_va_asosiysi(self):
+        data = self.client.get("/api/v1/hello", **self.auth()).json()
+        self.assertEqual([p["name"] for p in data["price_types"]],
+                         ["Улугржи нархи", "Чакана нарх"])
+        # Nuqtada tur yo'q, sozlamada yo'q → «чакана» so'zi bo'yicha
+        self.assertEqual(data["default_price_type"], "00000000-0000-0000-0000-00000000bbbb")
+        self.assertTrue(data["settings"]["allow_price_type_switch"])
+
+    def test_nuqta_narx_turi_ustun(self):
+        self.store.price_type_ms_id = "00000000-0000-0000-0000-00000000aaaa"
+        self.store.save()
+        data = self.client.get("/api/v1/hello", **self.auth()).json()
+        self.assertEqual(data["default_price_type"], "00000000-0000-0000-0000-00000000aaaa")
+
+    def test_sozlamadagi_nom_eng_ustun(self):
+        self.store.price_type_ms_id = "00000000-0000-0000-0000-00000000aaaa"
+        self.store.save()
+        st = self.register.settings
+        st.price_type = "Чакана нарх"
+        st.save()
+        data = self.client.get("/api/v1/hello", **self.auth()).json()
+        self.assertEqual(data["default_price_type"], "00000000-0000-0000-0000-00000000bbbb")
+
+    def test_katalogda_hamma_narx(self):
+        r = self.client.get("/api/v1/catalog", **self.auth()).json()
+        self.assertEqual(r["products"][0]["prices"]["00000000-0000-0000-0000-00000000aaaa"], 5200000)
+
+    def test_chekda_narx_turi_saqlanadi(self):
+        self.open_shift()
+        self.post("/api/v1/sales", self.sale_payload(price_type="Улугржи нархи"))
+        self.assertEqual(Sale.objects.get().price_type, "Улугржи нархи")

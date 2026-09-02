@@ -199,8 +199,16 @@ class RegisterSettings(models.Model):
     )
 
     # ------------------------------------------------ Цены
-    price_type = models.CharField("Narx turi", max_length=64, blank=True, default="Chakana narx")
+    # Asosiy narx turi nomi (MoySklad «Типы цен»). Bo'sh bo'lsa — savdo
+    # nuqtasiga biriktirilgan tur (odatda «Чакана нарх»).
+    price_type = models.CharField("Narx turi", max_length=64, blank=True, default="")
     allow_price_edit = models.BooleanField("Sotuvda narxni o'zgartirishga ruxsat", default=False)
+    # Kassir kassada narx turini almashtira oladimi (chakana ↔ ulgurji).
+    # Ulgurji mijoz kelganda kassir «Ulgurji» ni tanlaydi — chek shu
+    # narxda chiqadi. Ruxsat bo'lmasa — faqat asosiy tur.
+    allow_price_type_switch = models.BooleanField(
+        "Kassirga narx turini almashtirishga ruxsat", default=True
+    )
 
     # ------------------------------------------------ Продажи
     allow_delete_line = models.BooleanField("Chekdan alohida qatorni o'chirishga ruxsat", default=True)
@@ -284,6 +292,8 @@ class RegisterSettings(models.Model):
         return {
             "allow_choose_cashier": self.allow_choose_cashier,
             "allow_price_edit": self.allow_price_edit,
+            "allow_price_type_switch": self.allow_price_type_switch,
+            "price_type": self.price_type,
             "allow_delete_line": self.allow_delete_line,
             "allow_discount": self.allow_discount,
             "max_discount": float(self.max_discount),
@@ -398,6 +408,8 @@ class Sale(models.Model):
         Customer, null=True, blank=True, on_delete=models.SET_NULL, related_name="sales"
     )
     created_at = models.DateTimeField()
+    # Chek qaysi narx turida chiqqan («Чакана нарх» / «Улугржи нархи»)
+    price_type = models.CharField(max_length=64, blank=True)
 
     # Summalar — tiyinda, hammasi musbat
     gross_total = models.BigIntegerField(default=0, help_text="Chegirmasiz")

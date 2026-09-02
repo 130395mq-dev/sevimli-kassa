@@ -127,8 +127,19 @@
 
       <div class="sec-card" id="narxlar">
         <h3>Narxlar</h3>
-        <label class="fld">Narx turi
-          <input name="price_type" value="{{ st.price_type }}" placeholder="Chakana narx">
+        <label class="fld">Asosiy narx turi
+          <select name="price_type">
+            <option value="" {% if not st.price_type %}selected{% endif %}>
+              Savdo nuqtasiniki{% if store_price_type %} ({{ store_price_type }}){% endif %}
+            </option>
+            {% for pt in price_types %}
+              <option value="{{ pt.name }}" {% if st.price_type == pt.name %}selected{% endif %}>{{ pt.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_price_type_switch" {% if st.allow_price_type_switch %}checked{% endif %}>
+          <span>Kassirga narx turini almashtirishga ruxsat (chakana ↔ ulgurji) — kassada tugma chiqadi</span>
         </label>
         <label class="chk">
           <input type="checkbox" name="allow_price_edit" {% if st.allow_price_edit %}checked{% endif %}>

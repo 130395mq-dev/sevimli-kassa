@@ -240,6 +240,34 @@ def update_download(request):
 # ------------------------------------------------------------------ hello
 
 
+def _price_types_for(reg, st) -> tuple[list[dict], str]:
+    """Kassa uchun narx turlari ro'yxati va asosiysi (id).
+
+    Asosiy tur tanlanish tartibi: kassa sozlamasidagi nom → savdo
+    nuqtasiga biriktirilgan tur → nomida «чакана/розничная» bo'lgani →
+    birinchisi.
+    """
+    from catalog.models import PriceType
+    from catalog.sync import CatalogSync
+
+    rows = [{"id": str(pt.ms_id).lower(), "name": pt.name} for pt in PriceType.objects.all()]
+    if not rows:
+        return [], ""
+
+    wanted = (st.price_type or "").strip().lower()
+    if wanted:
+        for r in rows:
+            if r["name"].strip().lower() == wanted:
+                return rows, r["id"]
+    store_pt = str(reg.store.price_type_ms_id or "").lower()
+    if store_pt and any(r["id"] == store_pt for r in rows):
+        return rows, store_pt
+    for r in rows:
+        if any(w in r["name"].lower() for w in CatalogSync.RETAIL_WORDS):
+            return rows, r["id"]
+    return rows, rows[0]["id"]
+
+
 @require_GET
 @register_required
 def hello(request):
@@ -252,6 +280,8 @@ def hello(request):
     # bo'lsa — hamma faol kassir kira oladi (eski holat).
     allowed = st.allowed_cashiers.filter(active=True)
     cashier_qs = allowed if allowed.exists() else Cashier.objects.filter(active=True)
+
+    price_types, default_pt = _price_types_for(reg, st)
 
     return JsonResponse(
         {
@@ -275,6 +305,10 @@ def hello(request):
             # Kassaning sozlamalari — ilova shunga qarab ishlaydi
             # (chegirma chegarasi, majburiy maydonlar, qaytarish va h.k.).
             "settings": st.as_kassa_dict(),
+            # Narx turlari (chakana / ulgurji …) va kassaning asosiysi.
+            # Kassir ruxsat bo'lsa kassada almashtiradi.
+            "price_types": price_types,
+            "default_price_type": default_pt,
         }
     )
 
@@ -422,6 +456,7 @@ def catalog(request):
                     "tracked": p.tracked,
                     "barcode": codes.get(p.pk, ""),
                     "stock": float(stock.get(p.pk, 0)),
+                    "prices": p.prices or {},
                     "archived": p.archived,
                 }
                 for p in rows
@@ -818,6 +853,7 @@ def _save_sale(shift, data, items, payments, local_uuid):
         customer=customer,
         origin=origin,
         created_at=created_at,
+        price_type=str(data.get("price_type") or "")[:64],
         gross_total=int(data.get("gross_total") or lines_total),
         discount_total=int(data.get("discount_total") or 0),
         points_spent=points_spent,
