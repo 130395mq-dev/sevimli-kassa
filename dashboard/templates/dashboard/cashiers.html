@@ -25,12 +25,9 @@
     <input type="hidden" name="action" value="create">
     <div class="fields">
       <label>
-        <span>Ism familiya</span>
-        <input name="name" required placeholder="Rahimova Nilufar">
-      </label>
-      <label>
         <span>Login</span>
-        <input name="login" placeholder="bo'sh qoldirsangiz ismdan olinadi">
+        <input name="login" required placeholder="nilufar"
+               pattern="[A-Za-z0-9_-]+" title="Faqat lotin harflari, raqam, - va _">
       </label>
       <label>
         <span>Parol (kamida 4 belgi)</span>
@@ -48,20 +45,24 @@
   <h2>Ro'yxat</h2>
   <table>
     <tr>
-      <th>Ism</th><th>Login</th><th>Huquq</th>
+      <th>Login</th><th>Huquq</th>
       <th class="right">Smena</th><th>Oxirgi kirish</th><th>Holat</th><th></th>
     </tr>
     {% for c in rows %}
       <tr>
-        <td>{{ c.name }}</td>
-        <td class="num">{{ c.login }}</td>
+        <td class="tight">
+          <b>{{ c.login }}</b>
+          {% if c.name and c.name != c.login %}
+            <div class="sec" style="font-size: 12.5px;">{{ c.name }}</div>
+          {% endif %}
+        </td>
         <td>{% if c.is_manager %}<span class="badge warn">katta</span>
             {% else %}<span class="sec">oddiy</span>{% endif %}</td>
         <td class="right num">{{ c.shift_count }}</td>
         <td class="num">{{ c.last_login_at|date:"d.m H:i"|default:"—" }}</td>
         <td>{% if c.active %}<span class="badge ok">faol</span>
             {% else %}<span class="badge off">o'chirilgan</span>{% endif %}</td>
-        <td class="right">
+        <td class="right actions">
           <form method="post" class="inline">
             {% csrf_token %}
             <input type="hidden" name="action" value="pin">
@@ -74,13 +75,22 @@
             <input type="hidden" name="action" value="toggle">
             <input type="hidden" name="id" value="{{ c.pk }}">
             <button type="submit" class="small ghost">
-              {% if c.active %}O'chirish{% else %}Yoqish{% endif %}
+              {% if c.active %}Bloklash{% else %}Yoqish{% endif %}
+            </button>
+          </form>
+          <form method="post" class="inline"
+                onsubmit="return confirm('«{{ c.login }}» butunlay o\'chirilsinmi? Qaytarib bo\'lmaydi.');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" value="{{ c.pk }}">
+            <button type="submit" class="small ghost" style="color: var(--danger);">
+              Yo'q qilish
             </button>
           </form>
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="7" class="empty">Kassir qo'shilmagan.</td></tr>
+      <tr><td colspan="6" class="empty">Kassir qo'shilmagan.</td></tr>
     {% endfor %}
   </table>
 
@@ -91,6 +101,10 @@
       Kassa ekranida ismlar ro'yxati ko'rsatilmaydi — xodim o'z loginini va
       parolini o'zi teradi. Parol bazada ochiq saqlanmaydi, unutilsa tiklab
       bo'lmaydi — shu yerdan yangisini bering.
+      <b style="display: block; margin-top: 10px;">Bloklash va Yo'q qilish farqi</b>
+      <b>Bloklash</b> — kassir kira olmaydi, lekin ro'yxatda qoladi va
+      keyin qayta yoqish mumkin. <b>Yo'q qilish</b> — ro'yxatdan butunlay
+      ketadi, qaytarib bo'lmaydi; eski smenalar va cheklar esa joyida qoladi.
     </div>
   </div>
 {% endblock %}

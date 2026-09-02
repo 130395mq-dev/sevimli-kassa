@@ -190,26 +190,28 @@ def cashiers(request):
         action = request.POST.get("action")
 
         if action == "create":
-            name = (request.POST.get("name") or "").strip()
+            # Ism so'ralmaydi: kassir kassaga login bilan kiradi, ism hech
+            # qayerda ishlatilmaydi. `name` ustuni eski smenalar uchun
+            # qolgan — unga loginning o'zi yoziladi.
             pin = (request.POST.get("pin") or "").strip()
-            login = slugify(request.POST.get("login") or name) or ""
+            login = slugify(request.POST.get("login") or "") or ""
 
-            if not name or not login:
-                messages.error(request, "Ism kiritilmadi")
+            if not login:
+                messages.error(request, "Login kiritilmadi")
             elif len(pin) < 4:
                 messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
             elif Cashier.objects.filter(login=login).exists():
                 messages.error(request, f"«{login}» logini band")
             else:
                 cashier = Cashier(
-                    name=name, login=login,
+                    name=login, login=login,
                     is_manager=bool(request.POST.get("is_manager")),
                 )
                 cashier.set_password(pin)
                 cashier.save()
                 messages.success(
                     request,
-                    f"{name} qo'shildi. Kassada shu login va parol bilan kiradi: {login}",
+                    f"«{login}» qo'shildi. Kassada shu login va parol bilan kiradi.",
                 )
 
         elif action == "pin":
@@ -231,7 +233,22 @@ def cashiers(request):
                 cashier.save(update_fields=["active"])
                 messages.success(
                     request,
-                    f"{cashier.name}: " + ("yoqildi" if cashier.active else "o'chirildi"),
+                    f"{cashier.login}: " + ("yoqildi" if cashier.active else "o'chirildi"),
+                )
+
+        elif action == "delete":
+            # Butunlay o'chirish. Smenalar qolib ketadi: ularda kassir ismi
+            # matn ko'rinishida nusxalangan (`Shift.cashier`), FK esa
+            # SET_NULL — ya'ni eski hisobotlar buzilmaydi.
+            cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()
+            if not cashier:
+                messages.error(request, "Kassir topilmadi")
+            else:
+                login = cashier.login
+                cashier.delete()
+                messages.success(
+                    request,
+                    f"«{login}» butunlay o'chirildi. Eski smenalar joyida qoldi.",
                 )
 
         return redirect("dashboard:cashiers")

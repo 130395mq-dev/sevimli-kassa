@@ -106,3 +106,41 @@ class InstallerPageTest(TestCase):
             self.assertEqual(r.status_code, 200)
             self.assertIn("SevimliKassa.exe", r["Content-Disposition"])
             self.assertEqual(b"".join(r.streaming_content), content)
+
+
+class CashiersPageTest(TestCase):
+    """Kassir: faqat login va parol. Ism so'ralmaydi."""
+
+    def setUp(self):
+        User.objects.create_superuser("admin2", "a2@a.uz", "admin")
+        self.client.login(username="admin2", password="admin")
+
+    def test_ismsiz_qoshiladi(self):
+        from sales.models import Cashier
+
+        r = self.client.post("/kassirlar/", {
+            "action": "create", "login": "nilufar", "pin": "1234",
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)
+        c = Cashier.objects.get()
+        self.assertEqual(c.login, "nilufar")
+        self.assertEqual(c.name, "nilufar")
+        self.assertTrue(c.check_password("1234"))
+
+        # Loginsiz qo'shilmaydi
+        self.client.post("/kassirlar/", {"action": "create", "pin": "1234"})
+        self.assertEqual(Cashier.objects.count(), 1)
+
+    def test_butunlay_ochirish(self):
+        from sales.models import Cashier
+
+        c = Cashier(name="Eski", login="eski")
+        c.set_password("1234")
+        c.save()
+
+        r = self.client.post("/kassirlar/", {
+            "action": "delete", "id": c.pk,
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Cashier.objects.count(), 0)
+        self.assertIn("butunlay o", r.content.decode())
