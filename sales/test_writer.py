@@ -132,7 +132,8 @@ class WriterTest(TestCase):
         self.assertEqual(len(demands), 1)
         d = demands[0]
         self.assertEqual(d["syncId"], str(sale.local_uuid))
-        self.assertEqual(d["name"], "7-1")
+        # Nom yuborilmaydi — MoySklad avtomatik ketma-ket raqam beradi
+        self.assertNotIn("name", d)
         self.assertTrue(d["applicable"])
         self.assertEqual(len(d["positions"]), 1)
         self.assertEqual(d["positions"][0]["price"], 3_000_00)

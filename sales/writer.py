@@ -276,7 +276,11 @@ class SaleWriter:
 
         payload = {
             "syncId": str(sale.local_uuid),
-            "name": f"{sale.shift.number}-{sale.number}",
+            # Nomni o'zimiz qo'ymaymiz — MoySklad avtomatik NOYOB raqam
+            # beradi (03411, 03412...). Ilgari "{smena}-{chek}" qo'yardik,
+            # lekin u takrorlanib 412 «name uniqueness» xatosini berardi
+            # (smena raqami kassalarда qayta-qayta 1 bo'ladi). syncId baribir
+            # dublikatни oldini oladi.
             "moment": ms_moment(sale.created_at),
             "applicable": True,
             "organization": meta("organization", store.organization_ms_id),
