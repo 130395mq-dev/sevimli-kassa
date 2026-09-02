@@ -30,6 +30,7 @@ from moysklad.client import MoySkladClient, MoySkladError
 from .models import (
     Barcode,
     Customer,
+    Organization,
     PriceType,
     Warehouse,
     Product,
@@ -411,6 +412,24 @@ class CatalogSync:
                     pt.delete()
         return count
 
+    # ------------------------------------------------------------ tashkilotlar
+
+    def sync_organizations(self, full: bool = False) -> int:
+        return self._run("organization", True, self._sync_organizations)
+
+    def _sync_organizations(self, state: SyncState, full: bool) -> int:
+        count = 0
+        for row in self.client.iter_list("entity/organization"):
+            Organization.objects.update_or_create(
+                ms_id=row["id"],
+                defaults={
+                    "name": row.get("name", "") or "",
+                    "archived": row.get("archived", False),
+                },
+            )
+            count += 1
+        return count
+
     # ---------------------------------------------------------------- omborlar
 
     def sync_warehouses(self, full: bool = False) -> int:
@@ -530,6 +549,7 @@ class CatalogSync:
         # nuqtaning narx turi kerak.
         return {
             "price_types": self.sync_price_types(full),
+            "organizations": self.sync_organizations(full),
             "warehouses": self.sync_warehouses(full),
             "retail_stores": self.sync_retail_stores(full),
             "folders": self.sync_folders(full),

@@ -115,8 +115,11 @@ class Register(models.Model):
 
     code = models.SlugField(max_length=32, unique=True)
     name = models.CharField(max_length=64)
+    # Savdo nuqtasi — MoySklad «Точка продаж». Kassa uchun asosiysi OMBOR
+    # (sozlamada), nuqta esa ixtiyoriy: eski kassalar va hisobotlar uchun.
     store = models.ForeignKey(
-        RetailStore, on_delete=models.PROTECT, related_name="registers"
+        RetailStore, null=True, blank=True,
+        on_delete=models.PROTECT, related_name="registers",
     )
     active = models.BooleanField(default=True)
 
@@ -135,6 +138,51 @@ class Register(models.Model):
         max_length=64, unique=True, db_index=True, default=new_api_token
     )
     last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    # ---- MoySklad bog'lanishi. Kassa sozlamasi birinchi, savdo nuqtasi
+    # zaxira: eski kassalar (ombor tanlanmagan) ishlab ketaveradi.
+
+    @property
+    def warehouse_ms_id(self):
+        """Kassa qaysi ombordan sotadi."""
+        own = self.settings.warehouse_ms_id
+        if own:
+            return own
+        return self.store.warehouse_ms_id if self.store_id else None
+
+    @property
+    def warehouse_name(self) -> str:
+        from catalog.models import Warehouse
+
+        ms_id = self.warehouse_ms_id
+        if not ms_id:
+            return ""
+        wh = Warehouse.objects.filter(ms_id=ms_id).first()
+        # Ombor hali MoySklad'dan tortilmagan bo'lishi mumkin — bunda
+        # nomi bo'sh, lekin bog'lanishning o'zi ishlaydi (ms_id bor).
+        return wh.name if wh else ""
+
+    @property
+    def point_name(self) -> str:
+        """Kassa qayerda turgani — chekda, panelda va hisobotlarda shu
+        nom chiqadi. Ombor nomi (asosiy), bo'lmasa savdo nuqtasi nomi."""
+        return self.warehouse_name or (
+            self.store.name if self.store_id else self.name
+        )
+
+    @property
+    def organization_ms_id(self):
+        """Отгрузка kimning nomidan yoziladi."""
+        from catalog.models import Organization
+
+        own = self.settings.organization_ms_id
+        if own:
+            return own
+        if self.store_id and self.store.organization_ms_id:
+            return self.store.organization_ms_id
+        only = Organization.only_one()
+        return only.ms_id if only else None
+
     # Kassada o'rnatilgan ilova versiyasi — har so'rovda X-Kassa-Version
     # sarlavhasidan olinadi. Panelda kim eskirganini ko'rsatadi.
     app_version = models.CharField(max_length=32, blank=True)
@@ -145,7 +193,7 @@ class Register(models.Model):
         verbose_name_plural = "Kassalar"
 
     def __str__(self) -> str:
-        return f"{self.store.name} — {self.name}"
+        return f"{self.point_name} — {self.name}"
 
     def set_password(self, password: str) -> None:
         from django.contrib.auth.hashers import make_password
@@ -191,6 +239,11 @@ class RegisterSettings(models.Model):
     # ------------------------------------------------ Точка продаж (o'ng panel)
     enabled = models.BooleanField("Yoqilgan", default=True)
     organization = models.CharField("Tashkilot", max_length=128, blank=True, default="")
+    #: MoySklad tashkiloti — Отгрузка kimning nomidan yoziladi.
+    #: Bo'sh bo'lsa: yagona tashkilot avtomatik olinadi.
+    organization_ms_id = models.UUIDField(
+        "MoySklad tashkiloti", null=True, blank=True
+    )
     bank_account = models.CharField("Hisob raqam", max_length=128, blank=True, default="")
     address = models.CharField("Manzil", max_length=256, blank=True, default="")
     access_group = models.CharField("Kirish", max_length=128, blank=True, default="")
@@ -223,6 +276,10 @@ class RegisterSettings(models.Model):
 
     # ------------------------------------------------ Товары
     warehouse = models.CharField("Ombor", max_length=128, blank=True, default="")
+    #: MoySklad ombori — kassa AYNAN shu ombordan sotadi: qoldiq shundan
+    #: ko'rsatiladi, savdo shundan hisobdan chiqadi. Bo'sh bo'lsa savdo
+    #: nuqtasiga biriktirilgan ombor (eski kassalar uchun).
+    warehouse_ms_id = models.UUIDField("MoySklad ombori", null=True, blank=True)
     allow_create_product = models.BooleanField("Kassada tovar yaratishga ruxsat", default=False)
     track_stock = models.BooleanField("Qoldiqni hisobga olish", default=False)
     track_reserves = models.BooleanField("Rezervni hisobga olish", default=False)

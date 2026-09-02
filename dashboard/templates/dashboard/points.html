@@ -150,7 +150,7 @@
       {% for s in stuck %}
         <tr>
           <td>
-            {{ s.shift.register.store.name }}<br>
+            {{ s.shift.register.point_name }}<br>
             <span class="sec">{{ s.shift.register.name }} · #{{ s.number }}</span>
           </td>
           <td class="num">{{ s.created_at|date:"d.m H:i" }}</td>

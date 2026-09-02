@@ -70,6 +70,6 @@ class Command(BaseCommand):
         self.stdout.write("Ochiq smenalar:")
         for s in rows:
             self.stdout.write(
-                f"  [{s.pk}] {s.register.store.name} · {s.register.name} "
+                f"  [{s.pk}] {s.register.point_name} · {s.register.name} "
                 f"#{s.number} · {s.cashier} · {s.sales.count()} chek"
             )

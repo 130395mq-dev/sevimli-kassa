@@ -187,7 +187,7 @@ class SaleWriter:
             "moment": ms_moment(sale.created_at),
             "sum": payment.amount,
             "organization": meta(
-                "organization", sale.shift.register.store.organization_ms_id
+                "organization", sale.shift.register.organization_ms_id
             ),
             "agent": self._agent(sale),
             # Возврат'ni «to'langan» (pul qaytarilgan) qiladi
@@ -236,12 +236,19 @@ class SaleWriter:
         return doc
 
     def _demand_payload(self, sale: Sale) -> dict:
-        store = sale.shift.register.store
+        register = sale.shift.register
 
-        if not store.organization_ms_id:
+        organization_id = register.organization_ms_id
+        if not organization_id:
             raise WriteError(
-                f"«{store.name}» uchun tashkilot ko'rsatilmagan. "
-                "Avval `sync_catalog --only retail_stores` ni ishga tushiring."
+                f"«{register.name}» uchun tashkilot ko'rsatilmagan. "
+                "Panel → Kassalar → Sozlash → Hisob bo'limida tanlang."
+            )
+        warehouse_id = register.warehouse_ms_id
+        if not warehouse_id:
+            raise WriteError(
+                f"«{register.name}» uchun ombor tanlanmagan. "
+                "Panel → Kassalar → Sozlash → Tovarlar bo'limida tanlang."
             )
 
         items = list(sale.items.all())
@@ -283,19 +290,13 @@ class SaleWriter:
             # dublikatни oldini oladi.
             "moment": ms_moment(sale.created_at),
             "applicable": True,
-            "organization": meta("organization", store.organization_ms_id),
+            "organization": meta("organization", organization_id),
             "agent": self._agent(sale),
             "positions": positions,
+            # Ombor — kassaga biriktirilgani. Busiz MoySklad tovarni
+            # hisobdan chiqarmaydi, ya'ni qoldiq yolg'on bo'lib qoladi.
+            "store": meta("store", warehouse_id),
         }
-
-        # Ombor — filialga biriktirilgani. Busiz MoySklad tovarni
-        # hisobdan chiqarmaydi, ya'ni qoldiq yolg'on bo'lib qoladi.
-        if not store.warehouse_ms_id:
-            raise WriteError(
-                f"«{store.name}» uchun ombor tanlanmagan. "
-                "Panel → Filiallar bo'limida omborni tanlang."
-            )
-        payload["store"] = meta("store", store.warehouse_ms_id)
 
         return payload
 
@@ -375,7 +376,7 @@ class SaleWriter:
             "moment": ms_moment(sale.created_at),
             "sum": payment.amount,
             "organization": meta(
-                "organization", sale.shift.register.store.organization_ms_id
+                "organization", sale.shift.register.organization_ms_id
             ),
             "agent": self._agent(sale),
             # Shu qator Отгрузка'ni «to'langan» qiladi

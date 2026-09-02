@@ -22,9 +22,10 @@
     <input type="hidden" name="action" value="create">
     <div class="fields">
       <label>
-        <span>Savdo nuqtasi</span>
-        <select name="store" required>
-          {% for s in stores %}<option value="{{ s.pk }}">{{ s.name }}</option>{% endfor %}
+        <span>Ombor (sklad) — qayerdan sotadi</span>
+        <select name="warehouse" required>
+          <option value="">— tanlang —</option>
+          {% for w in warehouses %}<option value="{{ w.ms_id }}">{{ w.name }}</option>{% endfor %}
         </select>
       </label>
       <label>
@@ -46,14 +47,13 @@
   <h2>Ro'yxat</h2>
   <table>
     <tr>
-      <th>Nuqta</th><th>Ombor</th><th>Kassa</th><th>Login</th>
+      <th>Ombor (sklad)</th><th>Kassa</th><th>Login</th>
       <th>Versiya</th><th>Oxirgi aloqa</th><th></th>
     </tr>
     {% for r in rows %}
       <tr>
-        <td>{{ r.store.name }}</td>
-        <td>{% if r.warehouse_name %}<span class="sec">{{ r.warehouse_name }}</span>
-            {% else %}<span class="badge err">tanlanmagan</span>{% endif %}</td>
+        <td>{% if r.wh_name %}<b>{{ r.wh_name }}</b>
+            {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
         <td>{{ r.name }}</td>
         <td class="num">{{ r.login|default:"—" }}</td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
@@ -76,7 +76,7 @@
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="7" class="empty">Kassa qo'shilmagan.</td></tr>
+      <tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
   </table>
 
@@ -84,10 +84,14 @@
     <span>i</span>
     <div>
       <b>Kassa qanday ulanadi</b>
-      Kassa ilovasi birinchi ochilganda server manzili, login va parolni
-      so'raydi. Undan keyin so'ramaydi — kalitni o'zi saqlab qo'yadi.
-      «Aloqani uzish» o'sha kalitni bekor qiladi: kassa qayta ulanishi kerak
-      bo'ladi.
+      Kassa ilovasi birinchi ochilganda faqat login va parolni so'raydi
+      (server manzili dastur ichida). Undan keyin so'ramaydi — kalitni o'zi
+      saqlab qo'yadi. «Aloqani uzish» o'sha kalitni bekor qiladi: kassa
+      qayta ulanishi kerak bo'ladi.
+      <br><br>
+      <b>Ombor</b> — kassa aynan shu ombordan sotadi: qoldiq shundan
+      ko'rsatiladi va savdo MoySklad'da shu ombordan hisobdan chiqadi.
+      Keyin «Sozlash → Tovarlar» bo'limidan o'zgartirish mumkin.
     </div>
   </div>
 {% endblock %}

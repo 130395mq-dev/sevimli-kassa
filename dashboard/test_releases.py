@@ -44,3 +44,37 @@ class ReleasesPageTest(TestCase):
     def test_kassalar_sahifasi_ochiladi(self):
         self.assertEqual(self.client.get("/kassalar/").status_code, 200)
         self.assertEqual(self.client.get("/versiyalar/").status_code, 200)
+
+
+class RegisterCreateTest(TestCase):
+    """Kassa yaratishda ombor so'raladi va o'sha ombor biriktiriladi."""
+
+    def setUp(self):
+        from catalog.models import Warehouse
+
+        User.objects.create_superuser("admin2", "a2@a.uz", "admin")
+        self.client.login(username="admin2", password="admin")
+        self.wh = Warehouse.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000b2", name="Sevimli Shaxar"
+        )
+
+    def test_omborsiz_yaratilmaydi(self):
+        from sales.models import Register
+
+        r = self.client.post("/kassalar/", {
+            "action": "create", "name": "Kassa-1", "login": "shaxar-1",
+            "password": "1234",
+        }, follow=True)
+        self.assertEqual(Register.objects.count(), 0)
+        self.assertIn("Ombor", r.content.decode())
+
+    def test_ombor_bilan_yaratiladi(self):
+        from sales.models import Register
+
+        self.client.post("/kassalar/", {
+            "action": "create", "name": "Kassa-1", "login": "shaxar-1",
+            "password": "1234", "warehouse": str(self.wh.ms_id),
+        }, follow=True)
+        reg = Register.objects.get()
+        self.assertEqual(str(reg.warehouse_ms_id), str(self.wh.ms_id))
+        self.assertEqual(reg.warehouse_name, "Sevimli Shaxar")

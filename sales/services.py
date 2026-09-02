@@ -69,7 +69,7 @@ def build_receipt(shift: Shift, market: str = "Sevimli Market") -> ShiftReceipt:
 
     return ShiftReceipt(
         market=market,
-        point=shift.register.store.name,
+        point=shift.register.point_name,
         register=shift.register.name,
         cashier=shift.cashier,
         shift_no=shift.number,

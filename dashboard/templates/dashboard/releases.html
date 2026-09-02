@@ -113,10 +113,10 @@
 
   <h2>Kassalarda qaysi versiya</h2>
   <table>
-    <tr><th>Nuqta</th><th>Kassa</th><th>Versiya</th><th>Oxirgi aloqa</th></tr>
+    <tr><th>Ombor</th><th>Kassa</th><th>Versiya</th><th>Oxirgi aloqa</th></tr>
     {% for r in registers %}
       <tr>
-        <td>{{ r.store.name }}</td>
+        <td>{{ r.point_name }}</td>
         <td>{{ r.name }}</td>
         <td>
           {% if not r.app_version %}<span class="badge off">noma'lum</span>

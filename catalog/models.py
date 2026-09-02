@@ -224,6 +224,29 @@ class Customer(models.Model):
         return max(self.balance, 0) / 100
 
 
+class Organization(models.Model):
+    """Tashkilot — MoySklad «Юрлица». Отгрузка kimning nomidan yoziladi."""
+
+    ms_id = models.UUIDField(unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    archived = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = "Tashkilot"
+        verbose_name_plural = "Tashkilotlar"
+
+    def __str__(self) -> str:
+        return self.name
+
+    @classmethod
+    def only_one(cls) -> "Organization | None":
+        """Bitta tashkilot bo'lsa — o'sha. Bir nechta bo'lsa None: kassada
+        aniq tanlash kerak, taxmin qilmaymiz."""
+        rows = list(cls.objects.filter(archived=False)[:2])
+        return rows[0] if len(rows) == 1 else None
+
+
 class Warehouse(models.Model):
     """Ombor — MoySklad «Склады».
 

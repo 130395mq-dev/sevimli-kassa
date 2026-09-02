@@ -17,7 +17,7 @@
     {% for s in rows %}
       <tr>
         <td><a href="/smena/{{ s.pk }}/">#{{ s.number }}</a></td>
-        <td>{{ s.register.store.name }}<br><span class="sec">{{ s.register.name }}</span></td>
+        <td>{{ s.register.point_name }}<br><span class="sec">{{ s.register.name }}</span></td>
         <td>{{ s.cashier }}</td>
         <td class="num">{{ s.opened_at|date:"d.m H:i" }}</td>
         <td class="num">

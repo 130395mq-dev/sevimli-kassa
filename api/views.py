@@ -131,7 +131,7 @@ def connect(request):
     return JsonResponse({
         "token": register.api_token,
         "register": {"code": register.code, "name": register.name},
-        "point": register.store.name,
+        "point": register.point_name,
     })
 
 
@@ -298,7 +298,8 @@ def hello(request):
     return JsonResponse(
         {
             "register": {"code": reg.code, "name": reg.name},
-            "point": reg.store.name,
+            # «Nuqta» — kassa qaysi ombordan sotadi (MoySklad ombori nomi).
+            "point": reg.point_name,
             "market": settings.MARKET_NAME,
             "receipt_width": settings.RECEIPT_WIDTH,
             "server_time": timezone.now().isoformat(),
@@ -450,7 +451,7 @@ def catalog(request):
     stock = {
         s.product_id: s.quantity
         for s in Stock.objects.filter(
-            product__in=rows, store_ms_id=request.register.store.warehouse_ms_id
+            product__in=rows, store_ms_id=request.register.warehouse_ms_id
         )
     }
 
@@ -653,10 +654,10 @@ def shift_open(request):
 
     # Ombor tanlanmagan bo'lsa savdo MoySklad'ga yozilmaydi — smenani
     # umuman ochmaymiz, aks holda kun oxirida «cheklar ketmabdi» bo'ladi.
-    if not reg.store.warehouse_ms_id:
+    if not reg.warehouse_ms_id:
         return error(
-            f"«{reg.store.name}» uchun ombor tanlanmagan. "
-            "Panel → Filiallar bo'limida omborni tanlang.",
+            f"«{reg.name}» uchun ombor tanlanmagan. "
+            "Panel → Kassalar → Sozlash → Tovarlar bo'limida omborni tanlang.",
             status=409,
         )
 

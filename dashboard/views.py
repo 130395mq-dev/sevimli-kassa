@@ -72,7 +72,7 @@ def points(request):
 
         rows.append({
             "register": reg,
-            "point": reg.store.name,
+            "point": reg.point_name,
             "shift": shift,
             "offline": offline,
             "last_seen": reg.last_seen_at,
@@ -248,8 +248,8 @@ def registers(request):
     Kassa ilovasi shu login-parol bilan ulanadi va tokenni o'zi oladi.
     Xodim uzun tokenni ko'rmaydi.
     """
-    from catalog.models import RetailStore
-    from sales.models import new_api_token
+    from catalog.models import RetailStore, Warehouse
+    from sales.models import RegisterSettings, new_api_token
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -258,29 +258,41 @@ def registers(request):
             name = (request.POST.get("name") or "").strip()
             login = slugify(request.POST.get("login") or "")
             password = (request.POST.get("password") or "").strip()
-            store = RetailStore.objects.filter(
-                pk=request.POST.get("store")
+            warehouse = Warehouse.objects.filter(
+                ms_id=request.POST.get("warehouse") or None
             ).first()
 
             if not name or not login:
                 messages.error(request, "Nom va login kerak")
             elif len(password) < 4:
                 messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
-            elif not store:
-                messages.error(request, "Savdo nuqtasi tanlanmadi")
+            elif not warehouse:
+                messages.error(request, "Ombor (sklad) tanlanmadi")
             elif Register.objects.filter(login=login).exists():
                 messages.error(request, f"«{login}» logini band")
             else:
-                code = slugify(f"{store.name}-{name}")[:32]
+                # Savdo nuqtasi — MoySklad'da shu omborga bog'langani
+                # (bo'lsa). Kassa uchun asosiysi ombor, nuqta esa eski
+                # hisobotlar bilan bog'lanish uchun.
+                store = (
+                    RetailStore.objects.filter(store_ms_id=warehouse.ms_id).first()
+                    or RetailStore.objects.filter(active=True).first()
+                )
+                code = slugify(f"{warehouse.name}-{name}")[:32]
                 register = Register(
                     code=code, name=name, store=store, login=login,
                 )
                 register.set_password(password)
                 register.save()
+                RegisterSettings.objects.update_or_create(
+                    register=register,
+                    defaults={"warehouse_ms_id": warehouse.ms_id,
+                              "warehouse": warehouse.name},
+                )
                 messages.success(
                     request,
-                    f"{name} qo'shildi. Kassa ilovasida login «{login}» "
-                    "va shu parolni kiriting.",
+                    f"{name} qo'shildi — «{warehouse.name}» omboridan sotadi. "
+                    f"Kassa ilovasida login «{login}» va shu parolni kiriting.",
                 )
 
         elif action == "password":
@@ -308,12 +320,14 @@ def registers(request):
 
         return redirect("dashboard:registers")
 
+    from catalog.models import Warehouse
     from sales.models import KassaRelease, version_key
 
     latest = KassaRelease.latest()
-    rows = list(Register.objects.select_related("store"))
+    rows = list(Register.objects.select_related("store", "settings_row"))
+    warehouses = list(Warehouse.objects.filter(archived=False))
     for r in rows:
-        r.warehouse_name = r.store.warehouse_name
+        r.wh_name = r.warehouse_name
         # Panelda: yashil — eng yangi, sariq — eskirgan, kulrang — noma'lum
         if not r.app_version:
             r.version_state = "off"
@@ -324,64 +338,8 @@ def registers(request):
 
     return render(request, "dashboard/registers.html", {
         "rows": rows,
-        "stores": RetailStore.objects.filter(active=True),
-        "latest": latest,
-    })
-
-
-@login_required
-def stores(request):
-    """Filiallar — har savdo nuqtasi qaysi ombordan sotadi.
-
-    Kassa filialga biriktirilgan, filial esa omborga. Chek MoySklad'ga
-    yozilganda tovar aynan shu ombordan chiqadi va kassadagi qoldiq ham
-    shuniki. MoySklad'da savdo nuqtasiga ombor biriktirilgan bo'ladi —
-    biz uni o'qiymiz; noto'g'ri bo'lsa shu yerdan boshqasini tanlash
-    mumkin (bizning tanlovimiz sinxronizatsiyada ustun turadi).
-    """
-    from catalog.models import RetailStore, Warehouse
-
-    if request.method == "POST":
-        store = RetailStore.objects.filter(pk=request.POST.get("id")).first()
-        if not store:
-            messages.error(request, "Filial topilmadi")
-        else:
-            raw = (request.POST.get("warehouse") or "").strip()
-            if not raw:
-                store.manual_warehouse_ms_id = None
-                store.save(update_fields=["manual_warehouse_ms_id"])
-                messages.success(
-                    request,
-                    f"{store.name}: ombor MoySklad'dagi savdo nuqtasidan olinadi"
-                    + (f" ({store.warehouse_name})" if store.warehouse_ms_id else ""),
-                )
-            elif Warehouse.objects.filter(ms_id=raw).exists():
-                store.manual_warehouse_ms_id = raw
-                store.save(update_fields=["manual_warehouse_ms_id"])
-                messages.success(request, f"{store.name}: ombor — {store.warehouse_name}")
-            else:
-                messages.error(request, "Bunday ombor yo'q")
-        return redirect("dashboard:stores")
-
-    rows = list(
-        RetailStore.objects.filter(active=True).prefetch_related("registers")
-    )
-    warehouses = list(Warehouse.objects.filter(archived=False))
-    by_id = {str(w.ms_id): w for w in warehouses}
-
-    for r in rows:
-        ms_id = str(r.warehouse_ms_id) if r.warehouse_ms_id else ""
-        r.wh = by_id.get(ms_id)
-        r.wh_manual = bool(r.manual_warehouse_ms_id)
-        r.wh_id = ms_id
-        r.register_count = r.registers.count()
-
-    missing = [r for r in rows if not r.wh]
-
-    return render(request, "dashboard/stores.html", {
-        "rows": rows,
         "warehouses": warehouses,
-        "missing": missing,
+        "latest": latest,
     })
 
 
@@ -508,9 +466,15 @@ _SETTINGS_BOOLS = [
     "credit_sales_enabled", "expense_receipts_enabled",
 ]
 _SETTINGS_TEXT = [
-    "organization", "bank_account", "address", "access_group",
-    "price_type", "warehouse", "card_acquirer", "qr_acquirer",
+    "bank_account", "address", "access_group",
+    "price_type", "card_acquirer", "qr_acquirer",
     "sales_channel", "sales_prefix_1c",
+]
+#: MoySklad bog'lanishlari — ro'yxatdan tanlanadi, matn emas.
+#: (maydon nomi, model, nom uchun matn maydoni)
+_SETTINGS_MS = [
+    ("warehouse_ms_id", "Warehouse", "warehouse"),
+    ("organization_ms_id", "Organization", "organization"),
 ]
 _SETTINGS_DECIMAL = ["max_discount", "card_commission"]
 _SETTINGS_CHOICE = ["show_product_groups", "show_customer_groups"]
@@ -551,6 +515,15 @@ def register_edit(request, pk: int):
             if val in (RegisterSettings.GROUP_ALL, RegisterSettings.GROUP_SELECTED):
                 setattr(st, name, val)
 
+        # Ombor va tashkilot — MoySklad ro'yxatidan
+        import catalog.models as cm
+
+        for field, model_name, text_field in _SETTINGS_MS:
+            raw = (request.POST.get(field) or "").strip()
+            obj = getattr(cm, model_name).objects.filter(ms_id=raw).first() if raw else None
+            setattr(st, field, obj.ms_id if obj else None)
+            setattr(st, text_field, obj.name if obj else "")
+
         # Kassa nomini ham shu yerdan o'zgartirish mumkin
         new_name = (request.POST.get("register_name") or "").strip()
         if new_name:
@@ -587,7 +560,7 @@ def register_edit(request, pk: int):
     if reg.store_id and all(s.pk != reg.store_id for s in real_stores):
         real_stores.insert(0, reg.store)
 
-    from catalog.models import PriceType
+    from catalog.models import Organization, PriceType, Warehouse
 
     return render(request, "dashboard/register_edit.html", {
         "reg": reg,
@@ -596,5 +569,10 @@ def register_edit(request, pk: int):
         "allowed_ids": set(st.allowed_cashiers.values_list("pk", flat=True)),
         "stores": real_stores,
         "price_types": PriceType.objects.all(),
-        "store_price_type": reg.store.price_type_name or "",
+        "store_price_type": reg.store.price_type_name if reg.store_id else "",
+        "warehouses": Warehouse.objects.filter(archived=False),
+        "organizations": Organization.objects.filter(archived=False),
+        "warehouse_id": str(st.warehouse_ms_id or ""),
+        "organization_id": str(st.organization_ms_id or ""),
+        "effective_warehouse": reg.warehouse_name,
     })

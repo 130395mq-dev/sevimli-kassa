@@ -600,3 +600,58 @@ class WarehouseGuardTest(ApiTestCase):
         self.store.save()
         r = self.client.get("/api/v1/catalog", **self.auth()).json()
         self.assertEqual(r["products"][0]["stock"], 99.0)
+
+
+class RegisterWarehouseBindingTest(ApiTestCase):
+    """Ombor kassa sozlamasida — MoySklad'dagidek («Tovarlar» bo'limi)."""
+
+    def setUp(self):
+        super().setUp()
+        from catalog.models import Warehouse
+
+        self.wh_shahar = Warehouse.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000b2", name="Sevimli Shaxar"
+        )
+        self.wh_bozor = Warehouse.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000f1", name="Sevimli Bozor"
+        )
+
+    def test_kassa_sozlamasi_savdo_nuqtasidan_ustun(self):
+        st = self.register.settings
+        st.warehouse_ms_id = self.wh_bozor.ms_id
+        st.save()
+        self.assertEqual(str(self.register.warehouse_ms_id), str(self.wh_bozor.ms_id))
+        self.assertEqual(self.register.warehouse_name, "Sevimli Bozor")
+
+    def test_tanlanmagan_bolsa_savdo_nuqtasiniki(self):
+        self.assertEqual(str(self.register.warehouse_ms_id), str(self.wh_shahar.ms_id))
+
+    def test_hello_ombor_nomini_beradi(self):
+        st = self.register.settings
+        st.warehouse_ms_id = self.wh_bozor.ms_id
+        st.save()
+        data = self.client.get("/api/v1/hello", **self.auth()).json()
+        self.assertEqual(data["point"], "Sevimli Bozor")
+
+    def test_yagona_tashkilot_avtomatik(self):
+        from catalog.models import Organization
+
+        self.store.organization_ms_id = None
+        self.store.save()
+        self.assertIsNone(self.register.organization_ms_id)
+
+        org = Organization.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000e1", name="SEVIMLI SUPER MARKET"
+        )
+        self.assertEqual(str(self.register.organization_ms_id), str(org.ms_id))
+
+        # Ikkita bo'lsa — taxmin qilmaymiz, kassada tanlash kerak
+        Organization.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000e2", name="Ikkinchi"
+        )
+        self.assertIsNone(self.register.organization_ms_id)
+
+        st = self.register.settings
+        st.organization_ms_id = org.ms_id
+        st.save()
+        self.assertEqual(str(self.register.organization_ms_id), str(org.ms_id))

@@ -78,7 +78,7 @@
   <div class="ed-bar">
     <h1>Sozlash:</h1>
     <input class="name-in" name="register_name" value="{{ reg.name }}">
-    <span class="sec">{{ reg.store.name }}</span>
+    <span class="sec">{{ reg.point_name }}</span>
     <span class="spacer"></span>
     <button type="submit" class="save">Saqlash</button>
     <a href="{% url 'dashboard:registers' %}" class="button close">Yopish</a>
@@ -167,9 +167,20 @@
 
       <div class="sec-card" id="tovarlar">
         <h3>Tovarlar</h3>
-        <label class="fld">Ombor
-          <input name="warehouse" value="{{ st.warehouse }}" placeholder="Sevimli shahar">
+        <label class="fld">Ombor (sklad) — kassa shundan sotadi
+          <select name="warehouse_ms_id">
+            <option value="">— tanlanmagan —</option>
+            {% for w in warehouses %}
+              <option value="{{ w.ms_id }}" {% if warehouse_id == w.ms_id|stringformat:"s" %}selected{% endif %}>{{ w.name }}</option>
+            {% endfor %}
+          </select>
         </label>
+        <div class="sec" style="grid-column:1/-1; margin:-4px 0 6px;">
+          {% if effective_warehouse %}Hozir: <b>{{ effective_warehouse }}</b> —
+            qoldiq shu ombordan ko'rsatiladi, savdo shundan hisobdan chiqadi.
+          {% else %}<span style="color:var(--danger);">Ombor tanlanmagan — bu kassada
+            smena ochilmaydi va savdo MoySklad'ga yozilmaydi.</span>{% endif %}
+        </div>
         <label class="chk">
           <input type="checkbox" name="allow_create_product" {% if st.allow_create_product %}checked{% endif %}>
           <span>Kassada tovar yaratishga ruxsat</span>
@@ -349,8 +360,13 @@
         <div class="sec" style="font-size:12px; margin-bottom:12px;">
           Kassa shu do'kon nomidan MoySklad'ga savdo yozadi
         </div>
-        <label class="fld">Tashkilot
-          <input name="organization" value="{{ st.organization }}" placeholder="SEVIMLI SUPER MARKET">
+        <label class="fld">Tashkilot — savdo kimning nomidan yoziladi
+          <select name="organization_ms_id">
+            <option value="">Avtomatik (yagona tashkilot)</option>
+            {% for o in organizations %}
+              <option value="{{ o.ms_id }}" {% if organization_id == o.ms_id|stringformat:"s" %}selected{% endif %}>{{ o.name }}</option>
+            {% endfor %}
+          </select>
         </label>
         <label class="fld">Hisob raqam
           <input name="bank_account" value="{{ st.bank_account }}" placeholder="XALQ BANK">
