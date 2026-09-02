@@ -142,23 +142,35 @@ def connect(request):
 @require_POST
 @register_required
 def login(request):
-    """Kassir kassaga kiradi: login + PIN.
+    """Kassir kassaga kiradi: login + parol.
 
-    Ikki qatlam: qurilma tokeni «bu kassa bizniki» deydi, PIN esa
+    Ikki qatlam: qurilma tokeni «bu kassa bizniki» deydi, login-parol esa
     «bu odam kim» deydi. Bittasi yetarli emas — token o'g'irlansa ham
-    PIN kerak, PIN bilinsa ham kassa yonida turish kerak.
+    parol kerak, parol bilinsa ham kassa yonida turish kerak.
 
-    Xato PIN uchun sabab aytilmaydi («login noto'g'ri» yoki «PIN
-    noto'g'ri» emas, balki umumiy xabar): aks holda mavjud loginlarni
-    bittalab topib olish mumkin bo'lardi.
+    Xato uchun sabab aytilmaydi («login noto'g'ri» yoki «parol noto'g'ri»
+    emas, balki umumiy xabar): aks holda mavjud loginlarni bittalab topib
+    olish mumkin bo'lardi.
     """
     data = body(request)
     name = (data.get("login") or "").strip().lower()
-    pin = (data.get("pin") or "").strip()
+    # Eski kassalar `pin`, yangilari `password` yuboradi
+    secret = (data.get("password") or data.get("pin") or "").strip()
 
     cashier = Cashier.objects.filter(login=name, active=True).first()
-    if not cashier or not cashier.check_pin(pin):
-        return error("Login yoki PIN noto'g'ri", status=401)
+    if not cashier or not cashier.check_password(secret):
+        return error("Login yoki parol noto'g'ri", status=401)
+
+    # Kassaga aniq kassirlar biriktirilgan bo'lsa — faqat o'shalar.
+    # Ilgari bu faqat ro'yxatni ko'rsatishda ishlardi; endi ro'yxat
+    # umuman ko'rsatilmaydi, shuning uchun tekshiruv shu yerda.
+    allowed = request.register.settings.allowed_cashiers.all()
+    if allowed.exists() and not allowed.filter(pk=cashier.pk).exists():
+        logger.warning(
+            "%s kassasiga ruxsatsiz kirish urinishi: %s",
+            request.register.code, cashier.login,
+        )
+        return error("Bu kassada ishlashga ruxsatingiz yo'q", status=403)
 
     Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
 

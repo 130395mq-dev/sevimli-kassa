@@ -180,7 +180,7 @@ def shift_detail(request, pk: int):
 
 @login_required
 def cashiers(request):
-    """Kassirlar — yaratish, PIN almashtirish, o'chirish.
+    """Kassirlar — yaratish, parol almashtirish, o'chirish.
 
     Kassirlar Django foydalanuvchisi emas: ular panelga kirmaydi.
     Shuning uchun bu yerda o'z ekrani bor, Django admin emas —
@@ -196,8 +196,8 @@ def cashiers(request):
 
             if not name or not login:
                 messages.error(request, "Ism kiritilmadi")
-            elif not pin.isdigit() or not (4 <= len(pin) <= 6):
-                messages.error(request, "PIN 4–6 ta raqamdan iborat bo'lishi kerak")
+            elif len(pin) < 4:
+                messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
             elif Cashier.objects.filter(login=login).exists():
                 messages.error(request, f"«{login}» logini band")
             else:
@@ -205,21 +205,24 @@ def cashiers(request):
                     name=name, login=login,
                     is_manager=bool(request.POST.get("is_manager")),
                 )
-                cashier.set_pin(pin)
+                cashier.set_password(pin)
                 cashier.save()
-                messages.success(request, f"{name} qo'shildi. Login: {login}")
+                messages.success(
+                    request,
+                    f"{name} qo'shildi. Kassada shu login va parol bilan kiradi: {login}",
+                )
 
         elif action == "pin":
             pin = (request.POST.get("pin") or "").strip()
             cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()
             if not cashier:
                 messages.error(request, "Kassir topilmadi")
-            elif not pin.isdigit() or not (4 <= len(pin) <= 6):
-                messages.error(request, "PIN 4–6 ta raqam bo'lishi kerak")
+            elif len(pin) < 4:
+                messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
             else:
-                cashier.set_pin(pin)
+                cashier.set_password(pin)
                 cashier.save(update_fields=["pin_hash"])
-                messages.success(request, f"{cashier.name}: PIN almashtirildi")
+                messages.success(request, f"{cashier.name}: parol almashtirildi")
 
         elif action == "toggle":
             cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()

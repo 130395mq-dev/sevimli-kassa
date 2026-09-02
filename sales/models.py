@@ -63,13 +63,15 @@ class Cashier(models.Model):
     kirmaydi, faqat kassaga kiradi. Va MoySklad'da ham hisobi bo'lmaydi —
     aynan shu narsa har oyda pul tejaydi.
 
-    Parol o'rniga PIN. Sensorli ekranda uzun parol terish — har smenada
-    azob, va kassir uni monitorga yozib qo'yadi. Qisqa PIN + qurilma
-    tokeni birga yetarli himoya beradi: PIN'ni bilgan odam baribir
-    do'kondagi kassa yonida turishi kerak.
+    Kirish — login + parol. Kassada kassirlar ro'yxati KO'RSATILMAYDI:
+    xodim o'z loginini ham, parolini ham o'zi teradi. Shu tufayli
+    begona odam kassa yonida tursa ham, kim ishlashini va qanday
+    kirishni bilmaydi.
 
-    PIN ochiq saqlanmaydi — faqat xesh. Bazani ko'rgan odam ham
-    PIN'ni bila olmaydi.
+    Parol ochiq saqlanmaydi — faqat xesh (`pin_hash` ustuni eski nomi
+    bilan qolgan; ichida parol xeshi turadi). Bazani ko'rgan odam ham
+    parolni bila olmaydi. Eski PIN'lar xesh o'zgarmagani uchun
+    ishlab ketaveradi.
     """
 
     name = models.CharField(max_length=128)
@@ -102,6 +104,10 @@ class Cashier(models.Model):
         from django.contrib.auth.hashers import check_password
 
         return bool(pin) and check_password(pin, self.pin_hash)
+
+    # Yangi nomlar — kod o'qishga qulay bo'lsin. Ichida o'sha xesh.
+    set_password = set_pin
+    check_password = check_pin
 
 
 class Register(models.Model):

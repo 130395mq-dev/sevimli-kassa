@@ -516,3 +516,56 @@ class PriceTypeTest(ApiTestCase):
         self.open_shift()
         self.post("/api/v1/sales", self.sale_payload(price_type="Улугржи нархи"))
         self.assertEqual(Sale.objects.get().price_type, "Улугржи нархи")
+
+
+class CashierLoginTest(ApiTestCase):
+    """Kassir login + parol bilan kiradi; ro'yxat ko'rsatilmaydi."""
+
+    def setUp(self):
+        super().setUp()
+        from sales.models import Cashier
+
+        self.nilufar = Cashier(name="Rahimova Nilufar", login="nilufar")
+        self.nilufar.set_password("sevimli2026")
+        self.nilufar.save()
+        self.aziz = Cashier(name="Aziz Karimov", login="aziz")
+        self.aziz.set_password("1234")
+        self.aziz.save()
+
+    def test_parol_bilan_kiradi(self):
+        r = self.post("/api/v1/login", {"login": "nilufar", "password": "sevimli2026"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["cashier"]["name"], "Rahimova Nilufar")
+
+    def test_eski_kassa_pin_maydoni_bilan_ham_kiradi(self):
+        r = self.post("/api/v1/login", {"login": "aziz", "pin": "1234"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_notogri_parol(self):
+        r = self.post("/api/v1/login", {"login": "nilufar", "password": "boshqa"})
+        self.assertEqual(r.status_code, 401)
+        self.assertIn("parol", r.json()["error"])
+
+    def test_yoq_login_ham_bir_xil_xato(self):
+        r = self.post("/api/v1/login", {"login": "yoq", "password": "x"})
+        self.assertEqual(r.status_code, 401)
+
+    def test_ochirilgan_kassir_kira_olmaydi(self):
+        self.aziz.active = False
+        self.aziz.save()
+        self.assertEqual(
+            self.post("/api/v1/login", {"login": "aziz", "password": "1234"}).status_code,
+            401,
+        )
+
+    def test_kassaga_biriktirilmagan_kassir_kira_olmaydi(self):
+        """Ismlar ro'yxati yo'q — cheklov endi kirish so'rovida tekshiriladi."""
+        st = self.register.settings
+        st.allowed_cashiers.set([self.nilufar])
+
+        ok = self.post("/api/v1/login", {"login": "nilufar", "password": "sevimli2026"})
+        self.assertEqual(ok.status_code, 200)
+
+        no = self.post("/api/v1/login", {"login": "aziz", "password": "1234"})
+        self.assertEqual(no.status_code, 403)
+        self.assertIn("ruxsat", no.json()["error"])

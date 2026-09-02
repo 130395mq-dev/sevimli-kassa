@@ -31,9 +31,9 @@
         <input name="login" placeholder="bo'sh qoldirsangiz ismdan olinadi">
       </label>
       <label>
-        <span>PIN (4–6 raqam)</span>
-        <input name="pin" required inputmode="numeric" pattern="[0-9]{4,6}"
-               placeholder="1234">
+        <span>Parol (kamida 4 belgi)</span>
+        <input name="pin" required minlength="4"
+               placeholder="harf va raqam bo'lishi mumkin">
       </label>
       <label class="check">
         <input type="checkbox" name="is_manager">
@@ -64,8 +64,7 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="pin">
             <input type="hidden" name="id" value="{{ c.pk }}">
-            <input name="pin" placeholder="yangi PIN" size="8"
-                   inputmode="numeric" pattern="[0-9]{4,6}">
+            <input name="pin" placeholder="yangi parol" size="12" minlength="4">
             <button type="submit" class="small">Almashtirish</button>
           </form>
           <form method="post" class="inline">
@@ -86,9 +85,10 @@
   <div class="alert warn" style="margin-top: 22px;">
     <span>i</span>
     <div>
-      <b>PIN faqat bir marta ko'rsatiladi</b>
-      Bazada u ochiq saqlanmaydi, shuning uchun unutilsa tiklab bo'lmaydi —
-      yangisini berish kerak.
+      <b>Kassir kassaga login va parol bilan kiradi</b>
+      Kassa ekranida ismlar ro'yxati ko'rsatilmaydi — xodim o'z loginini va
+      parolini o'zi teradi. Parol bazada ochiq saqlanmaydi, unutilsa tiklab
+      bo'lmaydi — shu yerdan yangisini bering.
     </div>
   </div>
 {% endblock %}
