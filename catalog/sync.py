@@ -23,7 +23,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from django.db import transaction
 from django.utils import timezone as dj_timezone
 
 from moysklad.client import MoySkladClient, MoySkladError
@@ -402,9 +401,16 @@ class CatalogSync:
 
     # ------------------------------------------------------------------ hammasi
 
-    @transaction.atomic
     def sync_all(self, full: bool = False) -> dict[str, int]:
-        """Birinchi ishga tushirish uchun — hammasini ketma-ket sinxronlaydi."""
+        """Birinchi ishga tushirish uchun — hammasini ketma-ket sinxronlaydi.
+
+        ATAYLAB bitta tranzaksiya EMAS. Avval `@transaction.atomic` edi va
+        bu jiddiy muammo chiqardi: qoldiq (stock) sinxronizatsiyasi bir
+        necha daqiqa davom etadi, shu vaqt ichida SyncState qatorlari
+        qulflangan bo'lardi — kassadan kelgan «hozir yangila» so'rovi
+        o'sha qulfni kutib 90 soniya osilib qolardi. Har bir tur o'zi
+        alohida yakunlanadi — biri to'xtasa, qolganlari yozilib bo'lgan.
+        """
         return {
             "folders": self.sync_folders(full),
             "products": self.sync_products(full),
