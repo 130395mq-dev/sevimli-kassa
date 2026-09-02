@@ -90,7 +90,6 @@
 
     <!-- ============ CHAP: bo'limlar ro'yxati ============ -->
     <nav class="ed-nav">
-      <a href="#kassirlar">Kassirlar</a>
       <a href="#narxlar">Narxlar</a>
       <a href="#sotuvlar">Sotuvlar</a>
       <a href="#tovarlar">Tovarlar</a>
@@ -109,23 +108,6 @@
 
     <!-- ============ O'RTA: bo'limlar ============ -->
     <div>
-
-      <div class="sec-card" id="kassirlar">
-        <h3>Kassirlar</h3>
-        <div class="sec" style="margin-bottom:10px;">Faqat shu xodimlar bu kassaga kira oladi va sotuv qila oladi</div>
-        {% for c in cashiers %}
-          <label class="chk">
-            <input type="checkbox" name="cashiers" value="{{ c.pk }}" {% if c.pk in allowed_ids %}checked{% endif %}>
-            <span>{{ c.name }} <span class="hint">login: {{ c.login }}{% if c.is_manager %} · katta huquqlar{% endif %}</span></span>
-          </label>
-        {% empty %}
-          <div class="empty">Kassir yo'q. «Kassirlar» bo'limida qo'shing.</div>
-        {% endfor %}
-        <label class="chk" style="margin-top:8px;">
-          <input type="checkbox" name="allow_choose_cashier" {% if st.allow_choose_cashier %}checked{% endif %}>
-          <span>Sotuvni rasmiylashtirishda kassirni tanlashga ruxsat</span>
-        </label>
-      </div>
 
       <div class="sec-card" id="narxlar">
         <h3>Narxlar</h3>

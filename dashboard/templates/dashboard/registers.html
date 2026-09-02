@@ -7,7 +7,7 @@
 
 {% block body %}
   <h1>Kassalar</h1>
-  <div class="sub">Har bir kassaning o'z nomi va login-paroli bor</div>
+  <div class="sub">Omborni tanlang — qolganini panel o'zi tayyorlaydi</div>
 
   {% if messages %}
     {% for m in messages %}
@@ -31,33 +31,43 @@
         </select>
       </label>
       <label>
-        <span>Kassa nomi</span>
-        <input name="name" required placeholder="Kassa-1">
+        <span>Kassa nomi <span class="sec">— ixtiyoriy</span></span>
+        <input name="name" placeholder="bo'sh qoldirsangiz: Kassa-1">
       </label>
       <label>
-        <span>Login</span>
-        <input name="login" required placeholder="chilonzor-1">
+        <span>Login <span class="sec">— ixtiyoriy</span></span>
+        <input name="login" placeholder="bo'sh qoldirsangiz ombor nomidan">
       </label>
       <label>
-        <span>Parol</span>
-        <input name="password" required placeholder="kamida 4 belgi">
+        <span>Parol <span class="sec">— ixtiyoriy</span></span>
+        <input name="password" placeholder="bo'sh qoldirsangiz 6 xonali raqam">
       </label>
     </div>
-    <button type="submit">Qo'shish</button>
+    <button type="submit">Yaratish</button>
+    <span class="sec" style="margin-left: 12px;">
+      Faqat omborni tanlab «Yaratish» ni bossangiz ham bo'ladi
+    </span>
   </form>
 
   <h2>Ro'yxat</h2>
   <table>
     <tr>
-      <th>Ombor (sklad)</th><th>Kassa</th><th>Login</th>
+      <th>Ombor (sklad)</th><th>Kassa</th><th>Login</th><th>Parol</th>
       <th>Versiya</th><th>Oxirgi aloqa</th><th></th>
     </tr>
     {% for r in rows %}
       <tr>
         <td>{% if r.wh_name %}<b>{{ r.wh_name }}</b>
             {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
-        <td class="tight">{{ r.name }}</td>
-        <td class="num tight">{{ r.login|default:"—" }}</td>
+        <td class="tight">
+          {{ r.name }}
+          {% if not r.active %}<span class="badge off">bloklangan</span>{% endif %}
+        </td>
+        <td class="num tight"><code class="token">{{ r.login|default:"—" }}</code></td>
+        <td class="num tight">
+          {% if r.password_plain %}<code class="token">{{ r.password_plain }}</code>
+          {% else %}<span class="sec">ko'rinmaydi</span>{% endif %}
+        </td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
         <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
         <td class="actions">
@@ -75,25 +85,47 @@
             <input type="hidden" name="id" value="{{ r.pk }}">
             <button type="submit" class="small ghost">Aloqani uzish</button>
           </form>
+          <form method="post" class="inline"
+                onsubmit="return confirm('«{{ r.name }}» o\'chirilsinmi?\n\nKassa ro\'yxatdan ketadi va bu login bilan kirib bo\'lmaydi. Smenasi bo\'lsa — savdo tarixi saqlanib, kassa bloklanadi.');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost" style="color: var(--danger);">O'chirish</button>
+          </form>
+          {% if not r.active %}
+            <form method="post" class="inline">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="toggle">
+              <input type="hidden" name="id" value="{{ r.pk }}">
+              <button type="submit" class="small ghost">Yoqish</button>
+            </form>
+          {% endif %}
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>
+      <tr><td colspan="7" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
   </table>
 
   <div class="alert warn" style="margin-top: 22px;">
     <span>i</span>
     <div>
-      <b>Kassa qanday ulanadi</b>
-      Kassa ilovasi birinchi ochilganda faqat login va parolni so'raydi
-      (server manzili dastur ichida). Undan keyin so'ramaydi — kalitni o'zi
-      saqlab qo'yadi. «Aloqani uzish» o'sha kalitni bekor qiladi: kassa
-      qayta ulanishi kerak bo'ladi.
+      <b>Kassa qanday ishga tushadi</b>
+      Omborni tanlab kassa yaratasiz — panel unga login va parol beradi,
+      ular shu jadvalda ko'rinib turadi. Monoblokda
+      <code class="token">{{ request.get_host }}/ornatish/</code> ni ochib
+      dasturni yuklaysiz, ishga tushirasiz va o'sha login-parolni terasiz.
+      Boshqa hech narsa sozlanmaydi — kassa qaysi ombordan sotishini o'zi
+      biladi, tovarlar va narxlar MoySklad'dan keladi.
       <br><br>
       <b>Ombor</b> — kassa aynan shu ombordan sotadi: qoldiq shundan
       ko'rsatiladi va savdo MoySklad'da shu ombordan hisobdan chiqadi.
       Keyin «Sozlash → Tovarlar» bo'limidan o'zgartirish mumkin.
+      <br><br>
+      <b>«Aloqani uzish»</b> kassaning kalitini bekor qiladi: dastur
+      login-parol bilan qaytadan ulanadi. <b>«O'chirish»</b> esa kassani
+      ro'yxatdan oladi — smenasi bo'lsa, savdo tarixi buzilmasligi uchun
+      o'chirilmaydi, bloklanadi.
     </div>
   </div>
 {% endblock %}

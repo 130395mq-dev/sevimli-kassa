@@ -108,39 +108,75 @@ class InstallerPageTest(TestCase):
             self.assertEqual(b"".join(r.streaming_content), content)
 
 
-class CashiersPageTest(TestCase):
-    """Kassir: faqat login va parol. Ism so'ralmaydi."""
+class RegistersPageTest(TestCase):
+    """Kassa: omborni tanlash yetarli, login-parol o'zi tayyorlanadi."""
 
     def setUp(self):
+        from catalog.models import Warehouse
+
         User.objects.create_superuser("admin2", "a2@a.uz", "admin")
         self.client.login(username="admin2", password="admin")
+        self.wh = Warehouse.objects.create(
+            ms_id="11111111-1111-1111-1111-111111111111", name="Chilonzor"
+        )
 
-    def test_ismsiz_qoshiladi(self):
-        from sales.models import Cashier
+    def test_faqat_ombor_bilan_yaratiladi(self):
+        from sales.models import Register
 
-        r = self.client.post("/kassirlar/", {
-            "action": "create", "login": "nilufar", "pin": "1234",
+        r = self.client.post("/kassalar/", {
+            "action": "create", "warehouse": str(self.wh.ms_id),
         }, follow=True)
         self.assertEqual(r.status_code, 200)
-        c = Cashier.objects.get()
-        self.assertEqual(c.login, "nilufar")
-        self.assertEqual(c.name, "nilufar")
-        self.assertTrue(c.check_password("1234"))
 
-        # Loginsiz qo'shilmaydi
-        self.client.post("/kassirlar/", {"action": "create", "pin": "1234"})
-        self.assertEqual(Cashier.objects.count(), 1)
+        reg = Register.objects.get()
+        self.assertEqual(reg.name, "Kassa-1")
+        self.assertEqual(reg.login, "chilonzor")
+        self.assertEqual(len(reg.password_plain), 6)
+        self.assertTrue(reg.check_password(reg.password_plain))
+        self.assertEqual(str(reg.settings.warehouse_ms_id), str(self.wh.ms_id))
+        # Parol panelda ko'rinib turadi
+        self.assertIn(reg.password_plain, r.content.decode())
 
-    def test_butunlay_ochirish(self):
-        from sales.models import Cashier
+    def test_ikkinchisiga_boshqa_login(self):
+        from sales.models import Register
 
-        c = Cashier(name="Eski", login="eski")
-        c.set_password("1234")
-        c.save()
+        for _ in range(2):
+            self.client.post("/kassalar/", {
+                "action": "create", "warehouse": str(self.wh.ms_id),
+            })
+        logins = sorted(Register.objects.values_list("login", flat=True))
+        self.assertEqual(logins, ["chilonzor", "chilonzor-2"])
 
-        r = self.client.post("/kassirlar/", {
-            "action": "delete", "id": c.pk,
-        }, follow=True)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(Cashier.objects.count(), 0)
-        self.assertIn("butunlay o", r.content.decode())
+    def test_smenasiz_kassa_ochiriladi(self):
+        from sales.models import Register
+
+        self.client.post("/kassalar/", {
+            "action": "create", "warehouse": str(self.wh.ms_id),
+        })
+        reg = Register.objects.get()
+        self.client.post("/kassalar/", {"action": "delete", "id": reg.pk})
+        self.assertEqual(Register.objects.count(), 0)
+
+    def test_smenali_kassa_ochirilmaydi_bloklanadi(self):
+        from django.utils import timezone
+
+        from sales.models import Register, Shift
+
+        self.client.post("/kassalar/", {
+            "action": "create", "warehouse": str(self.wh.ms_id),
+        })
+        reg = Register.objects.get()
+        Shift.objects.create(
+            register=reg, number=1, cashier=reg.name, opened_at=timezone.now(),
+        )
+
+        r = self.client.post(
+            "/kassalar/", {"action": "delete", "id": reg.pk}, follow=True
+        )
+        reg.refresh_from_db()
+        self.assertEqual(Register.objects.count(), 1)
+        self.assertFalse(reg.active)
+        self.assertIn("savdo tarixi", r.content.decode())
+
+    def test_kassirlar_sahifasi_yoq(self):
+        self.assertEqual(self.client.get("/kassirlar/").status_code, 404)

@@ -16,6 +16,7 @@ Uchta narsa ko'rinadi, muhimlik tartibida:
 
 from __future__ import annotations
 
+import secrets
 from datetime import timedelta
 
 from django.contrib import messages
@@ -27,7 +28,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
-from sales.models import Cashier, Payment, Register, Sale, Shift
+from sales.models import Payment, Register, Sale, Shift
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
 
@@ -35,6 +36,17 @@ from shared.receipt import render as render_receipt
 # Kassa har daqiqada bir marta ko'rinadi, shuning uchun 5 daqiqa
 # tasodifiy uzilish emas.
 OFFLINE_AFTER = timedelta(minutes=5)
+
+
+def _free_login(base: str) -> str:
+    """Band bo'lmagan login: «chilonzor», bo'lmasa «chilonzor-2» …"""
+    base = (base or "kassa")[:56]
+    if not Register.objects.filter(login=base).exists():
+        return base
+    n = 2
+    while Register.objects.filter(login=f"{base}-{n}").exists():
+        n += 1
+    return f"{base}-{n}"
 
 
 def health(request):
@@ -179,86 +191,6 @@ def shift_detail(request, pk: int):
 
 
 @login_required
-def cashiers(request):
-    """Kassirlar — yaratish, parol almashtirish, o'chirish.
-
-    Kassirlar Django foydalanuvchisi emas: ular panelga kirmaydi.
-    Shuning uchun bu yerda o'z ekrani bor, Django admin emas —
-    do'kon boshqaruvchisi Django admin bilan ishlamasligi kerak.
-    """
-    if request.method == "POST":
-        action = request.POST.get("action")
-
-        if action == "create":
-            # Ism so'ralmaydi: kassir kassaga login bilan kiradi, ism hech
-            # qayerda ishlatilmaydi. `name` ustuni eski smenalar uchun
-            # qolgan — unga loginning o'zi yoziladi.
-            pin = (request.POST.get("pin") or "").strip()
-            login = slugify(request.POST.get("login") or "") or ""
-
-            if not login:
-                messages.error(request, "Login kiritilmadi")
-            elif len(pin) < 4:
-                messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
-            elif Cashier.objects.filter(login=login).exists():
-                messages.error(request, f"«{login}» logini band")
-            else:
-                cashier = Cashier(
-                    name=login, login=login,
-                    is_manager=bool(request.POST.get("is_manager")),
-                )
-                cashier.set_password(pin)
-                cashier.save()
-                messages.success(
-                    request,
-                    f"«{login}» qo'shildi. Kassada shu login va parol bilan kiradi.",
-                )
-
-        elif action == "pin":
-            pin = (request.POST.get("pin") or "").strip()
-            cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()
-            if not cashier:
-                messages.error(request, "Kassir topilmadi")
-            elif len(pin) < 4:
-                messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
-            else:
-                cashier.set_password(pin)
-                cashier.save(update_fields=["pin_hash"])
-                messages.success(request, f"{cashier.name}: parol almashtirildi")
-
-        elif action == "toggle":
-            cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()
-            if cashier:
-                cashier.active = not cashier.active
-                cashier.save(update_fields=["active"])
-                messages.success(
-                    request,
-                    f"{cashier.login}: " + ("yoqildi" if cashier.active else "o'chirildi"),
-                )
-
-        elif action == "delete":
-            # Butunlay o'chirish. Smenalar qolib ketadi: ularda kassir ismi
-            # matn ko'rinishida nusxalangan (`Shift.cashier`), FK esa
-            # SET_NULL — ya'ni eski hisobotlar buzilmaydi.
-            cashier = Cashier.objects.filter(pk=request.POST.get("id")).first()
-            if not cashier:
-                messages.error(request, "Kassir topilmadi")
-            else:
-                login = cashier.login
-                cashier.delete()
-                messages.success(
-                    request,
-                    f"«{login}» butunlay o'chirildi. Eski smenalar joyida qoldi.",
-                )
-
-        return redirect("dashboard:cashiers")
-
-    return render(request, "dashboard/cashiers.html", {
-        "rows": Cashier.objects.annotate(shift_count=Count("shifts")),
-    })
-
-
-@login_required
 def registers(request):
     """Kassalar: nom, login, parol.
 
@@ -272,19 +204,32 @@ def registers(request):
         action = request.POST.get("action")
 
         if action == "create":
-            name = (request.POST.get("name") or "").strip()
-            login = slugify(request.POST.get("login") or "")
-            password = (request.POST.get("password") or "").strip()
+            # Yagona majburiy narsa — ombor. Qolganini o'zimiz to'ldiramiz:
+            # boshqaruvchi omborni tanlaydi, panel unga tayyor login va
+            # parol beradi, u monoblokka o'shani teradi. Xohlasa o'zi ham
+            # yozishi mumkin.
             warehouse = Warehouse.objects.filter(
                 ms_id=request.POST.get("warehouse") or None
             ).first()
+            name = (request.POST.get("name") or "").strip()
+            login = slugify(request.POST.get("login") or "")
+            password = (request.POST.get("password") or "").strip()
 
-            if not name or not login:
-                messages.error(request, "Nom va login kerak")
+            if warehouse:
+                if not name:
+                    n = Register.objects.filter(
+                        settings_row__warehouse_ms_id=warehouse.ms_id
+                    ).count() + 1
+                    name = f"Kassa-{n}"
+                if not login:
+                    login = _free_login(slugify(warehouse.name) or "kassa")
+                if not password:
+                    password = f"{secrets.randbelow(900000) + 100000}"
+
+            if not warehouse:
+                messages.error(request, "Ombor (sklad) tanlanmadi")
             elif len(password) < 4:
                 messages.error(request, "Parol kamida 4 belgi bo'lishi kerak")
-            elif not warehouse:
-                messages.error(request, "Ombor (sklad) tanlanmadi")
             elif Register.objects.filter(login=login).exists():
                 messages.error(request, f"«{login}» logini band")
             else:
@@ -308,8 +253,8 @@ def registers(request):
                 )
                 messages.success(
                     request,
-                    f"{name} qo'shildi — «{warehouse.name}» omboridan sotadi. "
-                    f"Kassa ilovasida login «{login}» va shu parolni kiriting.",
+                    f"{name} tayyor — «{warehouse.name}» omboridan sotadi. "
+                    f"Monoblokda: login «{login}», parol «{password}».",
                 )
 
         elif action == "password":
@@ -333,6 +278,40 @@ def registers(request):
                     request,
                     f"{reg.name}: aloqa uzildi. Kassa ilovasida login va "
                     "parol bilan qayta ulanish kerak.",
+                )
+
+        elif action == "delete":
+            # Smenasi bor kassani o'chirib bo'lmaydi (Shift.register —
+            # PROTECT): aks holda savdo tarixi yo'qoladi. Bunday kassani
+            # bloklash kerak — u ro'yxatda qoladi, lekin kira olmaydi.
+            reg = Register.objects.filter(pk=request.POST.get("id")).first()
+            if not reg:
+                messages.error(request, "Kassa topilmadi")
+            else:
+                shifts_count = reg.shifts.count()
+                if shifts_count:
+                    reg.active = False
+                    reg.save(update_fields=["active"])
+                    messages.error(
+                        request,
+                        f"«{reg.name}» da {shifts_count} ta smena bor — "
+                        "butunlay o'chirib bo'lmaydi, savdo tarixi yo'qolardi. "
+                        "Buning o'rniga bloklandi: endi bu login bilan "
+                        "kassaga kirib bo'lmaydi.",
+                    )
+                else:
+                    label = reg.name
+                    reg.delete()
+                    messages.success(request, f"«{label}» o'chirildi.")
+
+        elif action == "toggle":
+            reg = Register.objects.filter(pk=request.POST.get("id")).first()
+            if reg:
+                reg.active = not reg.active
+                reg.save(update_fields=["active"])
+                messages.success(
+                    request,
+                    f"{reg.name}: " + ("yoqildi" if reg.active else "bloklandi"),
                 )
 
         return redirect("dashboard:registers")
@@ -560,10 +539,6 @@ def register_edit(request, pk: int):
 
         st.save()
 
-        # Kassirlar — belgilanganlari
-        ids = request.POST.getlist("cashiers")
-        st.allowed_cashiers.set(Cashier.objects.filter(pk__in=ids))
-
         messages.success(request, f"{reg.name}: sozlamalar saqlandi")
         return redirect("dashboard:register-edit", pk=reg.pk)
 
@@ -582,8 +557,6 @@ def register_edit(request, pk: int):
     return render(request, "dashboard/register_edit.html", {
         "reg": reg,
         "st": st,
-        "cashiers": Cashier.objects.filter(active=True),
-        "allowed_ids": set(st.allowed_cashiers.values_list("pk", flat=True)),
         "stores": real_stores,
         "price_types": PriceType.objects.all(),
         "store_price_type": reg.store.price_type_name if reg.store_id else "",

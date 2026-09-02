@@ -132,6 +132,14 @@ class Register(models.Model):
     login = models.SlugField(max_length=64, unique=True, null=True, blank=True)
     password_hash = models.CharField(max_length=256, blank=True)
 
+    #: Parolning o'zi — panelda ko'rinib turishi uchun.
+    #:
+    #: Odam paroli bo'lganida bu xato bo'lardi. Lekin bu qurilma paroli:
+    #: uni do'kon boshqaruvchisi monoblokka teradi, xodim esa yodida
+    #: saqlamaydi. Ko'rinmasa — unutilgan parol har safar almashtiriladi
+    #: va kassa uzilib qoladi. Tekshirish baribir xesh bo'yicha boradi.
+    password_plain = models.CharField(max_length=64, blank=True)
+
     # Ilova shu token bilan gaplashadi. Har bir kassaning o'z tokeni bor:
     # bittasi o'g'irlansa, faqat o'shani almashtiramiz.
     api_token = models.CharField(
@@ -199,6 +207,7 @@ class Register(models.Model):
         from django.contrib.auth.hashers import make_password
 
         self.password_hash = make_password(password)
+        self.password_plain = password
 
     def check_password(self, password: str) -> bool:
         from django.contrib.auth.hashers import check_password

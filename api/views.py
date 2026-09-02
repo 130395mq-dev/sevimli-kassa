@@ -142,35 +142,45 @@ def connect(request):
 @require_POST
 @register_required
 def login(request):
-    """Kassir kassaga kiradi: login + parol.
+    """Kassaga kirish: login + parol.
 
-    Ikki qatlam: qurilma tokeni «bu kassa bizniki» deydi, login-parol esa
-    «bu odam kim» deydi. Bittasi yetarli emas — token o'g'irlansa ham
+    Asosiy yo'l — **kassaning o'z logini va paroli**. Har bir kassa
+    panelda yaratiladi va o'z login-parolini oladi; kim o'sha kassada
+    ishlasa, o'shani teradi. Alohida «kassirlar» ro'yxati yuritilmaydi:
+    do'konda kassa bitta, unda kim turgani smena hisobotidan ko'rinadi.
+
+    Ikki qatlam saqlanadi: qurilma tokeni «bu kassa bizniki» deydi,
+    login-parol esa «kirish huquqi bor» deydi. Token o'g'irlansa ham
     parol kerak, parol bilinsa ham kassa yonida turish kerak.
 
-    Xato uchun sabab aytilmaydi («login noto'g'ri» yoki «parol noto'g'ri»
-    emas, balki umumiy xabar): aks holda mavjud loginlarni bittalab topib
-    olish mumkin bo'lardi.
+    Eski kassirlar (agar bazada qolgan bo'lsa) ham kira oladi — shu
+    tufayli o'tish paytida hech kim ishsiz qolmaydi.
+
+    Xato uchun sabab aytilmaydi («login noto'g'ri» yoki «parol
+    noto'g'ri» emas, balki umumiy xabar): aks holda mavjud loginlarni
+    bittalab topib olish mumkin bo'lardi.
     """
+    reg = request.register
     data = body(request)
     name = (data.get("login") or "").strip().lower()
     # Eski kassalar `pin`, yangilari `password` yuboradi
     secret = (data.get("password") or data.get("pin") or "").strip()
 
+    # 1. Kassaning o'z login-paroli
+    if name == (reg.login or "").lower() and reg.check_password(secret):
+        return JsonResponse({
+            "cashier": {
+                "id": 0,
+                "name": reg.name,
+                "login": reg.login,
+                "is_manager": True,
+            }
+        })
+
+    # 2. Eski kassir hisobi (o'tish davri uchun)
     cashier = Cashier.objects.filter(login=name, active=True).first()
     if not cashier or not cashier.check_password(secret):
         return error("Login yoki parol noto'g'ri", status=401)
-
-    # Kassaga aniq kassirlar biriktirilgan bo'lsa — faqat o'shalar.
-    # Ilgari bu faqat ro'yxatni ko'rsatishda ishlardi; endi ro'yxat
-    # umuman ko'rsatilmaydi, shuning uchun tekshiruv shu yerda.
-    allowed = request.register.settings.allowed_cashiers.all()
-    if allowed.exists() and not allowed.filter(pk=cashier.pk).exists():
-        logger.warning(
-            "%s kassasiga ruxsatsiz kirish urinishi: %s",
-            request.register.code, cashier.login,
-        )
-        return error("Bu kassada ishlashga ruxsatingiz yo'q", status=403)
 
     Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
 
@@ -287,12 +297,6 @@ def hello(request):
     shift = reg.shifts.filter(status=Shift.OPEN).first()
     st = reg.settings
 
-    # Kassirlar: agar shu kassaga aniq kassirlar biriktirilgan bo'lsa —
-    # faqat o'shalar kira oladi (MoySklad «Кассиры» bo'limi). Bo'sh
-    # bo'lsa — hamma faol kassir kira oladi (eski holat).
-    allowed = st.allowed_cashiers.filter(active=True)
-    cashier_qs = allowed if allowed.exists() else Cashier.objects.filter(active=True)
-
     price_types, default_pt = _price_types_for(reg, st)
 
     return JsonResponse(
@@ -308,13 +312,11 @@ def hello(request):
                 {"code": m.code, "name": m.name, "is_cash": m.is_cash}
                 for m in PaymentMethod.objects.filter(active=True)
             ],
-            # Kassirlar ro'yxati — kirish oynasida tugma bo'lib chiqadi.
-            # PIN baribir so'raladi, shuning uchun ismni ko'rsatish
-            # xavfsizlikni kamaytirmaydi, lekin kirishni tezlashtiradi.
-            "cashiers": [
-                {"login": c.login, "name": c.name}
-                for c in cashier_qs
-            ],
+            # Kassirlar ro'yxati endi yuritilmaydi: kassaga o'z
+            # login-paroli bilan kiriladi. Kalit eski ilovalar uchun
+            # qoldirilgan — ular bo'sh ro'yxatni ko'rib kirish oynasini
+            # terish rejimida ochadi.
+            "cashiers": [],
             # Kassaning sozlamalari — ilova shunga qarab ishlaydi
             # (chegirma chegarasi, majburiy maydonlar, qaytarish va h.k.).
             "settings": st.as_kassa_dict(),
@@ -661,19 +663,18 @@ def shift_open(request):
             status=409,
         )
 
-    # Smenani faqat kirgan kassir ocha oladi
+    # Smenani kim ochgani hisobotda ko'rinib tursin. Kassaning o'z
+    # login-paroli bilan kirilsa — kassaning nomi yoziladi. Eski
+    # kassirlar hisobi qolgan bo'lsa, o'shaning ismi.
     cashier_ref = None
     cashier_id = data.get("cashier_id")
     if cashier_id:
         cashier_ref = Cashier.objects.filter(pk=cashier_id, active=True).first()
-        if not cashier_ref:
-            return error("Kassir topilmadi", status=401)
-        name = cashier_ref.name
-    else:
-        name = (data.get("cashier") or "").strip()
-
-    if not name:
-        return error("Kassir ko'rsatilmagan")
+    name = (
+        (cashier_ref.name if cashier_ref else "")
+        or (data.get("cashier") or "").strip()
+        or reg.name
+    )
 
     last = reg.shifts.order_by("-number").values_list("number", flat=True).first() or 0
     shift = Shift.objects.create(

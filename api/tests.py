@@ -118,9 +118,11 @@ class ShiftTest(ApiTestCase):
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["shift"]["number"], 1)
 
-    def test_kassirsiz_ochilmaydi(self):
+    def test_kassirsiz_ochilsa_kassa_nomi_yoziladi(self):
+        """Kassirlar ro'yxati yo'q — smenani kassaning o'zi ochadi."""
         r = self.post("/api/v1/shift/open", {"cashier": "  "})
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["shift"]["cashier"], self.register.name)
 
     def test_ikkita_ochiq_smena_bolmaydi(self):
         self.open_shift()
@@ -558,17 +560,25 @@ class CashierLoginTest(ApiTestCase):
             401,
         )
 
-    def test_kassaga_biriktirilmagan_kassir_kira_olmaydi(self):
-        """Ismlar ro'yxati yo'q — cheklov endi kirish so'rovida tekshiriladi."""
-        st = self.register.settings
-        st.allowed_cashiers.set([self.nilufar])
+    def test_kassa_ozining_login_paroli_bilan_kiradi(self):
+        """Asosiy yo'l: kassirlar ro'yxati yo'q, kassaning o'z login-paroli."""
+        self.register.login = "chilonzor-1"
+        self.register.set_password("777888")
+        self.register.save()
 
-        ok = self.post("/api/v1/login", {"login": "nilufar", "password": "sevimli2026"})
+        ok = self.post(
+            "/api/v1/login", {"login": "chilonzor-1", "password": "777888"}
+        )
         self.assertEqual(ok.status_code, 200)
+        who = ok.json()["cashier"]
+        self.assertEqual(who["login"], "chilonzor-1")
+        self.assertEqual(who["name"], self.register.name)
+        self.assertTrue(who["is_manager"])
 
-        no = self.post("/api/v1/login", {"login": "aziz", "password": "1234"})
-        self.assertEqual(no.status_code, 403)
-        self.assertIn("ruxsat", no.json()["error"])
+        no = self.post(
+            "/api/v1/login", {"login": "chilonzor-1", "password": "000000"}
+        )
+        self.assertEqual(no.status_code, 401)
 
 
 class WarehouseGuardTest(ApiTestCase):
