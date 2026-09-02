@@ -184,12 +184,23 @@ class CatalogSync:
             uom_name = ((row.get("uom") or {}).get("name") or "").strip()
             is_weight = uom_name.lower() in {"кг", "kg", "г", "gramm", "литр", "l"}
 
+            code = row.get("code", "") or ""
+            # Tarozi PLU — vaznli tovar kodining raqamli qismi. Tarozi
+            # yorlig'i (29 + PLU + vazn) shu PLU bilan tovarni topadi;
+            # MoySklad'da vaznli tovar kodi = tarozidagi PLU raqami.
+            plu_val = None
+            if is_weight:
+                digits = "".join(ch for ch in code if ch.isdigit())
+                if digits and len(digits) <= 9:
+                    plu_val = int(digits)
+
             product, _ = Product.objects.update_or_create(
                 ms_id=row["id"],
                 defaults={
                     "kind": kind,
                     "name": row.get("name", ""),
-                    "code": row.get("code", "") or "",
+                    "code": code,
+                    "plu": plu_val,
                     "article": row.get("article", "") or "",
                     "folder": folder,
                     "sale_price": self._first_sale_price(row),
