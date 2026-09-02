@@ -403,3 +403,64 @@ class ReturnFlowTest(ApiTestCase):
         })
         sales = self.client.get("/api/v1/sales/returnable", **self.auth()).json()["sales"]
         self.assertEqual(sales[0]["items"][0]["returned_qty"], 1.0)
+
+
+class UpdateTest(ApiTestCase):
+    """Kassa ilovasining o'zini yangilashi."""
+
+    def _release(self, version, mandatory=False, content=b"MZ-fake-exe"):
+        import hashlib
+
+        from django.core.files.base import ContentFile
+
+        from sales.models import KassaRelease
+
+        rel = KassaRelease(
+            version=version, mandatory=mandatory, notes="Sinov",
+            size=len(content), sha256=hashlib.sha256(content).hexdigest(),
+        )
+        rel.file.save(f"SevimliKassa-{version}.exe", ContentFile(content), save=True)
+        return rel
+
+    def test_versiya_yoq_bolsa_env_zaxira(self):
+        with self.settings(APP_VERSION="1.0.0", APP_DOWNLOAD_URL=""):
+            r = self.client.get("/api/v1/version", **self.auth())
+        self.assertEqual(r.json()["version"], "1.0.0")
+        self.assertFalse(r.json()["mandatory"])
+
+    def test_eng_katta_raqamli_versiya_qaytadi(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d, self.settings(MEDIA_ROOT=d):
+            self._release("1.9.0")
+            self._release("1.10.0", mandatory=True)   # matn bo'yicha kichik, raqam bo'yicha katta
+            r = self.client.get("/api/v1/version", **self.auth())
+            data = r.json()
+            self.assertEqual(data["version"], "1.10.0")
+            self.assertTrue(data["mandatory"])
+            self.assertIn("/api/v1/update/download?v=1.10.0", data["url"])
+            self.assertEqual(data["size"], len(b"MZ-fake-exe"))
+
+            # Yuklab olish — faqat token bilan
+            dl = self.client.get("/api/v1/update/download?v=1.10.0", **self.auth())
+            self.assertEqual(dl.status_code, 200)
+            self.assertEqual(b"".join(dl.streaming_content), b"MZ-fake-exe")
+            self.assertEqual(
+                self.client.get("/api/v1/update/download?v=1.10.0").status_code, 401
+            )
+            self.assertEqual(
+                self.client.get("/api/v1/update/download?v=9.9.9", **self.auth()).status_code,
+                404,
+            )
+
+    def test_kassa_versiyasi_sarlavhadan_yoziladi(self):
+        self.client.get("/api/v1/hello", HTTP_X_KASSA_VERSION="1.2.3", **self.auth())
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.app_version, "1.2.3")
+
+    def test_version_key(self):
+        from sales.models import version_key
+
+        self.assertLess(version_key("1.9.0"), version_key("1.10.0"))
+        self.assertEqual(version_key("2"), (2, 0, 0))
+        self.assertEqual(version_key("v1.2.3-beta"), (1, 2, 3))

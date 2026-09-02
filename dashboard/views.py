@@ -305,9 +305,127 @@ def registers(request):
 
         return redirect("dashboard:registers")
 
+    from sales.models import KassaRelease, version_key
+
+    latest = KassaRelease.latest()
+    rows = list(Register.objects.select_related("store"))
+    for r in rows:
+        # Panelda: yashil — eng yangi, sariq — eskirgan, kulrang — noma'lum
+        if not r.app_version:
+            r.version_state = "off"
+        elif latest and version_key(r.app_version) < latest.key:
+            r.version_state = "warn"
+        else:
+            r.version_state = "ok"
+
     return render(request, "dashboard/registers.html", {
-        "rows": Register.objects.select_related("store"),
+        "rows": rows,
         "stores": RetailStore.objects.filter(active=True),
+        "latest": latest,
+    })
+
+
+@login_required
+def releases(request):
+    """Kassa ilovasining versiyalari.
+
+    Yangi SevimliKassa.exe shu yerdan yuklanadi. Kassalar o'zi tekshirib
+    (ochilganda va har 30 daqiqada) yuklab oladi va o'zini almashtiradi.
+    «Majburiy» belgilansa — kassir «Keyinroq» deya olmaydi.
+    """
+    import hashlib
+
+    from sales.models import KassaRelease, version_key
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "upload":
+            version = (request.POST.get("version") or "").strip().lstrip("vV")
+            notes = (request.POST.get("notes") or "").strip()
+            mandatory = bool(request.POST.get("mandatory"))
+            upload = request.FILES.get("file")
+
+            latest = KassaRelease.latest()
+            if not version or version_key(version) == (0, 0, 0):
+                messages.error(request, "Versiya raqami kerak, masalan 1.2.0")
+            elif KassaRelease.objects.filter(version=version).exists():
+                messages.error(request, f"{version} allaqachon yuklangan")
+            elif latest and version_key(version) <= latest.key:
+                messages.error(
+                    request,
+                    f"Versiya {latest.version} dan katta bo'lishi kerak "
+                    f"(kassalar faqat kattasini oladi)",
+                )
+            elif not upload:
+                messages.error(request, "SevimliKassa.exe faylini tanlang")
+            elif not upload.name.lower().endswith(".exe"):
+                messages.error(request, "Faqat .exe fayl qabul qilinadi")
+            elif upload.size < 1_000_000:
+                messages.error(request, "Fayl juda kichik — bu SevimliKassa.exe emas")
+            else:
+                digest = hashlib.sha256()
+                for chunk in upload.chunks():
+                    digest.update(chunk)
+                rel = KassaRelease(
+                    version=version, notes=notes, mandatory=mandatory,
+                    size=upload.size, sha256=digest.hexdigest(),
+                )
+                rel.file.save(f"SevimliKassa-{version}.exe", upload, save=True)
+                messages.success(
+                    request,
+                    f"Versiya {version} chiqarildi. Kassalar 30 daqiqa ichida "
+                    + ("majburiy yangilanadi." if mandatory else "taklif oladi."),
+                )
+
+        elif action == "toggle":
+            rel = KassaRelease.objects.filter(pk=request.POST.get("id")).first()
+            if rel:
+                rel.active = not rel.active
+                rel.save(update_fields=["active"])
+                messages.success(
+                    request,
+                    f"{rel.version}: " + ("yoqildi" if rel.active else "o'chirildi"),
+                )
+
+        elif action == "mandatory":
+            rel = KassaRelease.objects.filter(pk=request.POST.get("id")).first()
+            if rel:
+                rel.mandatory = not rel.mandatory
+                rel.save(update_fields=["mandatory"])
+                messages.success(
+                    request,
+                    f"{rel.version}: " + ("majburiy" if rel.mandatory else "ixtiyoriy"),
+                )
+
+        elif action == "delete":
+            rel = KassaRelease.objects.filter(pk=request.POST.get("id")).first()
+            if rel:
+                try:
+                    rel.file.delete(save=False)
+                except Exception:
+                    pass
+                rel.delete()
+                messages.success(request, f"{rel.version} o'chirildi")
+
+        return redirect("dashboard:releases")
+
+    latest = KassaRelease.latest()
+    rows = list(KassaRelease.objects.all())
+    rows.sort(key=lambda r: r.key, reverse=True)
+
+    # Qaysi kassa qaysi versiyada — bir qarashda
+    regs = Register.objects.select_related("store").filter(active=True)
+    outdated = []
+    for r in regs:
+        if latest and (not r.app_version or version_key(r.app_version) < latest.key):
+            outdated.append(r)
+
+    return render(request, "dashboard/releases.html", {
+        "rows": rows,
+        "latest": latest,
+        "registers": regs,
+        "outdated": outdated,
     })
 
 

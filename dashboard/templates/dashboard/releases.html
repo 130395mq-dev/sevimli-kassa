@@ -1,0 +1,143 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Versiyalar — Sevimli Kassa{% endblock %}
+{% block nav_releases %}on{% endblock %}
+
+{% block body %}
+  <h1>Kassa ilovasi versiyalari</h1>
+  <div class="sub">
+    Yangi SevimliKassa.exe shu yerga yuklanadi — kassalar o'zi yuklab olib, o'zini yangilaydi
+  </div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="tiles">
+    <div class="tile hero">
+      <div class="label">Joriy versiya</div>
+      <div class="value">{% if latest %}{{ latest.version }}{% else %}—{% endif %}</div>
+      <div class="note">
+        {% if latest %}{{ latest.created_at|date:"d.m.Y H:i" }}{% if latest.mandatory %} · majburiy{% endif %}
+        {% else %}hali yuklanmagan{% endif %}
+      </div>
+    </div>
+    <div class="tile">
+      <div class="label">Kassalar</div>
+      <div class="value">{{ registers|length }}</div>
+      <div class="note">faol kassa</div>
+    </div>
+    <div class="tile">
+      <div class="label">Eskirgan</div>
+      <div class="value" style="color: {% if outdated %}var(--warn){% else %}var(--ok){% endif %};">{{ outdated|length }}</div>
+      <div class="note">{% if outdated %}yangilanishi kerak{% else %}hammasi yangi{% endif %}</div>
+    </div>
+  </div>
+
+  <h2>Yangi versiya chiqarish</h2>
+  <form method="post" enctype="multipart/form-data" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="upload">
+    <div class="fields">
+      <label>
+        <span>Versiya raqami</span>
+        <input name="version" required placeholder="{% if latest %}{{ latest.version }} dan katta, masalan{% else %}masalan{% endif %} 1.2.0"
+               pattern="[0-9]+(\.[0-9]+){1,3}" title="Masalan: 1.2.0">
+      </label>
+      <label>
+        <span>SevimliKassa.exe fayli</span>
+        <input type="file" name="file" accept=".exe" required>
+      </label>
+      <label style="grid-column: 1 / -1;">
+        <span>Nima o'zgardi (kassirga ko'rinadi)</span>
+        <input name="notes" placeholder="Tarozi kodlari, yangilanish oynasi, xatolar tuzatildi">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="mandatory" value="1">
+        <span><b>Majburiy yangilanish</b> — kassir «Keyinroq» deya olmaydi; joriy chek yakunlangach darhol yangilanadi</span>
+      </label>
+    </div>
+    <button type="submit">Chiqarish</button>
+    <span class="sec" style="margin-left: 12px;">
+      Fayl: kompyuterdagi <code class="token">…\sevimli-kassa-KASSA\dist\SevimliKassa.exe</code>
+      (KASSA-EXE-YASASH dan keyin)
+    </span>
+  </form>
+
+  <h2>Chiqarilgan versiyalar</h2>
+  <table>
+    <tr>
+      <th>Versiya</th><th>Sana</th><th>Hajm</th><th>Izoh</th><th>Holat</th><th></th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td><b>{{ r.version }}</b>{% if latest and r.pk == latest.pk %} <span class="badge ok">joriy</span>{% endif %}</td>
+        <td class="num">{{ r.created_at|date:"d.m.Y H:i" }}</td>
+        <td class="num">{{ r.size|filesizeformat }}</td>
+        <td class="sec">{{ r.notes|default:"—" }}</td>
+        <td>
+          {% if not r.active %}<span class="badge off">o'chirilgan</span>
+          {% elif r.mandatory %}<span class="badge err">majburiy</span>
+          {% else %}<span class="badge ok">ixtiyoriy</span>{% endif %}
+        </td>
+        <td class="right">
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="mandatory">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost">{% if r.mandatory %}Ixtiyoriy qilish{% else %}Majburiy qilish{% endif %}</button>
+          </form>
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost">{% if r.active %}O'chirish{% else %}Yoqish{% endif %}</button>
+          </form>
+          <form method="post" class="inline" onsubmit="return confirm('{{ r.version }} butunlay o\'chirilsinmi?');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost" style="color: var(--danger);">Yo'q qilish</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">Hali versiya chiqarilmagan. Kassalar hozircha o'zini yangilamaydi.</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Kassalarda qaysi versiya</h2>
+  <table>
+    <tr><th>Nuqta</th><th>Kassa</th><th>Versiya</th><th>Oxirgi aloqa</th></tr>
+    {% for r in registers %}
+      <tr>
+        <td>{{ r.store.name }}</td>
+        <td>{{ r.name }}</td>
+        <td>
+          {% if not r.app_version %}<span class="badge off">noma'lum</span>
+          {% elif r in outdated %}<span class="badge warn">{{ r.app_version }} · eskirgan</span>
+          {% else %}<span class="badge ok">{{ r.app_version }}</span>{% endif %}
+        </td>
+        <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="empty">Kassa yo'q.</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Qanday ishlaydi</b>
+      Kassa ochilganda va har 30 daqiqada serverdan versiyani so'raydi. Yangisi bo'lsa
+      fonda yuklab oladi (kassir ishlashda davom etadi), keyin «Yangilash» taklif qiladi.
+      Majburiy versiyada taklif emas — chek yakunlangach o'zi yangilanib qayta ochiladi.
+      Yuklab olingan fayl tekshiriladi (SHA-256), buzuq fayl o'rnatilmaydi.
+    </div>
+  </div>
+{% endblock %}

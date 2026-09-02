@@ -58,6 +58,13 @@ def register_required(view):
         if not register.last_seen_at or (now - register.last_seen_at).total_seconds() > 60:
             Register.objects.filter(pk=register.pk).update(last_seen_at=now)
 
+        # Kassa o'z versiyasini har so'rovda aytadi — panelda «kim
+        # eskirgan» ko'rinadi. Faqat o'zgarganda yozamiz.
+        ver = (request.headers.get("X-Kassa-Version") or "").strip()[:32]
+        if ver and ver != register.app_version:
+            Register.objects.filter(pk=register.pk).update(app_version=ver)
+            register.app_version = ver
+
         return view(request, *args, **kwargs)
 
     return wrapper

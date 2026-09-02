@@ -133,10 +133,18 @@ MOYSKLAD_TOKEN = env("MOYSKLAD_TOKEN")
 MOYSKLAD_RETAIL_CUSTOMER_ID = env("MOYSKLAD_RETAIL_CUSTOMER_ID")
 
 # Kassa ilovasining yangilanishi.
-# APP_DOWNLOAD_URL bo'sh bo'lsa — yangilanish o'chirilgan.
+#
+# Asosiy yo'l — panel: «Versiyalar» sahifasida yangi SevimliKassa.exe
+# yuklanadi (sales.KassaRelease). Kassalar o'zi tekshirib, yuklab oladi.
+# Quyidagi env'lar — zaxira yo'l: bazada versiya bo'lmasa shular ishlatiladi.
 APP_VERSION = env("APP_VERSION", "1.0.0")
 APP_DOWNLOAD_URL = env("APP_DOWNLOAD_URL", "")
 APP_UPDATE_NOTES = env("APP_UPDATE_NOTES", "")
+
+# Yuklangan exe fayllar shu yerda turadi. Railway'da bu doimiy disk
+# (volume) bo'lishi kerak — aks holda har deploy'da o'chib ketadi.
+MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))
+MEDIA_URL = "/media/"
 
 # Chek sarlavhasida chiqadigan nom
 MARKET_NAME = env("MARKET_NAME", "Sevimli Market")

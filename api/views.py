@@ -180,17 +180,61 @@ def login(request):
 def version(request):
     """Kassa ilovasining eng yangi versiyasi.
 
-    Kassa har ochilganda shu yerga qaraydi. Versiya o'zinikidan katta
-    bo'lsa — `url` dagi arxivni yuklab olib, o'zini yangilaydi.
+    Kassa ochilganda va har 30 daqiqada shu yerga qaraydi. Versiya
+    o'zinikidan katta bo'lsa — `url` dan yuklab olib, o'zini almashtiradi.
+    `mandatory` bo'lsa kassir «keyinroq» deya olmaydi.
 
-    Sozlash: Railway'da APP_VERSION va APP_DOWNLOAD_URL o'zgaruvchilari.
-    Ular bo'sh bo'lsa yangilanish o'chirilgan hisoblanadi.
+    Manba: panelning «Versiyalar» sahifasi (KassaRelease). U bo'sh bo'lsa —
+    Railway'dagi APP_VERSION / APP_DOWNLOAD_URL (eski, zaxira yo'l).
     """
+    from sales.models import KassaRelease
+
+    rel = KassaRelease.latest()
+    if rel:
+        return JsonResponse({
+            "version": rel.version,
+            "url": request.build_absolute_uri(
+                f"/api/v1/update/download?v={rel.version}"
+            ),
+            "notes": rel.notes,
+            "mandatory": rel.mandatory,
+            "size": rel.size,
+            "sha256": rel.sha256,
+        })
     return JsonResponse({
         "version": settings.APP_VERSION,
         "url": settings.APP_DOWNLOAD_URL,
         "notes": settings.APP_UPDATE_NOTES,
+        "mandatory": False,
+        "size": 0,
+        "sha256": "",
     })
+
+
+@require_GET
+@register_required
+def update_download(request):
+    """Kassa uchun exe faylni beradi. Faqat kassa tokeni bilan."""
+    from django.http import FileResponse, Http404
+
+    from sales.models import KassaRelease
+
+    v = (request.GET.get("v") or "").strip()
+    rel = KassaRelease.objects.filter(version=v, active=True).first() if v else None
+    if not rel or not rel.file:
+        raise Http404("Bunday versiya yo'q")
+    try:
+        handle = rel.file.open("rb")
+    except (FileNotFoundError, ValueError):
+        logger.error("Versiya %s fayli diskda yo'q: %s", v, rel.file.name)
+        raise Http404("Fayl topilmadi")
+    resp = FileResponse(
+        handle, as_attachment=True, filename=f"SevimliKassa-{rel.version}.exe",
+        content_type="application/octet-stream",
+    )
+    if rel.size:
+        resp["Content-Length"] = str(rel.size)
+    return resp
 
 
 # ------------------------------------------------------------------ hello

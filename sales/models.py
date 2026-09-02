@@ -129,6 +129,9 @@ class Register(models.Model):
         max_length=64, unique=True, db_index=True, default=new_api_token
     )
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    # Kassada o'rnatilgan ilova versiyasi — har so'rovda X-Kassa-Version
+    # sarlavhasidan olinadi. Panelda kim eskirganini ko'rsatadi.
+    app_version = models.CharField(max_length=32, blank=True)
 
     class Meta:
         ordering = ["store__name", "name"]
@@ -501,3 +504,63 @@ class Payment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.method.name}: {self.amount}"
+
+
+# ------------------------------------------------------- ilova versiyalari
+
+
+def version_key(version: str) -> tuple[int, ...]:
+    """«1.2.10» → (1, 2, 10). Matn sifatida solishtirish xato bo'lardi
+    («1.10» < «1.9»). Raqam bo'lmagan qismlar 0 deb olinadi."""
+    parts = []
+    for chunk in (version or "").strip().split("."):
+        digits = "".join(ch for ch in chunk if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def _release_path(instance, filename: str) -> str:
+    return f"releases/SevimliKassa-{instance.version}.exe"
+
+
+class KassaRelease(models.Model):
+    """Kassa ilovasining chiqarilgan versiyasi.
+
+    Panelda yuklanadi. Kassalar `/api/v1/version` orqali eng yangisini
+    ko'radi, farq bo'lsa yuklab olib o'zini almashtiradi.
+
+    `mandatory` — majburiy: kassa «keyinroq» deya olmaydi, chek yakunlangach
+    darhol yangilanadi. Oddiy yangilanishda kassir «Keyinroq» ni bosa oladi,
+    lekin keyingi ochilishda yana so'raladi.
+    """
+
+    version = models.CharField(max_length=32, unique=True)
+    file = models.FileField(upload_to=_release_path)
+    size = models.BigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True)
+    notes = models.TextField(blank=True, help_text="Nima o'zgardi — kassirga ko'rinadi")
+    mandatory = models.BooleanField(default=False, verbose_name="Majburiy")
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Kassa versiyasi"
+        verbose_name_plural = "Kassa versiyalari"
+
+    def __str__(self) -> str:
+        return f"Sevimli Kassa {self.version}"
+
+    @property
+    def key(self) -> tuple[int, ...]:
+        return version_key(self.version)
+
+    @classmethod
+    def latest(cls) -> "KassaRelease | None":
+        """Eng katta faol versiya (yaratilgan vaqti emas — raqami bo'yicha)."""
+        rows = list(cls.objects.filter(active=True))
+        if not rows:
+            return None
+        return max(rows, key=lambda r: r.key)

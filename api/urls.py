@@ -9,6 +9,7 @@ urlpatterns = [
     path("login", views.login, name="login"),
     path("hello", views.hello, name="hello"),
     path("version", views.version, name="version"),
+    path("update/download", views.update_download, name="update-download"),
     path("catalog", views.catalog, name="catalog"),
     path("catalog/refresh", views.catalog_refresh, name="catalog-refresh"),
     path("customers", views.customers, name="customers"),
