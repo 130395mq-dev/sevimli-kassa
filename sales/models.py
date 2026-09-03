@@ -399,6 +399,12 @@ class Shift(models.Model):
     register = models.ForeignKey(Register, on_delete=models.PROTECT, related_name="shifts")
     number = models.IntegerField(help_text="Kassa bo'yicha tartib raqami")
 
+    #: Kassa bergan yagona belgi. Internetsiz ochilgan smena kassada
+    #: mahalliy yaratiladi va shu belgi bilan keladi. Internet qaytganda
+    #: bir necha marta yuborilsa ham — shu belgi tufayli bitta smena
+    #: bo'lib qoladi (ikki nusxa bo'lmaydi).
+    local_uuid = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
     #: Ism nusxa qilib saqlanadi: kassir keyin ishdan ketsa ham,
     #: eski smenada kim ishlagani ko'rinib turishi kerak
     cashier = models.CharField(max_length=128)

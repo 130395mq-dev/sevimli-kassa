@@ -268,3 +268,87 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
     add("")
 
     return "\n".join(out)
+
+
+# ---- mijoz cheki (har savdoda) ----------------------------------------
+
+
+@dataclass
+class SaleItem:
+    """Chekdagi bitta qator."""
+
+    name: str
+    qty: str      # "1" yoki "1.5" (vaznli)
+    price: int    # dona narxi, tiyin
+    total: int    # qator jami, tiyin
+
+
+@dataclass
+class SaleReceipt:
+    """Mijozga beriladigan chek — har savdodan keyin.
+
+    Fiskal emas (ККТ ulanmagan): pastida shu yozib qo'yiladi. Hamma summa
+    tiyinda, so'mga faqat chizishda aylanadi.
+    """
+
+    market: str
+    point: str
+    cashier: str
+    shift_no: object          # int yoki "—" (oflayn smena)
+    number: int               # chek raqami
+    when: datetime
+    items: list[SaleItem]
+    gross_total: int          # chegirmasiz
+    discount_total: int       # musbat
+    net_total: int            # to'lanadigan
+    payments: list[PaymentLine] = field(default_factory=list)
+    change: int = 0           # qaytim, tiyin
+    price_type: str = ""      # "" yoki "Ulgurji" kabi
+
+
+def _wrap(text: str, w: int) -> list[str]:
+    """Uzun nomni qog'oz kengligiga sig'diradi."""
+    text = (text or "").strip()
+    if not text:
+        return [""]
+    return [text[i:i + w] for i in range(0, len(text), w)]
+
+
+def render_sale(r: SaleReceipt, width: int = WIDE) -> str:
+    """Mijoz chekini matn qilib qaytaradi (printerга shu boradi)."""
+    w = width
+    out: list[str] = []
+    add = out.append
+
+    add(_center(r.market.upper(), w))
+    if r.point:
+        add(_center(r.point, w))
+    add(_line("=", w))
+    add(_pair(f"Kassir: {r.cashier}", f"Chek #{r.number}", w, indent=0))
+    add(_pair(f"Smena #{r.shift_no}", r.when.strftime("%d.%m.%Y %H:%M"), w, indent=0))
+    if r.price_type:
+        add(_pair("Narx", r.price_type, w, indent=0))
+    add(_line("-", w))
+
+    for it in r.items:
+        for ln in _wrap(it.name, w):
+            add(ln)
+        add(_pair(f"{it.qty} x {sum_str(it.price)}", sum_str(it.total), w))
+
+    add(_line("-", w))
+    if r.discount_total:
+        add(_pair("Jami", sum_str(r.gross_total), w, indent=0))
+        add(_pair("Chegirma", "-" + sum_str(r.discount_total), w, indent=0))
+    add(_pair("JAMI", sum_str(r.net_total) + " so'm", w, indent=0))
+    add(_line("=", w))
+
+    for p in r.payments:
+        add(_pair(p.name, sum_str(p.amount), w, indent=0))
+    if r.change:
+        add(_pair("Qaytim", sum_str(r.change), w, indent=0))
+
+    add(_line("=", w))
+    add(_center("Xaridingiz uchun rahmat!", w))
+    add(_center("Fiskal chek emas - ichki hisob", w))
+    add("")
+    return "\n".join(out)

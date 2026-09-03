@@ -651,7 +651,26 @@ def shift_open(request):
     reg = request.register
     data = body(request)
 
-    if reg.shifts.filter(status=Shift.OPEN).exists():
+    # Internetsiz ochilgan smena kassada mahalliy yaratiladi va aloqa
+    # tiklanganda shu yerga `local_uuid` bilan keladi. Takroriy yuborishlar
+    # (yoki tunab qolgan smena) ikki nusxa yaratmasligi kerak:
+    local_uuid = (data.get("local_uuid") or "").strip()
+    if local_uuid:
+        same = reg.shifts.filter(local_uuid=local_uuid).first()
+        if same:
+            # Allaqachon ochilgan — o'shani qaytaramiz (yangi yaratmaymiz).
+            return JsonResponse({"shift": _shift_json(same)}, status=200)
+
+    open_shift_now = reg.shifts.filter(status=Shift.OPEN).first()
+    if open_shift_now:
+        # Ochiq smena bor. Onlayn ochishda bu xato; ammo internetsiz
+        # ochilgan smenani sinxronlashda (local_uuid bilan) — bu shunchaki
+        # «allaqachon ochiq», o'shani qabul qilamiz, tarixi buzilmaydi.
+        if local_uuid:
+            if not open_shift_now.local_uuid:
+                open_shift_now.local_uuid = local_uuid
+                open_shift_now.save(update_fields=["local_uuid"])
+            return JsonResponse({"shift": _shift_json(open_shift_now)}, status=200)
         return error("Bu kassada ochiq smena bor", status=409)
 
     # Ombor tanlanmagan bo'lsa savdo MoySklad'ga yozilmaydi — smenani
@@ -677,13 +696,17 @@ def shift_open(request):
     )
 
     last = reg.shifts.order_by("-number").values_list("number", flat=True).first() or 0
+    # Internetsiz ochilgan bo'lsa — o'sha vaqtni saqlaymiz (hisobot to'g'ri
+    # bo'lsin), bo'lmasa hozirgi vaqt.
+    opened_at = parse_datetime(data.get("opened_at") or "") or timezone.now()
     shift = Shift.objects.create(
         register=reg,
         number=last + 1,
         cashier=name,
         cashier_ref=cashier_ref,
-        opened_at=timezone.now(),
+        opened_at=opened_at,
         opening_cash=int(data.get("opening_cash") or 0),
+        local_uuid=local_uuid,
     )
     return JsonResponse({"shift": _shift_json(shift)}, status=201)
 

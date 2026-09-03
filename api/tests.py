@@ -128,6 +128,36 @@ class ShiftTest(ApiTestCase):
         self.open_shift()
         self.assertEqual(self.open_shift().status_code, 409)
 
+    def test_local_uuid_ikki_marta_yuborilsa_bitta_smena(self):
+        """Internetsiz ochilgan smena aloqa tiklanganda ikki marta
+        yuborilsa ham — bitta smena bo'ladi (idempotent)."""
+        u = str(uuid.uuid4())
+        r1 = self.post("/api/v1/shift/open",
+                       {"cashier": "Nilufar", "opening_cash": 500_00,
+                        "local_uuid": u})
+        self.assertEqual(r1.status_code, 201)
+        n1 = r1.json()["shift"]["number"]
+
+        r2 = self.post("/api/v1/shift/open",
+                       {"cashier": "Nilufar", "opening_cash": 500_00,
+                        "local_uuid": u})
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.json()["shift"]["number"], n1)
+        from sales.models import Shift
+        self.assertEqual(Shift.objects.filter(local_uuid=u).count(), 1)
+
+    def test_ochiq_smena_borda_local_uuid_bilan_ochilsa_oshani_qabul(self):
+        """Tunab qolgan ochiq smena bo'lsa, internetsiz ochilgan smenani
+        sinxronlashda yangi yaratilmaydi — mavjudi qabul qilinadi."""
+        self.open_shift()  # ochiq smena bor
+        u = str(uuid.uuid4())
+        r = self.post("/api/v1/shift/open",
+                      {"cashier": "Nilufar", "opening_cash": 500_00,
+                       "local_uuid": u})
+        self.assertEqual(r.status_code, 200)
+        from sales.models import Shift
+        self.assertEqual(Shift.objects.filter(status=Shift.OPEN).count(), 1)
+
     def test_raqam_osib_boradi(self):
         self.open_shift()
         self.post("/api/v1/shift/close", {"counted_cash": 300_000_00})

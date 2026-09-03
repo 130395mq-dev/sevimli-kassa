@@ -97,6 +97,25 @@ def main() -> int:
     # Eng muhim raqam chekda borligi
     ok &= check("itog bor", "13 829 600 so'm" in render(r), True)
 
+    # --- mijoz cheki (render_sale)
+    from shared.receipt import SaleItem, SaleReceipt, render_sale
+    sr = SaleReceipt(
+        market="Sevimli Market", point="Chilonzor", cashier="optom-1",
+        shift_no=1, number=5, when=datetime(2026, 9, 3, 16, 20),
+        items=[SaleItem("Non", "2", 300000, 600000)],
+        gross_total=600000, discount_total=0, net_total=600000,
+        payments=[PaymentLine("Naqd", 1000000, is_cash=True)], change=400000,
+    )
+    st = render_sale(sr, WIDE)
+    ok &= check("mijoz cheki: raqam", "Chek #5" in st, True)
+    ok &= check("mijoz cheki: qator", "2 x 3 000" in st, True)
+    ok &= check("mijoz cheki: jami", "6 000 so'm" in st, True)
+    ok &= check("mijoz cheki: qaytim", "Qaytim" in st, True)
+    ok &= check("mijoz cheki: rahmat", "rahmat" in st.lower(), True)
+    ok &= check("mijoz cheki: fiskal emas", "Fiskal chek emas" in st, True)
+    # kenglikdan oshmasin
+    ok &= check("mijoz cheki: kenglik", max(len(x) for x in st.splitlines()) <= WIDE, True)
+
     print()
     print("HAMMASI TO'G'RI" if ok else "XATOLAR BOR")
     return 0 if ok else 1
@@ -104,3 +123,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
