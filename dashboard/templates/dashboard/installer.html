@@ -129,31 +129,36 @@
         <div class="ver">versiya <b>{{ rel.version }}</b>{% if rel.notes %} · {{ rel.notes }}{% endif %}</div>
       {% endif %}
 
-      <h1>Bitta fayl — boshqa hech narsa kerak emas</h1>
+      <h1>Yuklab oling, oching, ishga tushiring</h1>
       <p class="lead">
-        Faylni yuklab oling va ishga tushiring. Dastur o'zini o'rnatadi,
+        ZIP faylni yuklab oling, ichini <b>chiqaring (Extract)</b> va
+        <b>SevimliKassa.exe</b> ni ishga tushiring. Dastur o'zini o'rnatadi,
         ish stoliga yorliq qo'yadi va sizdan <b>login va parol</b> so'raydi.
         Server manzili, sozlama, o'rnatuvchi — hech biri kerak emas.
       </p>
 
       {% if rel %}
         <a class="get" href="{% url 'dashboard:installer-download' %}">
-          <span class="arrow">↓</span> SevimliKassa.exe ni yuklab olish
+          <span class="arrow">↓</span> SevimliKassa.zip ni yuklab olish
         </a>
         <div class="size">{{ rel.size|filesizeformat }} · Windows 10 va undan yuqori</div>
       {% else %}
         <div class="none">
           Hali birorta versiya chiqarilmagan.<br>
-          Panel → <b>Versiyalar</b> bo'limiga SevimliKassa.exe ni yuklang.
+          Panel → <b>Versiyalar</b> bo'limiga SevimliKassa.zip ni yuklang.
         </div>
       {% endif %}
 
       <ol>
-        <li>Faylni yuklab oling va <b>ishga tushiring</b>. Windows ogohlantirsa —
-          «Batafsil» → «Baribir ishga tushirish».</li>
-        <li>Dastur o'zini o'rnatadi va <b>login/parol</b> so'raydi.</li>
-        <li>Login va parolni panelda siz yaratasiz: <b>Kassalar</b> → kassani
-          qo'shing va omborni tanlang, keyin <b>Kassirlar</b>.</li>
+        <li>ZIP ni yuklab oling, ustiga o'ng tugma → <b>«Извлечь всё»</b>
+          (Extract All) → chiqgan papkani oching.</li>
+        <li>Papka ichidagi <b>SevimliKassa.exe</b> ni ishga tushiring.
+          Windows ogohlantirsa — «Подробнее» → «Выполнить в любом случае».</li>
+        <li>Dastur o'zini o'rnatadi (ish stolida yorliq paydo bo'ladi) va
+          <b>login/parol</b> so'raydi. Bundan keyin ish stolidagi yorliqdan
+          ochasiz — ZIP boshqa kerak emas.</li>
+        <li>Login va parolni panelda siz yaratasiz: <b>Kassalar</b> → kassa
+          qo'shing va omborni tanlang.</li>
         <li>Kirdingiz — kassa qaysi ombordan sotishini o'zi biladi, tovarlar
           va narxlar MoySklad'dan keladi.</li>
       </ol>

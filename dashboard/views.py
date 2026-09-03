@@ -423,11 +423,15 @@ def releases(request):
                     f"(kassalar faqat kattasini oladi)",
                 )
             elif not upload:
-                messages.error(request, "SevimliKassa.exe faylini tanlang")
-            elif not upload.name.lower().endswith(".exe"):
-                messages.error(request, "Faqat .exe fayl qabul qilinadi")
+                messages.error(request, "SevimliKassa.zip faylini tanlang")
+            elif not upload.name.lower().endswith(".zip"):
+                messages.error(
+                    request,
+                    "Faqat .zip fayl qabul qilinadi "
+                    "(dist\\SevimliKassa.zip — EXE-YASASH dan keyin)",
+                )
             elif upload.size < 1_000_000:
-                messages.error(request, "Fayl juda kichik — bu SevimliKassa.exe emas")
+                messages.error(request, "Fayl juda kichik — bu dastur ZIP emas")
             else:
                 digest = hashlib.sha256()
                 for chunk in upload.chunks():
@@ -436,7 +440,7 @@ def releases(request):
                     version=version, notes=notes, mandatory=mandatory,
                     size=upload.size, sha256=digest.hexdigest(),
                 )
-                rel.file.save(f"SevimliKassa-{version}.exe", upload, save=True)
+                rel.file.save(f"SevimliKassa-{version}.zip", upload, save=True)
                 messages.success(
                     request,
                     f"Versiya {version} chiqarildi. Kassalar 30 daqiqa ichida "
@@ -626,9 +630,9 @@ def installer(request):
     """Yangi kassaga dasturni o'rnatish sahifasi — kirishsiz ochiladi.
 
     Yangi monoblok keldi. Unda hech narsa yo'q: na dastur, na sozlama.
-    Brauzerni ochib shu manzilni yozadi, tugmani bosadi, chiqqan
-    SevimliKassa.exe ni ishga tushiradi — dastur o'zini
-    %LOCALAPPDATA%\\SevimliKassa ga ko'chiradi, yorliq yasaydi va
+    Brauzerni ochib shu manzilni yozadi, ZIP ni yuklab oladi, ochadi
+    (Extract) va ichidagi SevimliKassa.exe ni ishga tushiradi — dastur
+    o'zini %LOCALAPPDATA%\\SevimliKassa ga ko'chiradi, yorliq yasaydi va
     login/parol so'raydi. Boshqa hech narsa kerak emas.
 
     Kirish talab qilinmaydi: faylning o'zi hech narsa ochmaydi —
@@ -644,7 +648,7 @@ def installer(request):
 
 
 def installer_download(request):
-    """Eng yangi SevimliKassa.exe ni beradi."""
+    """Eng yangi dastur ZIP'ini beradi."""
     from django.http import FileResponse
 
     from sales.models import KassaRelease
@@ -655,6 +659,6 @@ def installer_download(request):
     return FileResponse(
         rel.file.open("rb"),
         as_attachment=True,
-        filename="SevimliKassa.exe",
+        filename="SevimliKassa.zip",
         content_type="application/octet-stream",
     )

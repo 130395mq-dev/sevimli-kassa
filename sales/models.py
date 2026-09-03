@@ -609,7 +609,9 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 def _release_path(instance, filename: str) -> str:
-    return f"releases/SevimliKassa-{instance.version}.exe"
+    # Dastur endi papka (onedir), ZIP qilib tarqatiladi.
+    ext = ".zip" if (filename or "").lower().endswith(".zip") else ".exe"
+    return f"releases/SevimliKassa-{instance.version}{ext}"
 
 
 class KassaRelease(models.Model):

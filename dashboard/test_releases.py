@@ -15,7 +15,7 @@ class ReleasesPageTest(TestCase):
             r = self.client.post("/versiyalar/", {
                 "action": "upload", "version": "1.2.0", "notes": "Sinov",
                 "mandatory": "1",
-                "file": SimpleUploadedFile("SevimliKassa.exe", content),
+                "file": SimpleUploadedFile("SevimliKassa.zip", content),
             }, follow=True)
             self.assertEqual(r.status_code, 200)
             rel = KassaRelease.objects.get()
@@ -28,7 +28,7 @@ class ReleasesPageTest(TestCase):
             # Kichikroq versiya rad etiladi
             r = self.client.post("/versiyalar/", {
                 "action": "upload", "version": "1.1.0",
-                "file": SimpleUploadedFile("SevimliKassa.exe", content),
+                "file": SimpleUploadedFile("SevimliKassa.zip", content),
             }, follow=True)
             self.assertEqual(KassaRelease.objects.count(), 1)
             self.assertIn("katta bo&#x27;lishi kerak", r.content.decode())
@@ -36,7 +36,7 @@ class ReleasesPageTest(TestCase):
     def test_kichik_fayl_rad(self):
         r = self.client.post("/versiyalar/", {
             "action": "upload", "version": "1.2.0",
-            "file": SimpleUploadedFile("SevimliKassa.exe", b"MZ"),
+            "file": SimpleUploadedFile("SevimliKassa.zip", b"MZ"),
         }, follow=True)
         self.assertEqual(KassaRelease.objects.count(), 0)
         self.assertIn("juda kichik", r.content.decode())
@@ -95,8 +95,8 @@ class InstallerPageTest(TestCase):
         with tempfile.TemporaryDirectory() as d, self.settings(MEDIA_ROOT=d):
             rel = KassaRelease(version="1.2.0", size=len(content),
                                sha256=hashlib.sha256(content).hexdigest())
-            rel.file.save("SevimliKassa-1.2.0.exe",
-                          SimpleUploadedFile("x.exe", content), save=True)
+            rel.file.save("SevimliKassa-1.2.0.zip",
+                          SimpleUploadedFile("x.zip", content), save=True)
 
             r = self.client.get("/ornatish/")
             self.assertEqual(r.status_code, 200)
@@ -104,7 +104,7 @@ class InstallerPageTest(TestCase):
 
             r = self.client.get("/ornatish/fayl/")
             self.assertEqual(r.status_code, 200)
-            self.assertIn("SevimliKassa.exe", r["Content-Disposition"])
+            self.assertIn("SevimliKassa.zip", r["Content-Disposition"])
             self.assertEqual(b"".join(r.streaming_content), content)
 
 

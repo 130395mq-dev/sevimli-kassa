@@ -236,7 +236,7 @@ def version(request):
 @require_GET
 @register_required
 def update_download(request):
-    """Kassa uchun exe faylni beradi. Faqat kassa tokeni bilan."""
+    """Kassa uchun dastur ZIP'ini beradi. Faqat kassa tokeni bilan."""
     from django.http import FileResponse, Http404
 
     from sales.models import KassaRelease
@@ -251,7 +251,7 @@ def update_download(request):
         logger.error("Versiya %s fayli diskda yo'q: %s", v, rel.file.name)
         raise Http404("Fayl topilmadi")
     resp = FileResponse(
-        handle, as_attachment=True, filename=f"SevimliKassa-{rel.version}.exe",
+        handle, as_attachment=True, filename=f"SevimliKassa-{rel.version}.zip",
         content_type="application/octet-stream",
     )
     if rel.size:
