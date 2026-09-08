@@ -24,10 +24,11 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -36,8 +37,11 @@ from django.views.decorators.http import require_GET, require_POST
 
 from catalog.models import Barcode, Customer, Product, Stock
 from sales.models import (
+    BonusEntry,
+    BonusProgram,
     CashOperation,
     Cashier,
+    POINT_TIYIN,
     Register,
     Payment,
     PaymentMethod,
@@ -48,7 +52,13 @@ from sales.models import (
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
 
-from .auth import error, register_required
+from .auth import (
+    error,
+    make_session_token,
+    manager_required,
+    register_required,
+    verify_session_token,
+)
 
 logger = logging.getLogger("api")
 
@@ -174,7 +184,9 @@ def login(request):
                 "name": reg.name,
                 "login": reg.login,
                 "is_manager": True,
-            }
+            },
+            # Manager-only amallar uchun imzolangan token (mijoz yasay olmaydi)
+            "session": make_session_token(0, True),
         })
 
     # 2. Eski kassir hisobi (o'tish davri uchun)
@@ -190,7 +202,8 @@ def login(request):
             "name": cashier.name,
             "login": cashier.login,
             "is_manager": cashier.is_manager,
-        }
+        },
+        "session": make_session_token(cashier.pk, cashier.is_manager),
     })
 
 
@@ -695,19 +708,53 @@ def shift_open(request):
         or reg.name
     )
 
-    last = reg.shifts.order_by("-number").values_list("number", flat=True).first() or 0
     # Internetsiz ochilgan bo'lsa — o'sha vaqtni saqlaymiz (hisobot to'g'ri
     # bo'lsin), bo'lmasa hozirgi vaqt.
     opened_at = parse_datetime(data.get("opened_at") or "") or timezone.now()
-    shift = Shift.objects.create(
-        register=reg,
-        number=last + 1,
-        cashier=name,
-        cashier_ref=cashier_ref,
-        opened_at=opened_at,
-        opening_cash=int(data.get("opening_cash") or 0),
-        local_uuid=local_uuid,
-    )
+    opening_cash = max(0, int(data.get("opening_cash") or 0))
+    try:
+        with transaction.atomic():
+            # Registerni bloklaymiz — parallel so'rovlar shu yerda navbatga
+            # turadi. Lock olgach QAYTA tekshiramiz: shu tufayli bir kassada
+            # bir vaqtda ikkita ochiq smena yoki takroriy raqam yaratilmaydi.
+            Register.objects.select_for_update().get(pk=reg.pk)
+
+            if local_uuid:
+                same = reg.shifts.filter(local_uuid=local_uuid).first()
+                if same:
+                    return JsonResponse({"shift": _shift_json(same)}, status=200)
+
+            open_now = reg.shifts.filter(status=Shift.OPEN).first()
+            if open_now:
+                if local_uuid:
+                    if not open_now.local_uuid:
+                        open_now.local_uuid = local_uuid
+                        open_now.save(update_fields=["local_uuid"])
+                    return JsonResponse({"shift": _shift_json(open_now)}, status=200)
+                return error("Bu kassada ochiq smena bor", status=409)
+
+            last = (reg.shifts.order_by("-number")
+                    .values_list("number", flat=True).first() or 0)
+            shift = Shift.objects.create(
+                register=reg,
+                number=last + 1,
+                cashier=name,
+                cashier_ref=cashier_ref,
+                opened_at=opened_at,
+                opening_cash=opening_cash,
+                local_uuid=local_uuid,
+            )
+    except IntegrityError:
+        # Poyga: bir xil local_uuid yoki (register, number) to'qnashuvi.
+        # Mavjud smenani qaytaramiz — ikki nusxa yaratmaymiz.
+        if local_uuid:
+            same = reg.shifts.filter(local_uuid=local_uuid).first()
+            if same:
+                return JsonResponse({"shift": _shift_json(same)}, status=200)
+        open_now = reg.shifts.filter(status=Shift.OPEN).first()
+        if open_now:
+            return JsonResponse({"shift": _shift_json(open_now)}, status=200)
+        raise
     return JsonResponse({"shift": _shift_json(shift)}, status=201)
 
 
@@ -763,6 +810,7 @@ def shift_report(request):
 @csrf_exempt
 @require_POST
 @register_required
+@manager_required
 def cash_operation(request):
     data = body(request)
     shift = request.register.shifts.filter(status=Shift.OPEN).first()
@@ -822,21 +870,55 @@ def create_sale(request):
     if not payments:
         return error("To'lov ko'rsatilmagan")
 
+    # Menejer huquqi (chegirma chegarasini oshirishga ruxsat) — imzolangan
+    # X-Session tokeni bilan. Mijozning «men managerman» so'ziga ISHONMAYMIZ.
+    minfo = verify_session_token((request.headers.get("X-Session") or "").strip())
+    manager_ok = bool(minfo and minfo.get("is_manager"))
+
     try:
-        return _save_sale(shift, data, items, payments, local_uuid)
+        return _save_sale(shift, data, items, payments, local_uuid, manager_ok)
     except ValueError as e:
         return error(str(e))
+    except IntegrityError:
+        # Bir vaqtda kelgan bir xil local_uuid — birinchisi yozib ulgurdi.
+        # Ikkinchisiga o'shaning javobini qaytaramiz (idempotent, xato emas).
+        existing = Sale.objects.filter(local_uuid=local_uuid).first()
+        if existing:
+            return JsonResponse(
+                {"id": existing.pk, "number": existing.number, "duplicate": True}
+            )
+        raise
 
 
 @transaction.atomic
-def _save_sale(shift, data, items, payments, local_uuid):
+def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
+    # Smena qatorini bloklaymiz — bir smenaga bir vaqtda kelgan ikki chek
+    # (parallel kassa yoki qayta yuborish) bir xil tartib raqamini olmasin.
+    # PostgreSQL'da bu row-lock; SQLite testida e'tiborsiz, lekin zararsiz.
+    shift = Shift.objects.select_for_update().get(pk=shift.pk)
+
     kind = data.get("kind") or Sale.SALE
     if kind not in (Sale.SALE, Sale.RETURN):
         raise ValueError("kind noto'g'ri")
 
-    # Qatorlar summasi
+    # Chegirma chegarasi — kassa sozlamasidan. Kassa o'zi ham tekshiradi,
+    # lekin bu YETARLI EMAS: buzilgan/soxta kassa istalgan chegirmani
+    # yuborishi mumkin. Shuning uchun server ham tekshiradi. Menejer tokeni
+    # (X-Session) bo'lsa — chegaradan oshishga ruxsat (masalan aksiya).
+    rs = shift.register.settings
+    allow_discount = bool(rs.allow_discount)
+    try:
+        max_discount = Decimal(str(rs.max_discount or 0))
+    except (InvalidOperation, TypeError):
+        max_discount = Decimal(0)
+
+    # Qatorlar summasi — SERVER TOMONIDAN tekshiriladi. Mijoz yuborgan
+    # summaga ko'r-ko'rona ishonmaymiz: har qatorda `total` narx×miqdordan
+    # (brutto) oshmasligi (chegirma faqat kamaytiradi) va manfiy bo'lmasligi
+    # shart. Bu — soxta (shishirilgan yoki manfiy) summani bloklaydi.
     lines = []
     lines_total = 0
+    gross_sum = 0
     for pos, raw in enumerate(items, start=1):
         try:
             qty = Decimal(str(raw.get("quantity", "1")))
@@ -845,12 +927,110 @@ def _save_sale(shift, data, items, payments, local_uuid):
         if qty <= 0:
             raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
 
+        price = int(raw.get("price") or 0)
         total = int(raw.get("total") or 0)
+        if price < 0 or total < 0:
+            raise ValueError(f"{pos}-qatorda manfiy qiymat")
+
+        gross_line = int(
+            (Decimal(price) * qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        if total > gross_line:
+            raise ValueError(
+                f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
+            )
+
+        # Chegirma chegarasi — faqat savdoda (qaytarishda tekshirmaymiz).
+        # Menejer ruxsati bo'lsa o'tkazamiz.
+        if kind == Sale.SALE and not manager_ok and gross_line > 0:
+            disc = gross_line - total
+            if disc > 0 and not allow_discount:
+                raise ValueError(f"{pos}-qatorda chegirmaga ruxsat yo'q")
+            # Chegirma foizi chegaradan oshmasin (1 tiyin yaxlitlash yo'li bilan)
+            limit = (Decimal(gross_line) * max_discount / 100)
+            if Decimal(disc) - limit > 1:
+                raise ValueError(
+                    f"{pos}-qatorda chegirma chegaradan oshdi "
+                    f"(eng ko'p {max_discount}%)"
+                )
+
+        # Soft signal: mijoz narxi katalogdagidan past bo'lsa — log qilamiz
+        # (offline narx eskirishi qonuniy bo'lishi mumkin, rad etmaymiz).
+        pid = raw.get("product_id")
+        if pid:
+            cat = (Product.objects.filter(pk=pid)
+                   .values_list("sale_price", flat=True).first())
+            if cat and price < int(cat):
+                logger.warning(
+                    "Narx katalogdan past: kassa=%s tovar=%s narx=%s katalog=%s",
+                    shift.register_id, pid, price, cat,
+                )
+
         lines_total += total
+        gross_sum += gross_line
         lines.append((pos, raw, qty, total))
 
+    # ---- Mijoz va qaytariladigan asl chek (ball uchun QULFLAB olamiz) ----
+    program = BonusProgram.get()
+
+    origin = None
+    customer_id = data.get("customer_id")
+    if kind == Sale.RETURN:
+        # Qaytarish — FAQAT shu kassaning asl chekiga (IDOR oldi olinadi).
+        oid = data.get("origin_id")
+        if oid:
+            origin = (
+                Sale.objects.select_related("customer")
+                .filter(pk=oid, kind=Sale.SALE, shift__register=shift.register)
+                .first()
+            )
+            if not origin:
+                raise ValueError("Qaytariladigan asl chek topilmadi")
+            if not customer_id and origin.customer_id:
+                customer_id = origin.customer_id
+
+    customer = None
+    if customer_id:
+        # QULF: bir mijozga bir vaqtda kelgan ikki savdo balansni buzmasin
+        # (ball ikki marta sarflanmasin). PostgreSQL'da row-lock.
+        customer = Customer.objects.select_for_update().filter(pk=customer_id).first()
+
+    # ---- Qaytarishni asl chek bilan solishtirish (cheksiz over-refund oldi)
+    if kind == Sale.RETURN:
+        _check_return_against_origin(origin, lines, lines_total)
+
+    # ---- Ball SARFLASH (server tekshiradi, klientga ishonmaymiz) ----
     points_spent = int(data.get("points_spent") or 0)
-    net_total = lines_total - points_spent * 100
+    if points_spent < 0:
+        raise ValueError("Ball manfiy bo'lishi mumkin emas")
+    if points_spent > 0:
+        if kind == Sale.RETURN:
+            raise ValueError("Qaytarishda ball sarflab bo'lmaydi")
+        if not (program.active and program.redeem_enabled):
+            raise ValueError("Bonus dasturi ball to'lovini qabul qilmayapti")
+        if not customer:
+            raise ValueError("Ball sarflash uchun mijoz tanlanishi kerak")
+        if points_spent > customer.bonus_points:
+            raise ValueError(
+                f"Mijozda yetarli ball yo'q: {customer.bonus_points} ta bor, "
+                f"{points_spent} ta so'ralyapti"
+            )
+        max_pts = (lines_total * program.max_redeem_percent) // 100 // POINT_TIYIN
+        if points_spent > max_pts:
+            raise ValueError(
+                f"Ball bilan eng ko'p {program.max_redeem_percent}% to'lash mumkin "
+                f"(bu chekda {max_pts} ball)"
+            )
+
+    net_total = lines_total - points_spent * POINT_TIYIN
+    if net_total < 0:
+        raise ValueError("Chek summasi manfiy bo'lib qoldi (ball summadan katta)")
+
+    # ---- Ball BERISH — SERVER hisoblaydi (klient sonига ishonmaymiz) ----
+    if kind == Sale.SALE and program.active and customer:
+        points_earned = program.earn_for(net_total)
+    else:
+        points_earned = 0
 
     # To'lovlar chek summasiga teng bo'lishi shart. Bu yerda tekshirmasak,
     # xato smena yakunida chiqadi va kim aybdorligi noma'lum bo'ladi.
@@ -872,17 +1052,7 @@ def _save_sale(shift, data, items, payments, local_uuid):
             f"To'lovlar chek summasiga teng emas: {pay_total} ≠ {net_total}"
         )
 
-    customer = None
-    if data.get("customer_id"):
-        customer = Customer.objects.filter(pk=data["customer_id"]).first()
-
-    # Qaytarish qaysi chekdan — asl chekka bog'lanadi
-    origin = None
-    if kind == Sale.RETURN and data.get("origin_id"):
-        origin = Sale.objects.filter(pk=data["origin_id"], kind=Sale.SALE).first()
-        # Asl chek mijozi qaytarishga ko'chadi (ball/chegirma to'g'ri bo'lsin)
-        if origin and not customer:
-            customer = origin.customer
+    # (customer va origin yuqorida — qulflab — allaqachon aniqlandi)
 
     last = (
         shift.sales.filter(kind=kind).order_by("-number")
@@ -891,6 +1061,8 @@ def _save_sale(shift, data, items, payments, local_uuid):
 
     created_at = parse_datetime(data.get("created_at") or "") or timezone.now()
 
+    # gross_total va discount_total ni ham SERVER hisoblaydi (klientga
+    # ishonmaymiz) — aks holda Z-hisobot va balans tekshiruvi buzilardi.
     sale = Sale.objects.create(
         shift=shift,
         kind=kind,
@@ -900,10 +1072,10 @@ def _save_sale(shift, data, items, payments, local_uuid):
         origin=origin,
         created_at=created_at,
         price_type=str(data.get("price_type") or "")[:64],
-        gross_total=int(data.get("gross_total") or lines_total),
-        discount_total=int(data.get("discount_total") or 0),
+        gross_total=gross_sum,
+        discount_total=max(0, gross_sum - lines_total),
         points_spent=points_spent,
-        points_earned=int(data.get("points_earned") or 0),
+        points_earned=points_earned,
         net_total=net_total,
     )
 
@@ -934,6 +1106,27 @@ def _save_sale(shift, data, items, payments, local_uuid):
             change=raw.get("change"),
         )
 
+    # ---- BALL: haqiqatan yechamiz/beramiz va reyestrga yozamiz ----
+    # customer QULFLANGAN (select_for_update), shuning uchun ikki savdo
+    # bir vaqtda balansni buzolmaydi.
+    new_balance = customer.bonus_points if customer else 0
+    if customer:
+        if kind == Sale.SALE:
+            if points_spent > 0:
+                new_balance -= points_spent
+                _bonus_log(customer, sale, BonusEntry.SPEND, -points_spent,
+                           new_balance, "Savdoda sarflandi")
+            if points_earned > 0:
+                new_balance += points_earned
+                _bonus_log(customer, sale, BonusEntry.EARN, points_earned,
+                           new_balance, "Savdoda berildi")
+        elif kind == Sale.RETURN and origin is not None:
+            new_balance = _reverse_return_bonus(origin, sale, customer, net_total)
+
+        if new_balance != customer.bonus_points:
+            customer.bonus_points = new_balance
+            customer.save(update_fields=["bonus_points"])
+
     # Chek saqlandi. Tranzaksiya tasdiqlangach — darhol MoySklad'ga
     # yozamiz (fon oqimida). So'rov kutmaydi; cron zaxira bo'lib qoladi.
     sale_id = sale.pk
@@ -943,5 +1136,87 @@ def _save_sale(shift, data, items, payments, local_uuid):
         ).start()
     )
 
-    return JsonResponse({"id": sale.pk, "number": sale.number, "duplicate": False},
-                        status=201)
+    return JsonResponse(
+        {
+            "id": sale.pk,
+            "number": sale.number,
+            "duplicate": False,
+            "points_earned": points_earned,
+            "points_spent": points_spent,
+            "customer_balance": new_balance if customer else None,
+        },
+        status=201,
+    )
+
+
+# ------------------------------------------------------------------ ball yordamchilari
+
+
+def _bonus_log(customer, sale, kind, delta, balance_after, comment=""):
+    """Ball harakatini reyestrga yozadi."""
+    BonusEntry.objects.create(
+        customer=customer, sale=sale, kind=kind, delta=delta,
+        balance_after=balance_after, comment=comment,
+    )
+
+
+def _check_return_against_origin(origin, lines, refund_total):
+    """Qaytarishni asl chek bilan solishtiradi — cheksiz qaytarishni bloklaydi.
+
+    Tekshiradi: (1) qaytariladigan summa asl chek summasidan (avval
+    qaytarilganini hisobga olib) oshmasin. Bu — bitta chekni bir necha
+    marta qaytarib pul yechib olishning oldini oladi.
+    """
+    if origin is None:
+        # Asl cheksiz qaytarish — MVP'da ruxsat (offline yoki eski chek),
+        # lekin summa manfiy emasligi baribir yuqorida tekshirilgan.
+        return
+    already = (
+        Sale.objects.filter(origin=origin, kind=Sale.RETURN)
+        .aggregate(s=Sum("net_total"))["s"] or 0
+    )
+    if already + refund_total > origin.net_total:
+        qoldi = max(0, origin.net_total - already)
+        raise ValueError(
+            f"Qaytarish asl chekdan oshib ketdi. Bu chekdan yana "
+            f"{qoldi // 100} so'm qaytarish mumkin"
+        )
+
+
+def _reverse_return_bonus(origin, sale, customer, refund_net):
+    """Qaytarishda ballni teskari aylantiradi (asl chekka mutanosib).
+
+    Asl chekda ball berilgan bo'lsa — o'shancha (mutanosib) qaytarib olamiz;
+    ball sarflangan bo'lsa — o'shancha mijozga qaytaramiz. Bir necha qismli
+    qaytarishda ham jami asl chek balларidan oshmaydi (kümülатив klamp).
+    """
+    balance = customer.bonus_points
+    if origin.net_total <= 0 or (not origin.points_earned and not origin.points_spent):
+        return balance
+
+    # Shu asl chek bo'yicha jami qaytarilgan summa (bu qaytarish bilan)
+    prior = (
+        Sale.objects.filter(origin=origin, kind=Sale.RETURN)
+        .exclude(pk=sale.pk)
+        .aggregate(s=Sum("net_total"))["s"] or 0
+    )
+    frac_now = min(Decimal(1), Decimal(prior + refund_net) / Decimal(origin.net_total))
+    frac_prior = min(Decimal(1), Decimal(prior) / Decimal(origin.net_total))
+
+    def _slice(total_points):
+        cum_now = int((Decimal(total_points) * frac_now).to_integral_value(ROUND_HALF_UP))
+        cum_prior = int((Decimal(total_points) * frac_prior).to_integral_value(ROUND_HALF_UP))
+        return cum_now - cum_prior
+
+    earn_back = _slice(origin.points_earned)   # berilganni qaytarib olamiz (-)
+    spend_back = _slice(origin.points_spent)    # sarflaganini qaytaramiz (+)
+
+    if earn_back > 0:
+        balance -= earn_back
+        _bonus_log(customer, sale, BonusEntry.RETURN, -earn_back, balance,
+                   f"Qaytarish: berilgan ball qaytarib olindi (asl #{origin.number})")
+    if spend_back > 0:
+        balance += spend_back
+        _bonus_log(customer, sale, BonusEntry.RETURN, spend_back, balance,
+                   f"Qaytarish: sarflangan ball qaytarildi (asl #{origin.number})")
+    return balance

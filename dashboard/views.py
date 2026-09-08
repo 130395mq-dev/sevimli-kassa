@@ -21,6 +21,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
@@ -28,7 +29,9 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
-from sales.models import Payment, Register, Sale, Shift
+from sales.models import (
+    BonusEntry, BonusProgram, Payment, POINT_TIYIN, Register, Sale, Shift,
+)
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
 
@@ -157,21 +160,28 @@ def points(request):
 
 @login_required
 def shifts(request):
-    """Smenalar ro'yxati — MoySklad'dagi «Смены» o'rniga."""
-    rows = (
+    """Smenalar ro'yxati — MoySklad'dagi «Смены» o'rniga.
+
+    Sahifalab beriladi: do'kon bir yil ishlaganda smenalar yuzlab bo'ladi,
+    hammasini bitta sahifada ko'rsatish sekin va o'qib bo'lmas edi.
+    """
+    qs = (
         Shift.objects.select_related("register__store")
         .annotate(
             receipts=Count("sales", filter=Q(sales__kind=Sale.SALE)),
             total=Sum("sales__net_total", filter=Q(sales__kind=Sale.SALE)),
         )
-        .order_by("-opened_at")[:100]
+        .order_by("-opened_at")
     )
+    paginator = Paginator(qs, 50)
+    page = paginator.get_page(request.GET.get("page"))
     # Tiyinni so'mga — shabloni bo'lish amali yo'q
-    data = []
-    for s in rows:
+    for s in page.object_list:
         s.total_sum = (s.total or 0) / 100
-        data.append(s)
-    return render(request, "dashboard/shifts.html", {"rows": data})
+    return render(request, "dashboard/shifts.html", {
+        "rows": page.object_list,
+        "page": page,
+    })
 
 
 @login_required
@@ -267,7 +277,13 @@ def registers(request):
             else:
                 reg.set_password(password)
                 reg.save(update_fields=["password_hash"])
-                messages.success(request, f"{reg.name}: parol almashtirildi")
+                # Parol endi jadvalda ko'rinmaydi (xavfsizlik) — shuning
+                # uchun bu yerda bir marta ko'rsatamiz. Yozib oling.
+                messages.success(
+                    request,
+                    f"{reg.name}: yangi parol «{password}». "
+                    "Bu parol boshqa ko'rsatilmaydi — monoblokka kiriting.",
+                )
 
         elif action == "rotate":
             reg = Register.objects.filter(pk=request.POST.get("id")).first()
@@ -662,3 +678,170 @@ def installer_download(request):
         filename="SevimliKassa.zip",
         content_type="application/octet-stream",
     )
+
+
+# ============================================================ SEVIMLI BONUS
+
+
+def _moysklad_client():
+    """MoySklad klienti — token bo'lsa. Bo'lmasa None."""
+    from django.conf import settings as s
+    token = getattr(s, "MOYSKLAD_TOKEN", "")
+    if not token:
+        return None
+    from moysklad.client import MoySkladClient
+    return MoySkladClient(token=token)
+
+
+@login_required
+def bonus(request):
+    """SEVIMLI BONUS — o'zimizning bonus dasturi.
+
+    MoySklad Отгрузка yo'lida ballni hisoblamaydi, shuning uchun ballni
+    shu yerda — o'z bazamizda — yuritamiz. Sahifada: dastur holati,
+    sozlamalar, ishga tushirish (MoySklad balanslarini olib), mijoz
+    balanslari va qo'lda tuzatish.
+    """
+    program = BonusProgram.get()
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "activate":
+            client = _moysklad_client()
+            pulled = 0
+            if client is not None:
+                try:
+                    from catalog.sync import CatalogSync
+                    pulled = CatalogSync(client).force_import_bonus()
+                except Exception as e:  # pull ishlamasa ham yoqamiz — balanslar bazada bor
+                    messages.error(request, f"MoySklad'dan olishda xato: {e}")
+            program.active = True
+            program.activated_at = timezone.now()
+            program.save(update_fields=["active", "activated_at"])
+            messages.success(
+                request,
+                "SEVIMLI BONUS yoqildi. " +
+                (f"MoySklad'dan {pulled} ta balans yangilandi. "
+                 if client is not None else
+                 "MoySklad tokeni yo'q — balanslar bazadagidek qoldi. ") +
+                "Endi ballni faqat biz yuritamiz.",
+            )
+            return redirect("dashboard:bonus")
+
+        if action == "reimport":
+            client = _moysklad_client()
+            if client is None:
+                messages.error(request, "MoySklad tokeni sozlanmagan")
+            else:
+                try:
+                    from catalog.sync import CatalogSync
+                    n = CatalogSync(client).force_import_bonus()
+                    messages.success(
+                        request,
+                        f"MoySklad'dan {n} ta balans qayta olindi. "
+                        "Diqqat: lokal balanslar MoySklad qiymatiga tenglandi.",
+                    )
+                except Exception as e:
+                    messages.error(request, f"Xato: {e}")
+            return redirect("dashboard:bonus")
+
+        if action == "deactivate":
+            program.active = False
+            program.save(update_fields=["active"])
+            messages.success(
+                request,
+                "SEVIMLI BONUS o'chirildi. Ehtiyot bo'ling: o'chiq bo'lsa "
+                "ball berilmaydi va MoySklad balansi qayta yozila boshlaydi.",
+            )
+            return redirect("dashboard:bonus")
+
+        if action == "settings":
+            try:
+                program.earn_percent = _dec(request.POST.get("earn_percent"), program.earn_percent)
+                program.max_redeem_percent = max(0, min(100, int(request.POST.get("max_redeem_percent") or 100)))
+                program.redeem_enabled = request.POST.get("redeem_enabled") == "on"
+                program.save(update_fields=["earn_percent", "max_redeem_percent", "redeem_enabled"])
+                messages.success(request, "Sozlamalar saqlandi")
+            except (ValueError, TypeError):
+                messages.error(request, "Qiymatlar noto'g'ri")
+            return redirect("dashboard:bonus")
+
+        if action == "adjust":
+            cust = Customer.objects.filter(pk=request.POST.get("customer_id")).first()
+            try:
+                delta = int(request.POST.get("delta") or 0)
+            except (ValueError, TypeError):
+                delta = 0
+            reason = (request.POST.get("reason") or "").strip()[:256]
+            if not cust:
+                messages.error(request, "Mijoz topilmadi")
+            elif delta == 0:
+                messages.error(request, "Ball miqdori kiritilmadi (+ yoki −)")
+            elif cust.bonus_points + delta < 0:
+                messages.error(request, "Balans manfiy bo'lib qolardi")
+            else:
+                from django.db import transaction as tx
+                with tx.atomic():
+                    c = Customer.objects.select_for_update().get(pk=cust.pk)
+                    c.bonus_points += delta
+                    c.save(update_fields=["bonus_points"])
+                    BonusEntry.objects.create(
+                        customer=c, kind=BonusEntry.ADJUST, delta=delta,
+                        balance_after=c.bonus_points,
+                        comment=reason or "Paneldan qo'lda tuzatish",
+                    )
+                messages.success(
+                    request,
+                    f"{cust.name}: {'+' if delta > 0 else ''}{delta} ball. "
+                    f"Yangi balans: {c.bonus_points} ball",
+                )
+            return redirect("dashboard:bonus")
+
+    # --- GET: holat + statistika + mijozlar ro'yxati
+    stats = Customer.objects.filter(bonus_points__gt=0).aggregate(
+        holders=Count("id"), total=Sum("bonus_points"),
+    )
+    q = (request.GET.get("q") or "").strip()
+    customers = Customer.objects.filter(archived=False)
+    if q:
+        customers = customers.filter(
+            Q(name__icontains=q) | Q(phone__icontains=q) | Q(discount_card__icontains=q)
+        )
+    else:
+        customers = customers.filter(bonus_points__gt=0)
+    customers = customers.order_by("-bonus_points", "name")
+
+    page = Paginator(customers, 50).get_page(request.GET.get("page"))
+    recent = BonusEntry.objects.select_related("customer")[:25]
+
+    return render(request, "dashboard/bonus.html", {
+        "program": program,
+        "holders": stats["holders"] or 0,
+        "total_points": stats["total"] or 0,
+        "page": page,
+        "q": q,
+        "recent": recent,
+        "has_token": _moysklad_client() is not None,
+    })
+
+
+@login_required
+def customer_bonus(request, pk: int):
+    """Bitta mijozning ball tarixi (reyestr)."""
+    cust = Customer.objects.filter(pk=pk).first()
+    if not cust:
+        raise Http404("Mijoz topilmadi")
+    entries = cust.bonus_entries.select_related("sale")[:200]
+    return render(request, "dashboard/customer_bonus.html", {
+        "cust": cust, "entries": entries,
+    })
+
+
+def _dec(value, default):
+    from decimal import Decimal, InvalidOperation
+    try:
+        d = Decimal(str(value))
+        return d if d >= 0 else default
+    except (InvalidOperation, TypeError):
+        return default

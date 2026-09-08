@@ -6,47 +6,47 @@
   <title>{% block title %}Sevimli Kassa{% endblock %}</title>
   <style>
     /*
-      Sevimli Kassa paneli.
+      Sevimli Kassa paneli — YAGONA design system (POS bilan bir xil).
 
-      Ranglar logotipdan olingan: to'q sharob (burgundiya) — brend, va
-      oltin-sariq — logotipdagi savat rangi. Ikkinchi rang bo'lgani uchun
-      panel «bir rangli» bo'lib qolmaydi: muhim raqamlar sariq bilan,
-      ogohlantirishlar sariq-jigarrang bilan ajratiladi.
-
-      Fon iliq kulrang (sof oq emas) — kun bo'yi qaraydigan ekran uchun
-      ko'z kamroq charchaydi.
+      Brend palitrasi yashil. Har rangning aniq vazifasi bor:
+        #051F20 primary-dark  — sidebar, kuchli matn
+        #163832 surface-dark  — bosilgan holat
+        #235347 action        — asosiy amal / faol
+        #8EB69B accent-soft   — ikkilamchi urg'u
+        #DAF1DE light         — och yashil urg'u
+      Gradient yo'q — tekis, minimalistik, premium. Fon juda och yashil-kulrang.
     */
     :root {
-      /* brend */
-      --wine:        #8E1F2F;
-      --wine-deep:   #5E1220;
-      --wine-dark:   #7A1A28;
-      --wine-soft:   #FBF0F1;
-      --gold:        #D99A2B;
-      --gold-deep:   #A8741A;
-      --gold-soft:   #FDF4E4;
+      /* brend (yashil) */
+      --wine:        #235347;   /* asosiy amal / faol */
+      --wine-deep:   #051F20;   /* eng to'q — sidebar, hero */
+      --wine-dark:   #163832;   /* bosilgan holat */
+      --wine-soft:   #E6F3EA;   /* och urg'u foni */
+      --gold:        #8EB69B;   /* ikkilamchi urg'u */
+      --gold-deep:   #235347;
+      --gold-soft:   #EAF3EC;
 
       /* matn */
-      --ink:         #1B1618;
-      --ink-soft:    #46403F;
-      --muted:       #756D6B;
-      --faint:       #9C9491;
+      --ink:         #0B211D;
+      --ink-soft:    #2A4A44;
+      --muted:       #5B7A70;
+      --faint:       #89A99A;
 
       /* yuza */
-      --bg:          #F6F4F1;
+      --bg:          #F1F6F2;
       --surface:     #FFFFFF;
-      --surface-2:   #FBFAF8;
-      --line:        #ECE8E2;
-      --line-strong: #DAD4CC;
+      --surface-2:   #F4F8F5;
+      --line:        #DCE8DF;
+      --line-strong: #C3D6C8;
 
-      /* holat */
-      --ok:          #1B7F55;   --ok-soft:     #E6F4ED;
-      --warn:        #A8741A;   --warn-soft:   #FDF4E4;
-      --danger:      #B3261E;   --danger-soft: #FBEDEB;
+      /* holat (semantik — ataylab yashildan farqli) */
+      --ok:          #1F7A55;   --ok-soft:     #E6F4ED;
+      --warn:        #B8791F;   --warn-soft:   #FBF1E0;
+      --danger:      #B23A3A;   --danger-soft: #FBEDEB;
       --info:        #2A6B96;   --info-soft:   #EAF3F8;
 
       --radius:      14px;
-      --shadow:      0 1px 2px rgba(27,22,24,.04), 0 8px 24px rgba(27,22,24,.06);
+      --shadow:      0 1px 2px rgba(5,31,32,.04), 0 8px 24px rgba(5,31,32,.06);
       --sidebar:     248px;
     }
 
@@ -54,7 +54,7 @@
     html, body { height: 100%; }
     body {
       margin: 0; background: var(--bg); color: var(--ink);
-      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
       font-size: 15px; line-height: 1.55;
       -webkit-font-smoothing: antialiased;
     }
@@ -67,7 +67,7 @@
 
     aside.nav {
       width: var(--sidebar); flex: 0 0 var(--sidebar);
-      background: linear-gradient(170deg, var(--wine) 0%, var(--wine-deep) 100%);
+      background: var(--wine-deep);
       color: #fff; display: flex; flex-direction: column;
       position: sticky; top: 0; height: 100vh;
     }
@@ -76,21 +76,21 @@
     }
     aside.nav .brand .mark {
       width: 34px; height: 34px; border-radius: 10px; flex: 0 0 34px;
-      background: var(--gold); color: #4A2E05;
+      background: var(--gold); color: #051F20;
       display: flex; align-items: center; justify-content: center;
       font-weight: 800; font-size: 17px; letter-spacing: -.5px;
     }
     aside.nav .brand .name { font-weight: 700; font-size: 16.5px; letter-spacing: .2px; }
-    aside.nav .brand .sub  { font-size: 11.5px; color: #E8B8BF; margin-top: -3px; }
+    aside.nav .brand .sub  { font-size: 11.5px; color: #8EB69B; margin-top: -3px; }
 
     aside.nav .group {
       font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px;
-      text-transform: uppercase; color: #D79AA3;
+      text-transform: uppercase; color: #8EB69B;
       padding: 16px 22px 7px;
     }
     aside.nav a.item {
       display: flex; align-items: center; gap: 11px;
-      padding: 10px 22px; color: #F0D6DA; font-size: 14.5px; font-weight: 500;
+      padding: 10px 22px; color: #DAF1DE; font-size: 14.5px; font-weight: 500;
       border-left: 3px solid transparent; text-decoration: none;
     }
     aside.nav a.item .ico { width: 18px; text-align: center; opacity: .85; font-size: 15px; }
@@ -102,10 +102,10 @@
     aside.nav a.item.on .ico { opacity: 1; }
     aside.nav .spacer { flex: 1; }
     aside.nav .foot {
-      padding: 14px 22px 18px; font-size: 12px; color: #C98B95;
+      padding: 14px 22px 18px; font-size: 12px; color: #8EB69B;
       border-top: 1px solid rgba(255,255,255,.12);
     }
-    aside.nav .foot a { color: #EBC3C9; }
+    aside.nav .foot a { color: #DAF1DE; }
 
     main.body { flex: 1; min-width: 0; }
     header.top {
@@ -163,13 +163,12 @@
     .tile .note  { font-size: 13px; color: var(--muted); margin-top: 1px; }
 
     .tile.hero {
-      background: linear-gradient(140deg, var(--wine) 0%, var(--wine-deep) 100%);
-      border-color: transparent; color: #fff;
+      background: var(--wine); border-color: transparent; color: #fff;
     }
     .tile.hero::before { background: var(--gold); }
-    .tile.hero .label { color: #EFB9C1; }
+    .tile.hero .label { color: #BFE0C9; }
     .tile.hero .value { color: #fff; }
-    .tile.hero .note  { color: #E9B6BE; }
+    .tile.hero .note  { color: #BFE0C9; }
 
     .tile.gold::before   { background: var(--gold); }
     .tile.gold .value    { color: var(--gold-deep); }
@@ -192,7 +191,7 @@
     }
     td { padding: 13px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
     tbody tr:last-child td, tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #FCFBF9; }
+    tr:hover td { background: #F4FAF6; }
     td.right, th.right { text-align: right; }
     td.actions { white-space: nowrap; text-align: right; }
     td.tight, th.tight { white-space: nowrap; }
@@ -207,10 +206,29 @@
     .badge.ok   { color: var(--ok);     background: var(--ok-soft);     border-color: #C6E5D6; }
     .badge.warn { color: var(--warn);   background: var(--warn-soft);   border-color: #EEDCB8; }
     .badge.err  { color: var(--danger); background: var(--danger-soft); border-color: #F1D0CC; }
-    .badge.off  { color: var(--muted);  background: #F0EDE9;            border-color: #E3DED7; }
+    .badge.off  { color: var(--muted);  background: #EAF3EC;            border-color: #E3DED7; }
 
     .sec { color: var(--muted); font-size: 13px; }
     .empty { color: var(--muted); padding: 26px; text-align: center; }
+
+    /* -------------------------------------------------------- sahifalash */
+    .pager {
+      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      margin-top: 16px; font-size: 13.5px; color: var(--muted);
+    }
+    .pager .count { margin-right: auto; }
+    .pager a, .pager span.cur {
+      display: inline-flex; align-items: center; min-width: 38px; height: 36px;
+      padding: 0 12px; justify-content: center; border-radius: 9px;
+      border: 1.5px solid var(--line-strong); font-weight: 600; font-size: 14px;
+    }
+    .pager a { color: var(--ink-soft); background: var(--surface); }
+    .pager a:hover { border-color: var(--wine); color: var(--wine); text-decoration: none; }
+    .pager span.cur { background: var(--wine); border-color: var(--wine); color: #fff; }
+    .pager span.disabled { color: var(--faint); border: 1.5px solid var(--line);
+                           background: var(--surface-2); border-radius: 9px;
+                           min-width: 38px; height: 36px; display: inline-flex;
+                           align-items: center; justify-content: center; padding: 0 12px; }
 
     pre.receipt {
       background: var(--surface); border: 1px solid var(--line);
@@ -241,7 +259,7 @@
     }
     input:focus, select:focus, textarea:focus {
       outline: none; border-color: var(--wine);
-      box-shadow: 0 0 0 3px rgba(142,31,47,.10);
+      box-shadow: 0 0 0 3px rgba(35,83,71,.14);
     }
     input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--wine); }
 
@@ -304,6 +322,8 @@
     <div class="group">Sozlash</div>
     <a class="item {% block nav_registers %}{% endblock %}" href="/kassalar/">
       <span class="ico">▣</span><span class="txt">Kassalar</span></a>
+    <a class="item {% block nav_bonus %}{% endblock %}" href="/bonus/">
+      <span class="ico">★</span><span class="txt">SEVIMLI BONUS</span></a>
     <a class="item {% block nav_prices %}{% endblock %}" href="/narxlar/">
       <span class="ico">◈</span><span class="txt">Sotuv narxi</span></a>
     <a class="item {% block nav_releases %}{% endblock %}" href="/versiyalar/">

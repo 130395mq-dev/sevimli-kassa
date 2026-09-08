@@ -1,0 +1,164 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}SEVIMLI BONUS — Sevimli Kassa{% endblock %}
+{% block nav_bonus %}on{% endblock %}
+{% block crumb %}SEVIMLI BONUS{% endblock %}
+
+{% block body %}
+  <h1>SEVIMLI BONUS</h1>
+  <div class="sub">Bonus ballari shu yerda — o'z bazamizda — yuritiladi
+    (MoySklad Отгрузка yo'lida ballni hisoblamaydi)</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- ============ HOLAT ============ -->
+  <div class="card" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:220px;">
+      <div style="font-size:12.5px;color:var(--muted);">Dastur holati</div>
+      {% if program.active %}
+        <div style="font-size:20px;font-weight:700;color:var(--ok);">● Faol</div>
+        <div class="sec">Yoqilgan: {{ program.activated_at|date:"d.m.Y H:i"|default:"—" }}.
+          Ballni faqat biz yuritamiz — MoySklad balansi qayta yozilmaydi.</div>
+      {% else %}
+        <div style="font-size:20px;font-weight:700;color:var(--warn);">○ O'chiq</div>
+        <div class="sec">Hali yoqilmagan. Yoqilgunicha balanslar MoySklad bilan
+          sinxron turadi. Yoqqaningizda o'sha paytdagi balanslar boshlang'ich
+          bo'lib qoladi — hech kimning bonusi kuymaydi.</div>
+      {% endif %}
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:12.5px;color:var(--muted);">Ball to'plagan mijozlar</div>
+      <div style="font-size:22px;font-weight:700;">{{ holders }}</div>
+      <div class="sec">Jami: {{ total_points|som }} ball</div>
+    </div>
+  </div>
+
+  {% if not program.active %}
+    <form method="post" style="margin:14px 0;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="activate">
+      <button type="submit" style="font-size:15px;padding:12px 22px;">
+        ★ SEVIMLI BONUS ni yoqish (MoySklad balanslarini olib qolib)</button>
+      {% if not has_token %}
+        <div class="alert warn" style="margin-top:10px;"><span>!</span>
+          <div>MoySklad tokeni sozlanmagan — balanslar bazadagidek qoladi.
+            Avval MoySklad'ni ulang, keyin yoqing.</div></div>
+      {% else %}
+        <span class="sec" style="margin-left:12px;">
+          Bosishdan oldin katalog sinxronlansin — bu tugma MoySklad'dan
+          har mijozning joriy balansini olib qo'yadi.</span>
+      {% endif %}
+    </form>
+  {% endif %}
+
+  <!-- ============ SOZLAMALAR ============ -->
+  <h2>Sozlamalar</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="settings">
+    <div class="fields">
+      <label>
+        <span>Ball berish (%) <span class="sec">— to'langan summadan</span></span>
+        <input name="earn_percent" value="{{ program.earn_percent }}" inputmode="decimal">
+      </label>
+      <label>
+        <span>Eng ko'p ball to'lovi (%)</span>
+        <input name="max_redeem_percent" value="{{ program.max_redeem_percent }}" inputmode="numeric">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="redeem_enabled" {% if program.redeem_enabled %}checked{% endif %}>
+        <span>Ball bilan to'lashga ruxsat</span>
+      </label>
+    </div>
+    <div class="sec" style="margin:8px 0 12px;">
+      100 so'm = 1 ball degani — «Ball berish» 1%. 1 ball = 1 so'm.
+    </div>
+    <button type="submit">Saqlash</button>
+  </form>
+
+  {% if program.active and has_token %}
+    <form method="post" style="margin:10px 0 22px;"
+          onsubmit="return confirm('Lokal balanslar MoySklad qiymatiga tenglanadi. Faqat ishga tushirishda kerak. Davom etilsinmi?');">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reimport">
+      <button type="submit" class="ghost">MoySklad'dan balanslarni qayta olish</button>
+      <span class="sec" style="margin-left:12px;">Ehtiyot bo'ling — lokal
+        o'zgarishlar ustidan yoziladi.</span>
+    </form>
+  {% endif %}
+
+  <!-- ============ MIJOZLAR ============ -->
+  <h2>Mijoz balanslari</h2>
+  <form method="get" class="card" style="padding:12px 16px;">
+    <input name="q" value="{{ q }}" placeholder="Ism, telefon yoki karta raqami bo'yicha qidirish"
+           style="width:100%;box-sizing:border-box;">
+  </form>
+
+  <table>
+    <tr>
+      <th>Mijoz</th><th>Telefon</th><th>Karta</th>
+      <th class="num">Ball</th><th>Qo'lda tuzatish</th>
+    </tr>
+    {% for c in page.object_list %}
+      <tr>
+        <td><a href="{% url 'dashboard:customer-bonus' c.pk %}">{{ c.name }}</a></td>
+        <td class="num tight">{{ c.phone|default:"—" }}</td>
+        <td class="num tight">{{ c.discount_card|default:"—" }}</td>
+        <td class="num"><b>{{ c.bonus_points|som }}</b></td>
+        <td>
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="adjust">
+            <input type="hidden" name="customer_id" value="{{ c.pk }}">
+            <input name="delta" placeholder="+10 / -5" size="6" inputmode="numeric">
+            <input name="reason" placeholder="sabab" size="12">
+            <button type="submit" class="small">Qo'llash</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="sec" style="padding:18px;text-align:center;">
+        {% if q %}«{{ q }}» bo'yicha mijoz topilmadi{% else %}Ball to'plagan mijoz yo'q{% endif %}
+      </td></tr>
+    {% endfor %}
+  </table>
+
+  {% if page.paginator.num_pages > 1 %}
+    <div class="pager">
+      <span class="count">{{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
+      {% if page.has_previous %}
+        <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page.previous_page_number }}">‹ Oldingi</a>
+      {% else %}<span class="disabled">‹ Oldingi</span>{% endif %}
+      <span class="cur">{{ page.number }}</span>
+      {% if page.has_next %}
+        <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page.next_page_number }}">Keyingi ›</a>
+      {% else %}<span class="disabled">Keyingi ›</span>{% endif %}
+    </div>
+  {% endif %}
+
+  <!-- ============ OXIRGI HARAKATLAR ============ -->
+  <h2>Oxirgi ball harakatlari</h2>
+  <table>
+    <tr><th>Vaqt</th><th>Mijoz</th><th>Turi</th><th class="num">O'zgarish</th><th class="num">Balans</th><th>Izoh</th></tr>
+    {% for e in recent %}
+      <tr>
+        <td class="num tight">{{ e.created_at|date:"d.m H:i" }}</td>
+        <td>{{ e.customer.name }}</td>
+        <td><span class="badge {% if e.delta >= 0 %}ok{% else %}warn{% endif %}">{{ e.get_kind_display }}</span></td>
+        <td class="num">{% if e.delta >= 0 %}+{% endif %}{{ e.delta }}</td>
+        <td class="num">{{ e.balance_after|som }}</td>
+        <td class="sec">{{ e.comment }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="sec" style="padding:14px;text-align:center;">Hali harakat yo'q</td></tr>
+    {% endfor %}
+  </table>
+{% endblock %}

@@ -65,8 +65,7 @@
         </td>
         <td class="num tight"><code class="token">{{ r.login|default:"—" }}</code></td>
         <td class="num tight">
-          {% if r.password_plain %}<code class="token">{{ r.password_plain }}</code>
-          {% else %}<span class="sec">ko'rinmaydi</span>{% endif %}
+          <span class="sec">yangilaganda ko'rinadi</span>
         </td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
         <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>

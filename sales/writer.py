@@ -123,7 +123,12 @@ class SaleWriter:
         for payment in sale.payments.select_related("method"):
             self._write_payment(sale, payment, demand)
 
-        self._write_bonus(sale)
+        # BALL MoySklad'ga YOZILMAYDI. MoySklad bonus dasturi faqat o'z
+        # kassa ilovasidagi roznitsa savdosida ishlaydi — Отгрузка yo'lida
+        # emas (MoySklad rasmiy javobi, 2026-09). Ilgari bu yerda
+        # `bonustransaction` yozardik; u har doim rad etilib, butun savdoni
+        # STUCK qilardi. Endi ballni FAQAT o'zimiz (SEVIMLI BONUS,
+        # server bazasi) yuritamiz. Bu chaqiruv ataylab olib tashlandi.
 
     def _send_return(self, sale: Sale) -> None:
         """Qaytarishni yozadi: Возврат (salesreturn) + pulni qaytarish.

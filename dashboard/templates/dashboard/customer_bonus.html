@@ -1,0 +1,42 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}{{ cust.name }} — bonus tarixi{% endblock %}
+{% block nav_bonus %}on{% endblock %}
+{% block crumb %}SEVIMLI BONUS · {{ cust.name }}{% endblock %}
+
+{% block body %}
+  <h1>{{ cust.name }}</h1>
+  <div class="sub">
+    {{ cust.phone|default:"telefon yo'q" }}
+    {% if cust.discount_card %} · karta {{ cust.discount_card }}{% endif %}
+  </div>
+
+  <div class="card" style="display:flex;gap:26px;flex-wrap:wrap;">
+    <div>
+      <div style="font-size:12.5px;color:var(--muted);">Joriy balans</div>
+      <div style="font-size:24px;font-weight:700;">{{ cust.bonus_points|som }} ball</div>
+    </div>
+  </div>
+
+  <p style="margin:16px 0 8px;">
+    <a href="{% url 'dashboard:bonus' %}">‹ Bonus ro'yxatiga qaytish</a>
+  </p>
+
+  <h2>Ball tarixi</h2>
+  <table>
+    <tr><th>Vaqt</th><th>Turi</th><th class="num">O'zgarish</th><th class="num">Balans</th><th>Chek</th><th>Izoh</th></tr>
+    {% for e in entries %}
+      <tr>
+        <td class="num tight">{{ e.created_at|date:"d.m.Y H:i" }}</td>
+        <td><span class="badge {% if e.delta >= 0 %}ok{% else %}warn{% endif %}">{{ e.get_kind_display }}</span></td>
+        <td class="num">{% if e.delta >= 0 %}+{% endif %}{{ e.delta }}</td>
+        <td class="num">{{ e.balance_after|som }}</td>
+        <td class="num tight">{% if e.sale_id %}#{{ e.sale.number }}{% else %}—{% endif %}</td>
+        <td class="sec">{{ e.comment }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="sec" style="padding:16px;text-align:center;">Hali ball harakati yo'q</td></tr>
+    {% endfor %}
+  </table>
+{% endblock %}

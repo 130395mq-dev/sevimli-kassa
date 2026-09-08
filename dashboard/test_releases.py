@@ -131,11 +131,16 @@ class RegistersPageTest(TestCase):
         reg = Register.objects.get()
         self.assertEqual(reg.name, "Kassa-1")
         self.assertEqual(reg.login, "chilonzor")
-        self.assertEqual(len(reg.password_plain), 6)
-        self.assertTrue(reg.check_password(reg.password_plain))
         self.assertEqual(str(reg.settings.warehouse_ms_id), str(self.wh.ms_id))
-        # Parol panelda ko'rinib turadi
-        self.assertIn(reg.password_plain, r.content.decode())
+        # Parol OCHIQ saqlanmaydi — faqat xesh. Lekin yaratilganda flash
+        # xabarida bir marta ko'rsatiladi (do'kon egasi yozib olsin).
+        body = r.content.decode()
+        import re
+        m = re.search(r"parol «(\d{6})»", body)
+        self.assertIsNotNone(m, "yaratishda parol flash xabarda ko'rinishi kerak")
+        self.assertTrue(reg.check_password(m.group(1)))
+        # Ochiq matnli ustun endi yo'q
+        self.assertFalse(hasattr(reg, "password_plain"))
 
     def test_ikkinchisiga_boshqa_login(self):
         from sales.models import Register

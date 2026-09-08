@@ -198,7 +198,11 @@ class WriterTest(TestCase):
         total = sum(round(p["price"] * p["quantity"]) for p in d["positions"])
         self.assertEqual(total, sale.net_total)
 
-    def test_ball_yoziladi(self):
+    def test_ball_moysklad_ga_yozilmaydi(self):
+        # MUHIM: ball MoySklad'ga YOZILMAYDI (Отгрузка yo'lida MoySklad
+        # bonusni hisoblamaydi). Ballni faqat SEVIMLI BONUS (server bazasi)
+        # yuritadi. Ilgari bu yerda bonustransaction yozardik va u savdoni
+        # STUCK qilardi.
         cust = Customer.objects.create(
             ms_id="00000000-0000-0000-0000-0000000000ca", name="Aliyev"
         )
@@ -209,19 +213,10 @@ class WriterTest(TestCase):
         client = FakeClient()
         SaleWriter(client).send(sale)
 
-        tx = client.posted("bonustransaction")
-        self.assertEqual(len(tx), 1)
-        self.assertEqual(tx[0]["transactionType"], "EARNING")
-        self.assertEqual(tx[0]["bonusValue"], 500)
-
-    def test_mijozsiz_savdo_bal_yozmaydi(self):
-        sale = self.make_sale(
-            [("Non", "1.000", 50_000_00)], [(self.cash, 50_000_00)],
-            points_earned=500,
-        )
-        client = FakeClient()
-        SaleWriter(client).send(sale)
+        # Hech qanday bonustransaction yozilmasligi kerak
         self.assertEqual(client.posted("bonustransaction"), [])
+        # Lekin savdo (demand) va to'lov muvaffaqiyatli yozilgan
+        self.assertEqual(len(client.posted("demand")), 1)
 
     # ------------------------------------------------- takror yozilmasin
 

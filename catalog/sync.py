@@ -42,6 +42,21 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+
+def _bonus_is_active() -> bool:
+    """SEVIMLI BONUS dasturi yoqilganmi. Yoqilgan bo'lsa — biz ballni
+    o'zimiz yuritamiz, MoySklad'dan qayta yozmaymiz.
+
+    Lazy import: `sales` `catalog` ni import qiladi, aylanma importdan
+    qochamiz. Jadval hali yaratilmagan bo'lsa (migratsiyagacha) — False.
+    """
+    try:
+        from sales.models import BonusProgram
+        return BonusProgram.objects.filter(active=True).exists()
+    except Exception:
+        return False
+
+
 # MoySklad `updated` ni "YYYY-MM-DD HH:MM:SS.mmm" formatida kutadi.
 MS_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -349,28 +364,78 @@ class CatalogSync:
         params = self._delta_filter(state, full)
         count = 0
 
+        # SEVIMLI BONUS yoqilgan bo'lsa — `bonus_points` ni MoySklad'dan
+        # QAYTA YOZMAYMIZ. Endi ballning haqiqat manbai bizning bazamiz:
+        # savdo/qaytarish/qo'lda tuzatish uni o'zgartiradi. Agar bu yerda
+        # MoySklad qiymatini yozsak, sarflangan ball qaytib tiklanardi
+        # (mijoz bir ballni cheksiz sarflashi mumkin bo'lardi).
+        own_bonus = _bonus_is_active()
+
         for row in self.client.iter_list("entity/counterparty", **params):
             discounts = row.get("discounts") or []
-            Customer.objects.update_or_create(
-                ms_id=row["id"],
-                defaults={
-                    "name": row.get("name", ""),
-                    "phone": (row.get("phone") or "")[:64],
-                    "discount_card": (row.get("discountCardNumber") or "")[:128],
-                    "sales_amount": int(row.get("salesAmount") or 0),
-                    "bonus_points": int(row.get("bonusPoints") or 0),
-                    "accumulation_discount": self._discount_value(
-                        discounts, "accumulationDiscount"
-                    ),
-                    "personal_discount": self._discount_value(
-                        discounts, "personalDiscount"
-                    ),
-                    "archived": row.get("archived", False),
-                    "updated": _parse_ms_datetime(row.get("updated")),
-                },
-            )
+            defaults = {
+                "name": row.get("name", ""),
+                "phone": (row.get("phone") or "")[:64],
+                "discount_card": (row.get("discountCardNumber") or "")[:128],
+                "sales_amount": int(row.get("salesAmount") or 0),
+                "accumulation_discount": self._discount_value(
+                    discounts, "accumulationDiscount"
+                ),
+                "personal_discount": self._discount_value(
+                    discounts, "personalDiscount"
+                ),
+                "archived": row.get("archived", False),
+                "updated": _parse_ms_datetime(row.get("updated")),
+            }
+            if not own_bonus:
+                # Dastur hali yoqilmagan — MoySklad balansi bilan sinxron
+                # turamiz (yoqilganda shu oxirgi qiymat boshlang'ich balans
+                # bo'lib qoladi, hech kimning bonusi kuymaydi).
+                defaults["bonus_points"] = int(row.get("bonusPoints") or 0)
+            Customer.objects.update_or_create(ms_id=row["id"], defaults=defaults)
             count += 1
         return count
+
+    def force_import_bonus(self) -> int:
+        """MoySklad'dan har mijozning JORIY bonus balansini MAJBURAN oladi
+        va lokal balansga yozadi — dastur faol bo'lsa ham.
+
+        SEVIMLI BONUS'ni ishga tushirishда ishlatiladi: shu paytdagi
+        MoySklad balanslari boshlang'ich balans bo'lib qoladi, hech kimning
+        bonusi kuymaydi. O'zgargan har balans reyestrga (IMPORT) yoziladi.
+
+        Diqqat: bu lokal balansni MoySklad qiymatiga TENGLAYDI. Faqat
+        ishga tushirishда yoki egasi ataylab «qayta olish» bosgandagina
+        chaqirilishi kerak (aks holda lokal sarflar ustidan yozib yuboradi).
+        """
+        from sales.models import BonusEntry  # aylanma importdan qochish
+
+        changed = 0
+        entries = []
+        for row in self.client.iter_list("entity/counterparty"):
+            ms_bonus = int(row.get("bonusPoints") or 0)
+            cust = Customer.objects.filter(ms_id=row["id"]).first()
+            if not cust:
+                continue
+            if cust.bonus_points != ms_bonus:
+                entries.append(BonusEntry(
+                    customer=cust, kind=BonusEntry.IMPORT,
+                    delta=ms_bonus - cust.bonus_points, balance_after=ms_bonus,
+                    comment="MoySklad'dan olindi (ishga tushirish)",
+                ))
+                cust.bonus_points = ms_bonus
+                cust.save(update_fields=["bonus_points"])
+                changed += 1
+            elif ms_bonus > 0:
+                # Balans mos, lekin boshlang'ich holatni qayd etamiz
+                entries.append(BonusEntry(
+                    customer=cust, kind=BonusEntry.IMPORT, delta=0,
+                    balance_after=ms_bonus,
+                    comment="Ishga tushirish: MoySklad balansi",
+                ))
+        if entries:
+            BonusEntry.objects.bulk_create(entries, batch_size=500)
+        return changed
 
     @staticmethod
     def _discount_value(discounts: list[dict], key: str) -> Decimal:

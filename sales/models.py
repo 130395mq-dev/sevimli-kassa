@@ -132,13 +132,11 @@ class Register(models.Model):
     login = models.SlugField(max_length=64, unique=True, null=True, blank=True)
     password_hash = models.CharField(max_length=256, blank=True)
 
-    #: Parolning o'zi — panelda ko'rinib turishi uchun.
-    #:
-    #: Odam paroli bo'lganida bu xato bo'lardi. Lekin bu qurilma paroli:
-    #: uni do'kon boshqaruvchisi monoblokka teradi, xodim esa yodida
-    #: saqlamaydi. Ko'rinmasa — unutilgan parol har safar almashtiriladi
-    #: va kassa uzilib qoladi. Tekshirish baribir xesh bo'yicha boradi.
-    password_plain = models.CharField(max_length=64, blank=True)
+    # Parol OCHIQ saqlanmaydi — faqat xesh (`password_hash`). Ilgari
+    # `password_plain` ustuni bor edi (panelda ko'rsatish uchun), lekin
+    # bu xavfli edi: bitta baza nusxasi = barcha kassa parollari ochiq
+    # qo'lda. Endi parol faqat YARATILGAN paytda bir marta ko'rsatiladi
+    # (panelda flash-xabar), so'ng saqlanmaydi.
 
     # Ilova shu token bilan gaplashadi. Har bir kassaning o'z tokeni bor:
     # bittasi o'g'irlansa, faqat o'shani almashtiramiz.
@@ -207,7 +205,6 @@ class Register(models.Model):
         from django.contrib.auth.hashers import make_password
 
         self.password_hash = make_password(password)
-        self.password_plain = password
 
     def check_password(self, password: str) -> bool:
         from django.contrib.auth.hashers import check_password
@@ -597,6 +594,104 @@ class Payment(models.Model):
 
     def __str__(self) -> str:
         return f"{self.method.name}: {self.amount}"
+
+
+# ------------------------------------------------------- SEVIMLI BONUS
+
+# Bir ball necha tiyin — 1 ball = 1 so'm = 100 tiyin.
+POINT_TIYIN = 100
+
+
+class BonusProgram(models.Model):
+    """SEVIMLI BONUS — o'zimizning bonus dasturi (bitta yozuv — singleton).
+
+    NEGA O'ZIMIZ YURITAMIZ: MoySklad bonus dasturi (ball berish/sarflash)
+    faqat MoySklad kassa ilovasidagi roznitsa savdosida ishlaydi. Biz esa
+    savdoni Отгрузка ko'rinishida yozamiz — bu yo'lda MoySklad ballni
+    hisoblamaydi. Shuning uchun ballni o'zimizning bazamizda yuritamiz:
+    haqiqat manbai shu jadval bo'ladi, MoySklad emas.
+
+    ISHGA TUSHIRISH (activate): dastur yoqilgunicha `Customer.bonus_points`
+    MoySklad'dan sinxron bo'lib turadi (katalog sync yozadi). Yoqilgan
+    zahoti (a) MoySklad'dan oxirgi to'liq balanslar tortiladi (hech kimning
+    bonusi kuymaydi), (b) shu paytdan boshlab katalog sync `bonus_points` ga
+    TEGMAYDI — endi faqat biz o'zgartiramiz (savdo, qaytarish, qo'lda tuzatish).
+    """
+
+    active = models.BooleanField("Faol", default=False)
+    activated_at = models.DateTimeField(null=True, blank=True)
+
+    # 100 so'm = 1 ball → 1%. Sotib olingan (to'langan) summadan hisoblanadi.
+    earn_percent = models.DecimalField(
+        "Ball berish (%)", max_digits=5, decimal_places=2, default=1
+    )
+    redeem_enabled = models.BooleanField("Ball bilan to'lashga ruxsat", default=True)
+    # Chek summasining eng ko'p necha foizini ball bilan to'lash mumkin.
+    max_redeem_percent = models.IntegerField("Eng ko'p ball to'lovi (%)", default=100)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Bonus dasturi"
+        verbose_name_plural = "Bonus dasturi"
+
+    def __str__(self) -> str:
+        return "SEVIMLI BONUS" + (" (faol)" if self.active else " (o'chiq)")
+
+    @classmethod
+    def get(cls) -> "BonusProgram":
+        """Yagona yozuv. Yo'q bo'lsa — standart bilan yaratiladi."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def earn_for(self, net_total_tiyin: int) -> int:
+        """To'langan summadan (tiyin) necha ball beriladi. Butun ball."""
+        if net_total_tiyin <= 0 or self.earn_percent <= 0:
+            return 0
+        # ball = (so'm) * foiz / 100 ; so'm = tiyin/100 ; 1 ball = 1 so'm
+        return int((net_total_tiyin * self.earn_percent) // (100 * POINT_TIYIN))
+
+
+class BonusEntry(models.Model):
+    """Ball harakatining bitta yozuvi — reyestr (audit izi).
+
+    Har ball o'zgarishi shu yerda qoladi: qachon, qancha, nima uchun, va
+    o'zgarishdan keyingi balans. Panelda mijoz tarixi shundan chiqadi.
+    """
+
+    EARN = "earn"        # savdoda ball berildi
+    SPEND = "spend"      # savdoda ball sarflandi
+    RETURN = "return"    # qaytarishda tuzatildi
+    IMPORT = "import"    # MoySklad'dan boshlang'ich balans olindi
+    ADJUST = "adjust"    # paneldan qo'lda tuzatildi
+    KIND = [
+        (EARN, "Berildi"), (SPEND, "Sarflandi"), (RETURN, "Qaytarish"),
+        (IMPORT, "MoySklad'dan"), (ADJUST, "Qo'lda tuzatish"),
+    ]
+
+    customer = models.ForeignKey(
+        Customer, on_delete=models.CASCADE, related_name="bonus_entries"
+    )
+    sale = models.ForeignKey(
+        Sale, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="bonus_entries",
+    )
+    kind = models.CharField(max_length=8, choices=KIND)
+    #: Musbat = qo'shildi, manfiy = yechildi. Ball birligida (so'm emas).
+    delta = models.IntegerField()
+    balance_after = models.IntegerField()
+    comment = models.CharField(max_length=256, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["customer", "-created_at"])]
+        verbose_name = "Ball harakati"
+        verbose_name_plural = "Ball harakatlari"
+
+    def __str__(self) -> str:
+        sign = "+" if self.delta >= 0 else ""
+        return f"{self.customer_id}: {sign}{self.delta} ({self.get_kind_display()})"
 
 
 # ------------------------------------------------------- ilova versiyalari

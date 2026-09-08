@@ -236,13 +236,73 @@ class SaleTest(ApiTestCase):
         self.assertEqual(Sale.objects.get().payments.count(), 2)
 
     def test_ball_summani_kamaytiradi(self):
+        # Ball to'lovi endi FAQAT dastur faol + mijoz + yetarli balans bo'lsa.
+        from sales.models import BonusProgram
+        prog = BonusProgram.get()
+        prog.active = True
+        prog.save()
+        cust = Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000c1",
+            name="Bonusli mijoz", bonus_points=1000,
+        )
         payload = self.sale_payload()
+        payload["customer_id"] = cust.pk
         payload["points_spent"] = 500  # 500 so'm
         payload["payments"] = [{"method": "naqd", "amount": 2_500_00}]
 
         r = self.post("/api/v1/sales", payload)
         self.assertEqual(r.status_code, 201)
         self.assertEqual(Sale.objects.get().net_total, 2_500_00)
+        # Balans: 1000 − 500 sarflandi + 25 ball berildi (2500 so'm × 1%) = 525
+        cust.refresh_from_db()
+        self.assertEqual(cust.bonus_points, 1000 - 500 + 25)
+
+    def test_ball_yetmasa_rad(self):
+        # Balansdan ko'p ball sarflab bo'lmaydi (soxta ball = bloklanadi).
+        from sales.models import BonusProgram
+        prog = BonusProgram.get(); prog.active = True; prog.save()
+        cust = Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000c2",
+            name="Kam balans", bonus_points=100,
+        )
+        payload = self.sale_payload()
+        payload["customer_id"] = cust.pk
+        payload["points_spent"] = 500
+        payload["payments"] = [{"method": "naqd", "amount": 2_500_00}]
+        r = self.post("/api/v1/sales", payload)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_dastur_ochiq_bolsa_ball_sarflanmaydi(self):
+        # Dastur o'chiq bo'lsa ball to'lovi qabul qilinmaydi.
+        cust = Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000c3",
+            name="Mijoz", bonus_points=1000,
+        )
+        payload = self.sale_payload()
+        payload["customer_id"] = cust.pk
+        payload["points_spent"] = 100
+        payload["payments"] = [{"method": "naqd", "amount": 2_900_00}]
+        r = self.post("/api/v1/sales", payload)
+        self.assertEqual(r.status_code, 400)
+
+    def test_ball_serverda_beriladi(self):
+        # Ball SERVER hisoblaydi — klient «points_earned» ga ishonmaymiz.
+        from sales.models import BonusProgram
+        prog = BonusProgram.get(); prog.active = True; prog.save()
+        cust = Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000c4",
+            name="Yangi mijoz", bonus_points=0,
+        )
+        payload = self.sale_payload()
+        payload["customer_id"] = cust.pk
+        payload["points_earned"] = 9999  # klient yolg'oni — e'tiborsiz
+        r = self.post("/api/v1/sales", payload)
+        self.assertEqual(r.status_code, 201)
+        # 3000 so'm × 1% = 30 ball
+        cust.refresh_from_db()
+        self.assertEqual(cust.bonus_points, 30)
+        self.assertEqual(Sale.objects.get().points_earned, 30)
 
     def test_notanish_tolov_turi(self):
         payload = self.sale_payload()
@@ -435,6 +495,86 @@ class ReturnFlowTest(ApiTestCase):
         })
         sales = self.client.get("/api/v1/sales/returnable", **self.auth()).json()["sales"]
         self.assertEqual(sales[0]["items"][0]["returned_qty"], 1.0)
+
+    def _return_full(self):
+        import uuid
+        return self.post("/api/v1/sales", {
+            "local_uuid": str(uuid.uuid4()), "kind": "return",
+            "origin_id": self.origin.pk,
+            "items": [{"product_id": self.product.pk,
+                       "ms_product_id": str(self.product.ms_id),
+                       "name": "Buhanka S", "quantity": "1.000",
+                       "price": 3_000_00, "total": 3_000_00}],
+            "payments": [{"method": "naqd", "amount": 3_000_00}],
+        })
+
+    def test_asl_chekdan_ortiq_qaytarib_bolmaydi(self):
+        # Bir chekni ikki marta to'liq qaytarib pul yechib bo'lmaydi.
+        self.assertEqual(self._return_full().status_code, 201)
+        r = self._return_full()  # ikkinchi marta — endi rad
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("oshib", r.json()["error"].lower())
+        self.assertEqual(Sale.objects.filter(kind=Sale.RETURN).count(), 1)
+
+    def test_boshqa_kassa_chekini_qaytarib_bolmaydi(self):
+        # IDOR: boshqa kassaning chekiga origin_id berib qaytarib bo'lmaydi.
+        other = Register.objects.create(code="kassa-9", name="Kassa-9", store=self.store)
+        import uuid
+        r = self.client.post(
+            "/api/v1/sales",
+            data=json.dumps({
+                "local_uuid": str(uuid.uuid4()), "kind": "return",
+                "origin_id": self.origin.pk,  # bizning kassa chekimiz
+                "items": [{"product_id": self.product.pk, "name": "Buhanka S",
+                           "quantity": "1.000", "price": 3_000_00, "total": 3_000_00}],
+                "payments": [{"method": "naqd", "amount": 3_000_00}],
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {other.api_token}",
+        )
+        # Boshqa kassada ochiq smena yo'q -> 409; smena bo'lsa ham origin
+        # topilmaydi (shift__register mos emas) -> 400. Ikkalasi ham "yozilmaydi".
+        self.assertIn(r.status_code, (400, 409))
+
+
+class BonusReturnTest(ApiTestCase):
+    """Qaytarishda ball to'g'ri teskari aylanadi."""
+
+    def setUp(self):
+        super().setUp()
+        from sales.models import BonusProgram
+        prog = BonusProgram.get(); prog.active = True; prog.save()
+        self.cust = Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000cf",
+            name="Qaytaruvchi", bonus_points=1000,
+        )
+        self.open_shift()
+
+    def test_qaytarishda_ball_qaytadi(self):
+        import uuid
+        # Savdo: 500 ball sarflandi, 25 ball berildi -> balans 525
+        p = self.sale_payload()
+        p["customer_id"] = self.cust.pk
+        p["points_spent"] = 500
+        p["payments"] = [{"method": "naqd", "amount": 2_500_00}]
+        self.assertEqual(self.post("/api/v1/sales", p).status_code, 201)
+        self.cust.refresh_from_db()
+        self.assertEqual(self.cust.bonus_points, 525)
+        origin = Sale.objects.get(kind=Sale.SALE)
+
+        # To'liq qaytarish -> berilgan 25 ball qaytarib olinadi,
+        # sarflangan 500 ball mijozga qaytariladi: 525 - 25 + 500 = 1000
+        self.post("/api/v1/sales", {
+            "local_uuid": str(uuid.uuid4()), "kind": "return",
+            "origin_id": origin.pk, "customer_id": self.cust.pk,
+            "items": [{"product_id": self.product.pk,
+                       "ms_product_id": str(self.product.ms_id),
+                       "name": "Buhanka S", "quantity": "1.000",
+                       "price": 3_000_00, "total": 2_500_00}],
+            "payments": [{"method": "naqd", "amount": 2_500_00}],
+        })
+        self.cust.refresh_from_db()
+        self.assertEqual(self.cust.bonus_points, 1000)
 
 
 class UpdateTest(ApiTestCase):
