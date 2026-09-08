@@ -31,6 +31,20 @@ ALLOWED_HOSTS = [h.strip() for h in env("ALLOWED_HOSTS", "*").split(",") if h.st
 # Railway HTTPS'ni proxy orqali beradi.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# Production xavfsizligi — faqat DEBUG=False bo'lganda yoqiladi.
+# Railway HTTPS-only bo'lgani uchun secure cookie'lar xavfsiz. SSL_REDIRECT
+# esa jonli iframe/proxy sozlamasini buzmaslik uchun env orqali ixtiyoriy
+# (standart: o'chiq — Railway allaqachon HTTPS'ga majburlaydi).
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", True)
+    SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", True)
+    SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", False)
+
 CSRF_TRUSTED_ORIGINS = [
     o.strip()
     for o in env("CSRF_TRUSTED_ORIGINS", "https://*.up.railway.app").split(",")
@@ -155,6 +169,12 @@ RECEIPT_WIDTH = int(env("RECEIPT_WIDTH", "48"))
 # Yuborilmagan chekni necha marta urinib ko'rish. Shundan keyin «stuck»
 # holatiga o'tadi va panelda ko'rinadi — bu yerda odam kerak bo'ladi.
 SYNC_MAX_ATTEMPTS = int(env("SYNC_MAX_ATTEMPTS", "12"))
+
+# Manager-only amallarda (kassaga pul kiritish/chiqarish) imzolangan
+# sessiya tokenini MAJBURIY qilish. Barcha kassalar token yuboradigan
+# versiyaga o'tgach `True` qiling — shunda token yo'q so'rov rad etiladi.
+# O'tish davrida `False`: token bo'lmasa o'tkaziladi (eski kassalar buzilmasin).
+REQUIRE_MANAGER_TOKEN = env_bool("REQUIRE_MANAGER_TOKEN", False)
 
 # Sinxronizatsiya davrlari (daqiqada) — cron shu bo'yicha sozlanadi.
 SYNC_INTERVALS = {

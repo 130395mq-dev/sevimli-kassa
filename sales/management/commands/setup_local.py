@@ -117,16 +117,12 @@ class Command(BaseCommand):
             register.set_password("1111")
             register.save()
 
-        # Sinov kassiri
-        from sales.models import Cashier
-
-        cashier, cashier_new = Cashier.objects.get_or_create(
-            login="nilufar",
-            defaults={"name": "Rahimova Nilufar", "is_manager": True},
-        )
-        if cashier_new or not cashier.pin_hash:
-            cashier.set_pin("1234")
-            cashier.save()
+        # Eslatma: ilgari shu yerda «Rahimova Nilufar» degan sinov kassiri
+        # yaratilardi. U production bazaga tushib, kassa smenasida ko'rinib
+        # qolgani uchun OLIB TASHLANDI. Kassaga kirish kassaning o'z
+        # login-paroli bilan bo'ladi (yuqoridagi `register`), alohida kassir
+        # yozuvi shart emas. Haqiqiy kassirlar kerak bo'lsa — Django admin
+        # (/admin/) orqali qo'shiladi.
 
         # Panelga kirish uchun foydalanuvchi. Faqat sinov rejimi uchun:
         # ishlab chiqarishda `python manage.py createsuperuser` bilan
@@ -150,9 +146,6 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("  Kassa logini : kassa1")
         self.stdout.write("  Kassa paroli : 1111")
-        self.stdout.write("")
-        self.stdout.write("  Kassir       : Rahimova Nilufar")
-        self.stdout.write("  PIN          : 1234")
         self.stdout.write("")
         self.stdout.write("  Panel        : admin / admin")
         self.stdout.write("")

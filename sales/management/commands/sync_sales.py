@@ -2,10 +2,21 @@
 Navbatdagi cheklarni MoySklad'ga yuboradi.
 
     python manage.py sync_sales --dry-run    # nima yuborilishini ko'rish
-    python manage.py sync_sales              # haqiqiy yuborish
+    python manage.py sync_sales              # bir marta yuborib chiqadi
+    python manage.py sync_sales --loop       # to'xtovsiz (har 20 soniyada)
     python manage.py sync_sales --stuck      # tiqilib qolganlarni ko'rish
 
-Railway'da cron sifatida har 1-2 daqiqada ishlatiladi.
+Railway'da bu buyruq `--loop` bilan TO'XTOVSIZ xizmat sifatida ishlaydi:
+har ~20 soniyada navbatni tekshiradi. Shu bois chek MoySklad'ga deyarli
+darhol (eng ko'pi 20 soniyada) tushadi — cron'ning 5 daqiqalik chegarasi
+bu yerda yo'q.
+
+Nega ichki (Python) sikl, `while true` (shell) EMAS:
+  - Shell'ga bog'liq emas (konteynerda bash/sh bo'lmasligi mumkin).
+  - Har aylanish xatoni ushlaydi — bitta xato butun xizmatni yiqitmaydi.
+  - Har aylanishда DB ulanishi yangilanadi (uzoq ishlaydigan jarayonда
+    eski ulanish uzilib qolishi mumkin).
+  - Yurak urishi (heartbeat) log'ga yoziladi — ishlayotganи ko'rinadi.
 
 Qayta urinish oralig'i o'sib boradi: 1, 2, 4, 8... daqiqa. Sabab —
 MoySklad bir xil xatoli so'rov takrorlanaversa API'ni butunlay o'chirib
@@ -13,10 +24,13 @@ qo'yadi. Shoshilgandan ko'ra kutgan yaxshi.
 """
 
 import json
+import signal
+import time
 from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db import close_old_connections
 from django.utils import timezone
 
 from moysklad.client import MoySkladClient
@@ -24,6 +38,10 @@ from sales.models import Sale
 from sales.writer import SaleWriter, SumMismatch, WriteError
 
 BACKOFF_MINUTES = [1, 2, 4, 8, 15, 30, 60]
+
+#: `--loop` da ikki heartbeat oralig'i (navbat bo'sh bo'lsa ham shu
+#: oraliqда bir marta «tirikman» belgisi log'ga chiqadi).
+HEARTBEAT_EVERY = 30
 
 
 class Command(BaseCommand):
@@ -37,6 +55,10 @@ class Command(BaseCommand):
                             help="Tiqilib qolgan cheklarni ko'rsatadi")
         parser.add_argument("--retry-stuck", action="store_true",
                             help="Tiqilganlarni navbatga qaytaradi")
+        parser.add_argument("--loop", action="store_true",
+                            help="To'xtovsiz ishlaydi (har --interval soniyada)")
+        parser.add_argument("--interval", type=int, default=20,
+                            help="--loop'da tekshiruvlar orasidagi soniya")
 
     def handle(self, *args, **o):
         if o["stuck"]:
@@ -44,6 +66,71 @@ class Command(BaseCommand):
         if o["retry_stuck"]:
             return self.retry_stuck()
 
+        if o["loop"]:
+            return self.run_forever(o)
+
+        return self.run_once(o)
+
+    # ------------------------------------------------------------------ loop
+
+    def run_forever(self, o):
+        """To'xtovsiz xizmat: har `--interval` soniyada navbatni yuboradi.
+
+        - Har aylanish `run_once` xatoni ushlaydi (bitta xato xizmatni
+          yiqitmaydi).
+        - Har aylanishда eski DB ulanishlari yopiladi (uzoq jarayonда
+          ulanish uzilishi mumkin).
+        - SIGTERM/SIGINT (Railway qayta deploy qilganда) — toza to'xtash.
+        """
+        interval = max(5, int(o.get("interval") or 20))
+        stop = {"now": False}
+
+        def _stop(signum, frame):  # pragma: no cover - signal
+            stop["now"] = True
+            self.stdout.write(f"\nSignal {signum} — to'xtatilyapti...")
+            self.stdout.flush()
+
+        signal.signal(signal.SIGTERM, _stop)
+        signal.signal(signal.SIGINT, _stop)
+
+        self.stdout.write(
+            f"sync_sales --loop boshlandi (har {interval} soniyada). "
+            f"To'xtatish: SIGTERM."
+        )
+        self.stdout.flush()
+
+        last_beat = 0.0
+        while not stop["now"]:
+            close_old_connections()
+            try:
+                self.run_once(o, quiet_when_empty=True)
+            except Exception as e:  # pragma: no cover - himoya
+                # Kutilmagan xato (DB uzildi, MoySklad tushdi...) — log'ga
+                # yozamiz va davom etamiz. Xizmat yiqilmaydi.
+                self.stderr.write(self.style.ERROR(f"Sikl xatosi: {e}"))
+                self.stderr.flush()
+
+            # Yurak urishi — bo'sh bo'lsa ham vaqti-vaqti bilan «tirikman».
+            now = time.monotonic()
+            if now - last_beat >= HEARTBEAT_EVERY:
+                self.stdout.write(
+                    f"[{timezone.now():%H:%M:%S}] tirikman, navbat kuzatilyapti."
+                )
+                self.stdout.flush()
+                last_beat = now
+
+            # Uyquni bo'laklab uxlaymiz — signal kelsa tez uyg'onish uchun.
+            slept = 0
+            while slept < interval and not stop["now"]:
+                time.sleep(min(1, interval - slept))
+                slept += 1
+
+        self.stdout.write("sync_sales --loop to'xtadi.")
+        self.stdout.flush()
+
+    # ------------------------------------------------------------------ bir marta
+
+    def run_once(self, o, quiet_when_empty=False):
         now = timezone.now()
         queue = (
             Sale.objects.filter(
@@ -56,7 +143,8 @@ class Command(BaseCommand):
         queue = list(queue)
 
         if not queue:
-            self.stdout.write("Navbat bo'sh.")
+            if not quiet_when_empty:
+                self.stdout.write("Navbat bo'sh.")
             return
 
         if o["dry_run"]:
@@ -97,6 +185,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f"Yuborildi: {sent}"))
         if failed:
             self.stdout.write(self.style.WARNING(f"Xato: {failed}"))
+        self.stdout.flush()
 
     # ------------------------------------------------------------------
 

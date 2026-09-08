@@ -8,7 +8,7 @@
 
 {% block body %}
   <h1>Smenalar</h1>
-  <div class="sub">Oxirgi 100 ta</div>
+  <div class="sub">Jami {{ page.paginator.count }} ta smena</div>
 
   <table>
     <tr>
@@ -33,4 +33,25 @@
       <tr><td colspan="7" class="empty">Hali smena bo'lmagan.</td></tr>
     {% endfor %}
   </table>
+
+  {% if page.paginator.num_pages > 1 %}
+    <div class="pager">
+      <span class="count">{{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
+      {% if page.has_previous %}
+        <a href="?page=1">«</a>
+        <a href="?page={{ page.previous_page_number }}">‹ Oldingi</a>
+      {% else %}
+        <span class="disabled">«</span>
+        <span class="disabled">‹ Oldingi</span>
+      {% endif %}
+      <span class="cur">{{ page.number }}</span>
+      {% if page.has_next %}
+        <a href="?page={{ page.next_page_number }}">Keyingi ›</a>
+        <a href="?page={{ page.paginator.num_pages }}">»</a>
+      {% else %}
+        <span class="disabled">Keyingi ›</span>
+        <span class="disabled">»</span>
+      {% endif %}
+    </div>
+  {% endif %}
 {% endblock %}
