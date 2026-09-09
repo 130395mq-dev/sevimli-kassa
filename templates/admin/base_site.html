@@ -1,0 +1,183 @@
+{% extends "admin/base.html" %}
+{#
+  Django admin — Sevimli Kassa panel dizayni bilan bir xil ko'rinish.
+
+  Django admin standart ko'k rangda keladi va foydalanuvchi tizimiga qarab
+  qora (dark) rejimga o'tib ketadi. Bu panelning yashil-och uslubiga mos
+  kelmaydi. Shuning uchun quyida admin'ning CSS o'zgaruvchilarini panel
+  palitrasiga (dashboard/base.html dagi ranglar) almashtiramiz.
+
+  Faqat RANG o'zgaradi — admin'ning ishlashi, tugmalari, joylashuvi
+  o'sha-o'sha qoladi. Dark rejim ataylab o'chirilgan: panel ham, admin ham
+  doim bir xil ko'rinsin (kassir/administrator adashmasin).
+#}
+
+{% block title %}{{ title }} | Sevimli Kassa{% endblock %}
+
+{% block branding %}
+  <h1 id="site-name">
+    <a href="{% url 'admin:index' %}">Sevimli Kassa — boshqaruv</a>
+  </h1>
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  /* ---- Panel palitrasi (dashboard/base.html bilan bir xil) ----------
+     --wine  #235347   asosiy amal / faol
+     --deep  #051F20   eng to'q — sarlavha
+     --dark  #163832   bosilgan holat
+     --soft  #8EB69B   ikkilamchi urg'u
+     --bg    #F1F6F2   fon
+  ------------------------------------------------------------------- */
+  :root,
+  html[data-theme="light"],
+  html[data-theme="dark"] {
+    --primary:        #235347;
+    --secondary:      #051F20;
+    --accent:         #8EB69B;
+    --primary-fg:     #FFFFFF;
+
+    --body-fg:        #0B211D;
+    --body-bg:        #F1F6F2;
+    --body-quiet-color:  #5B7A70;
+    --body-loud-color:   #051F20;
+
+    --header-color:          #DAF1DE;
+    --header-branding-color: #8EB69B;
+    --header-bg:             #051F20;
+    --header-link-color:     #FFFFFF;
+
+    --breadcrumbs-fg:       #DAF1DE;
+    --breadcrumbs-link-fg:  #FFFFFF;
+    --breadcrumbs-bg:       #235347;
+
+    --link-fg:           #235347;
+    --link-hover-color:  #051F20;
+    --link-selected-fg:  #163832;
+
+    --hairline-color: #DCE8DF;
+    --border-color:   #C3D6C8;
+
+    --error-fg:            #B23A3A;
+    --message-success-bg:  #E6F4ED;
+    --message-warning-bg:  #FBF1E0;
+    --message-error-bg:    #FBEDEB;
+
+    --darkened-bg:  #F4F8F5;
+    --selected-bg:  #EAF3EC;
+    --selected-row: #E6F3EA;
+
+    --button-fg:              #FFFFFF;
+    --button-bg:              #235347;
+    --button-hover-bg:        #163832;
+    --default-button-bg:      #051F20;
+    --default-button-hover-bg:#163832;
+    --close-button-bg:        #5B7A70;
+    --close-button-hover-bg:  #2A4A44;
+    --delete-button-bg:       #B23A3A;
+    --delete-button-hover-bg: #8F2E2E;
+
+    --object-tools-fg:       #FFFFFF;
+    --object-tools-bg:       #051F20;
+    --object-tools-hover-bg: #235347;
+  }
+
+  /* Tizim qora rejimda bo'lsa ham panel rangida qolamiz */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #235347;      --secondary: #051F20;
+      --accent: #8EB69B;       --primary-fg: #FFFFFF;
+      --body-fg: #0B211D;      --body-bg: #F1F6F2;
+      --body-quiet-color: #5B7A70;  --body-loud-color: #051F20;
+      --header-color: #DAF1DE; --header-branding-color: #8EB69B;
+      --header-bg: #051F20;    --header-link-color: #FFFFFF;
+      --breadcrumbs-fg: #DAF1DE; --breadcrumbs-link-fg: #FFFFFF;
+      --breadcrumbs-bg: #235347;
+      --link-fg: #235347;      --link-hover-color: #051F20;
+      --link-selected-fg: #163832;
+      --hairline-color: #DCE8DF; --border-color: #C3D6C8;
+      --error-fg: #B23A3A;
+      --message-success-bg: #E6F4ED; --message-warning-bg: #FBF1E0;
+      --message-error-bg: #FBEDEB;
+      --darkened-bg: #F4F8F5;  --selected-bg: #EAF3EC;
+      --selected-row: #E6F3EA;
+      --button-fg: #FFFFFF;    --button-bg: #235347;
+      --button-hover-bg: #163832;
+      --default-button-bg: #051F20; --default-button-hover-bg: #163832;
+      --close-button-bg: #5B7A70;   --close-button-hover-bg: #2A4A44;
+      --delete-button-bg: #B23A3A;  --delete-button-hover-bg: #8F2E2E;
+      --object-tools-fg: #FFFFFF;   --object-tools-bg: #051F20;
+      --object-tools-hover-bg: #235347;
+    }
+  }
+
+  /* Qora/oq rejim tugmasi kerak emas — rang doim bitta */
+  .theme-toggle { display: none !important; }
+
+  /* ---- Nozik pardoz: paneldagidek yumshoq burchak va soya ---------- */
+  body {
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #header {
+    padding: 14px 34px;
+    box-shadow: 0 1px 2px rgba(5,31,32,.04), 0 8px 24px rgba(5,31,32,.06);
+  }
+  #site-name a { font-weight: 700; letter-spacing: .2px; }
+
+  div.breadcrumbs { padding: 11px 34px; font-size: 13px; }
+
+  #content { padding: 24px 34px; }
+
+  /* Modul (kartochka) — panel uslubidagi oq yuza */
+  .module {
+    border: 1px solid var(--hairline-color);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #FFFFFF;
+    box-shadow: 0 1px 2px rgba(5,31,32,.04);
+  }
+  .module caption,
+  .module h2 {
+    background: #235347;
+    color: #FFFFFF;
+    font-size: 13px;
+    letter-spacing: .4px;
+    padding: 11px 14px;
+  }
+  .module table { background: #FFFFFF; }
+
+  /* Tugmalar — yumaloqroq, paneldagidek */
+  .button, input[type=submit], input[type=button],
+  .submit-row input, a.button {
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-weight: 600;
+    border: none;
+  }
+  .submit-row { border-radius: 14px; background: #FFFFFF;
+                border: 1px solid var(--hairline-color); }
+
+  /* Ro'yxat sarlavhasi va qatorlar */
+  #changelist table thead th { background: #F4F8F5; }
+  #changelist-filter { background: #FFFFFF; border-left: 1px solid var(--hairline-color); }
+  #changelist-filter h2 { background: #051F20; color: #FFFFFF; }
+
+  /* Maydonlar */
+  input[type=text], input[type=password], input[type=email],
+  input[type=url], input[type=number], textarea, select {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 8px 10px;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: #235347;
+    box-shadow: 0 0 0 3px rgba(35,83,71,.12);
+  }
+
+  /* Kirish (login) sahifasi */
+  .login #header { border-radius: 14px 14px 0 0; }
+  .login #content-main { border-radius: 0 0 14px 14px; }
+</style>
+{% endblock %}
