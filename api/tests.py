@@ -415,6 +415,36 @@ class CustomerTest(ApiTestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["bonus_points"], 1240)
 
+    def test_karta_kodi_boyicha_aniq_topiladi(self):
+        Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000cb",
+            name="Karta Egasi", phone="998907654321",
+            discount_card="9990001112223", bonus_points=500,
+        )
+        r = self.client.get(
+            "/api/v1/customers?card=9990001112223", **self.auth()
+        )
+        rows = r.json()["customers"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["card"], "9990001112223")
+        self.assertEqual(rows[0]["bonus_points"], 500)
+
+    def test_karta_kodi_qisman_moslikni_qaytarmaydi(self):
+        # Aniq moslik: kodning bir qismi mos kelsa ham topilmaydi.
+        Customer.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000cc",
+            name="Boshqa", discount_card="9990001112223",
+        )
+        r = self.client.get("/api/v1/customers?card=99900", **self.auth())
+        self.assertEqual(r.json()["customers"], [])
+
+    def test_karta_kodi_qisqa_sorovni_talab_qilmaydi(self):
+        # `card=` yo'lida 3-belgi cheklovi YO'Q (skaner to'liq kod yuboradi),
+        # va topilmasa 200 + bo'sh ro'yxat qaytadi (400 emas).
+        r = self.client.get("/api/v1/customers?card=ab", **self.auth())
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["customers"], [])
+
 
 class CashTest(ApiTestCase):
     def setUp(self):

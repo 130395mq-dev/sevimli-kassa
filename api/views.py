@@ -558,7 +558,25 @@ def catalog_refresh(request):
 @require_GET
 @register_required
 def customers(request):
-    """Mijoz qidirish — telefon, karta yoki ism bo'yicha."""
+    """Mijozni topish.
+
+    Asosiy yo'l — nakopitelniy karta shtrix-kodi bo'yicha ANIQ moslik:
+    `?card=<kod>`. Kassa mijozni faqat shu karta kodini skanerlab topadi;
+    telefon yoki ism bo'yicha qidiruv YO'Q (noto'g'ri mijozни biriktirib
+    qo'ymaslik uchun). Aniq moslik bo'lgani uchun bitta mijoz qaytadi.
+
+    Eski `?q=` (telefon/karta/ism ichidan) hali qoldirilgan — faqat eski
+    kassalar (1.6/1.7) bilan mos ishlash uchun. Yangi kassa uni chaqirmaydi.
+    """
+    card = (request.GET.get("card") or "").strip()
+    if card:
+        # Aniq moslik: skaner o'qigan kod discount_card bilan teng bo'lsa.
+        c = (
+            Customer.objects.filter(archived=False, discount_card=card)
+            .first()
+        )
+        return JsonResponse({"customers": [_customer_dict(c)] if c else []})
+
     q = (request.GET.get("q") or "").strip()
     if len(q) < 3:
         return error("Kamida 3 belgi kiriting")

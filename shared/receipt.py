@@ -243,11 +243,13 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
         add(_pair("Kassir sanadi", "— sanalmadi", w))
 
     # --- ball
-    if r.points_earned or r.points_spent:
+    if r.points_earned or r.points_spent or r.paid_by_points:
         add(_line("=", w))
-        add("BALL")
-        add(_pair("Berildi", f"{r.points_earned:,}".replace(",", " "), w))
-        add(_pair("Sarflandi", f"{r.points_spent:,}".replace(",", " "), w))
+        add("BALL (SEVIMLI BONUS)")
+        add(_pair("Berildi", f"{r.points_earned:,}".replace(",", " ") + " ball", w))
+        add(_pair("Sarflandi", f"{r.points_spent:,}".replace(",", " ") + " ball", w))
+        if r.paid_by_points:
+            add(_pair("Ball bilan to'landi", sum_str(r.paid_by_points) + " so'm", w))
 
     # --- ITOG: chekdagi eng muhim qator
     add(_line("=", w))
