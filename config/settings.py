@@ -202,3 +202,11 @@ LOGGING = {
         "catalog": {"level": "INFO", "propagate": True},
     },
 }
+
+# ------------------------------------------------- versiya chiqarish kaliti
+#
+# Yangi kassa versiyasini panelga SKRIPT orqali yuklash uchun maxfiy kalit
+# (POST /api/v1/release/upload, X-Release-Token sarlavhasi).
+# Brauzer sessiyasi/CSRF talab qilinmaydi — shuning uchun avtomatik
+# yuklash ishonchli ishlaydi. Bo'sh bo'lsa — bu yo'l butunlay o'chiq.
+RELEASE_UPLOAD_TOKEN = env("RELEASE_UPLOAD_TOKEN", "")

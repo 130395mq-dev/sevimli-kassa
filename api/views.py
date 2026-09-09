@@ -1238,3 +1238,84 @@ def _reverse_return_bonus(origin, sale, customer, refund_net):
         _bonus_log(customer, sale, BonusEntry.RETURN, spend_back, balance,
                    f"Qaytarish: sarflangan ball qaytarildi (asl #{origin.number})")
     return balance
+
+
+# ------------------------------------------- versiya chiqarish (skript uchun)
+
+
+@csrf_exempt
+@require_POST
+def release_upload(request):
+    """Yangi kassa versiyasini panelga yuklaydi — brauzersiz, bitta so'rovda.
+
+    Nega alohida yo'l kerak: panelning «Versiyalar» sahifasi BRAUZER uchun
+    qilingan — u login sessiyasi va CSRF tokenini talab qiladi. Skript
+    (curl) orqali yuklashda CSRF doim muammo tug'diradi: token login paytida
+    yangilanadi, yo'naltirishda eskiradi, katta fayl ichidan o'qilmaydi.
+
+    Shuning uchun bu yerda oddiy MAXFIY KALIT ishlatiladi — RELEASE_UPLOAD_TOKEN
+    (Railway muhit o'zgaruvchisi). Kalit bo'lmasa bu yo'l butunlay yopiq.
+
+    So'rov:
+        POST /api/v1/release/upload
+        X-Release-Token: <maxfiy kalit>
+        multipart: file=<SevimliKassa.zip>, version=1.11.0,
+                   notes=<izoh>, mandatory=1|0
+
+    Javob: {"ok": true, "version": "1.11.0", "size": …, "sha256": …}
+    """
+    import hashlib
+    import hmac as _hmac
+
+    from sales.models import KassaRelease, version_key
+
+    secret = (getattr(settings, "RELEASE_UPLOAD_TOKEN", "") or "").strip()
+    if not secret:
+        return error("Serverda RELEASE_UPLOAD_TOKEN sozlanmagan", status=503)
+    got = (request.headers.get("X-Release-Token") or "").strip()
+    if not got or not _hmac.compare_digest(got, secret):
+        logger.warning("Versiya yuklash: kalit noto'g'ri")
+        return error("Kalit noto'g'ri", status=403)
+
+    version = (request.POST.get("version") or "").strip().lstrip("vV")
+    notes = (request.POST.get("notes") or "").strip()
+    mandatory = str(request.POST.get("mandatory") or "").lower() in {
+        "1", "true", "yes", "ha",
+    }
+    upload = request.FILES.get("file")
+
+    # Tekshiruvlar — panel sahifasidagi bilan bir xil qoidalar
+    if not version or version_key(version) == (0, 0, 0):
+        return error("Versiya raqami kerak, masalan 1.2.0")
+    if KassaRelease.objects.filter(version=version).exists():
+        return error(f"{version} allaqachon yuklangan")
+    latest = KassaRelease.latest()
+    if latest and version_key(version) <= latest.key:
+        return error(
+            f"Versiya {latest.version} dan katta bo'lishi kerak "
+            f"(kassalar faqat kattasini oladi)"
+        )
+    if not upload:
+        return error("Fayl yuborilmadi")
+    if not upload.name.lower().endswith(".zip"):
+        return error("Faqat .zip fayl qabul qilinadi")
+    if upload.size < 1_000_000:
+        return error("Fayl juda kichik — bu dastur ZIP emas")
+
+    digest = hashlib.sha256()
+    for chunk in upload.chunks():
+        digest.update(chunk)
+
+    rel = KassaRelease(
+        version=version, notes=notes, mandatory=mandatory,
+        size=upload.size, sha256=digest.hexdigest(),
+    )
+    rel.file.save(f"SevimliKassa-{version}.zip", upload, save=True)
+    logger.info("Yangi versiya chiqarildi (skript orqali): %s", version)
+    return JsonResponse({
+        "ok": True,
+        "version": version,
+        "size": upload.size,
+        "sha256": rel.sha256,
+        "mandatory": mandatory,
+    })

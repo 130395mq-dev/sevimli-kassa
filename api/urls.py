@@ -10,6 +10,8 @@ urlpatterns = [
     path("hello", views.hello, name="hello"),
     path("version", views.version, name="version"),
     path("update/download", views.update_download, name="update-download"),
+    # Yangi versiyani skript orqali chiqarish (maxfiy kalit bilan, CSRF'siz)
+    path("release/upload", views.release_upload, name="release-upload"),
     path("catalog", views.catalog, name="catalog"),
     path("catalog/refresh", views.catalog_refresh, name="catalog-refresh"),
     path("customers", views.customers, name="customers"),
