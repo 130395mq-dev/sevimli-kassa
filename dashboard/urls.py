@@ -13,6 +13,7 @@ urlpatterns = [
     path("bonus/", views.bonus, name="bonus"),
     path("bonus/mijoz/<int:pk>/", views.customer_bonus, name="customer-bonus"),
     path("narxlar/", views.prices, name="prices"),
+    path("tolov-turlari/", views.payment_methods, name="payment-methods"),
     path("versiyalar/", views.releases, name="releases"),
     path("ornatish/", views.installer, name="installer"),
     path("ornatish/fayl/", views.installer_download, name="installer-download"),

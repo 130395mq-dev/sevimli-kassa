@@ -30,7 +30,8 @@ from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
 from sales.models import (
-    BonusEntry, BonusProgram, Payment, POINT_TIYIN, Register, Sale, Shift,
+    BonusEntry, BonusProgram, Payment, PaymentMethod, POINT_TIYIN, Register,
+    Sale, Shift,
 )
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
@@ -868,3 +869,83 @@ def _dec(value, default):
         return d if d >= 0 else default
     except (InvalidOperation, TypeError):
         return default
+
+
+@login_required
+def payment_methods(request):
+    """To'lov turlari — kassadagi to'lov tugmalari.
+
+    Kassa qaysi tugmalarni ko'rsatishini shu yer belgilaydi: bu yerdagi
+    FAOL turlar to'lov oynasida chiqadi. Tur o'chirilsa kassada tugma
+    yo'qoladi, lekin ESKI savdolar tegilmaydi — shuning uchun tur
+    o'chirilmaydi, faqat yashiriladi (savdo tarixi buzilmasin).
+
+    MoySklad hisob raqami (ixtiyoriy): naqdsiz pul MoySklad'da qaysi
+    hisobga tushishini belgilaydi. Bo'sh bo'lsa — tashkilotning ASOSIY
+    hisobiga tushadi, ya'ni pul yo'qolmaydi.
+    """
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "create":
+            name = (request.POST.get("name") or "").strip()
+            is_cash = bool(request.POST.get("is_cash"))
+            code = slugify(request.POST.get("code") or name)[:32]
+            if len(name) < 2:
+                messages.error(request, "Nom kamida 2 harf bo'lishi kerak")
+            elif not code:
+                messages.error(request, "Kod yaratilmadi — nomni lotin harflarida yozing")
+            elif PaymentMethod.objects.filter(code=code).exists():
+                messages.error(request, f"«{code}» kodi band")
+            else:
+                last = (PaymentMethod.objects.order_by("-sort")
+                        .values_list("sort", flat=True).first() or 0)
+                PaymentMethod.objects.create(
+                    code=code, name=name, is_cash=is_cash, sort=last + 1,
+                )
+                messages.success(
+                    request,
+                    f"«{name}» qo'shildi. Kassalar bir daqiqada oladi.",
+                )
+
+        elif action == "rename":
+            m = PaymentMethod.objects.filter(pk=request.POST.get("id")).first()
+            name = (request.POST.get("name") or "").strip()
+            if not m:
+                messages.error(request, "To'lov turi topilmadi")
+            elif len(name) < 2:
+                messages.error(request, "Nom kamida 2 harf bo'lishi kerak")
+            else:
+                old = m.name
+                m.name = name
+                m.save(update_fields=["name"])
+                messages.success(request, f"«{old}» → «{name}»")
+
+        elif action == "toggle":
+            m = PaymentMethod.objects.filter(pk=request.POST.get("id")).first()
+            if not m:
+                messages.error(request, "To'lov turi topilmadi")
+            elif m.active and PaymentMethod.objects.filter(active=True).count() <= 1:
+                # Hech bo'lmasa bitta to'lov turi qolishi shart, aks holda
+                # kassada to'lov qilib bo'lmaydi.
+                messages.error(
+                    request, "Oxirgi to'lov turini o'chirib bo'lmaydi",
+                )
+            else:
+                m.active = not m.active
+                m.save(update_fields=["active"])
+                messages.success(
+                    request,
+                    f"«{m.name}»: " + (
+                        "kassada ko'rinadi" if m.active
+                        else "kassadan olib tashlandi"
+                    ),
+                )
+
+        return redirect("dashboard:payment-methods")
+
+    rows = list(PaymentMethod.objects.all())
+    return render(request, "dashboard/payment_methods.html", {
+        "rows": rows,
+        "active_count": sum(1 for m in rows if m.active),
+    })

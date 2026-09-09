@@ -1,0 +1,110 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}To'lov turlari — Sevimli Kassa{% endblock %}
+{% block crumb %}To'lov turlari{% endblock %}
+{% block nav_pay %}on{% endblock %}
+
+{% block body %}
+  <h1>To'lov turlari</h1>
+  <div class="sub">Kassaning to'lov oynasidagi tugmalar shu yerdan boshqariladi</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <h2>Yangi to'lov turi</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="fields">
+      <label>
+        <span>Nomi <span class="sec">— kassada shu ko'rinadi</span></span>
+        <input name="name" placeholder="masalan: Karta" required>
+      </label>
+      <label>
+        <span>Kod <span class="sec">— ixtiyoriy, nomdan olinadi</span></span>
+        <input name="code" placeholder="karta">
+      </label>
+      <label class="check">
+        <input type="checkbox" name="is_cash">
+        <span>Bu <b>naqd</b> pul — kassadagi naqd hisobiga qo'shiladi va
+              qaytim hisoblanadi. Karta/Click uchun belgilanmaydi.</span>
+      </label>
+    </div>
+    <button type="submit">Qo'shish</button>
+  </form>
+
+  <h2>Ro'yxat</h2>
+  <table>
+    <tr>
+      <th>Nomi</th><th>Kod</th><th class="tight">Turi</th>
+      <th class="tight">MoySklad hisobi</th><th class="tight">Kassada</th><th></th>
+    </tr>
+    {% for m in rows %}
+      <tr>
+        <td>
+          <b>{{ m.name }}</b>
+          {% if not m.active %}<span class="badge off">yashirilgan</span>{% endif %}
+        </td>
+        <td class="tight"><code class="token">{{ m.code }}</code></td>
+        <td class="tight">
+          {% if m.is_cash %}<span class="badge ok">naqd</span>
+          {% else %}<span class="badge">naqdsiz</span>{% endif %}
+        </td>
+        <td class="tight">
+          {% if m.ms_account_id %}<span class="badge ok">biriktirilgan</span>
+          {% else %}<span class="sec">asosiy hisob</span>{% endif %}
+        </td>
+        <td class="tight">
+          {% if m.active %}<span class="badge ok">ko'rinadi</span>
+          {% else %}<span class="badge off">yo'q</span>{% endif %}
+        </td>
+        <td class="actions">
+          <form method="post" class="inline">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="rename">
+            <input type="hidden" name="id" value="{{ m.pk }}">
+            <input name="name" value="{{ m.name }}" size="12">
+            <button type="submit" class="small">Nomini saqlash</button>
+          </form>
+          <form method="post" class="inline"
+                onsubmit="return confirm('«{{ m.name }}» {% if m.active %}kassadan olib tashlansinmi?\n\nEski savdolar tegilmaydi.{% else %}kassaga qaytarilsinmi?{% endif %}');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="id" value="{{ m.pk }}">
+            <button type="submit" class="small ghost"
+                    {% if m.active %}style="color: var(--danger);"{% endif %}>
+              {% if m.active %}Olib tashlash{% else %}Qaytarish{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">To'lov turi yo'q.</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Bu sahifa nima qiladi</b>
+      Bu yerdagi <b>«ko'rinadi»</b> deb turgan turlar kassaning to'lov
+      oynasida tugma bo'lib chiqadi. Hozir {{ active_count }} ta tur faol.
+      Kassalar o'zgarishni bir daqiqada oladi.
+      <br><br>
+      <b>«Olib tashlash»</b> turni O'CHIRMAYDI, faqat kassadan yashiradi.
+      Shuning uchun o'sha tur bilan qilingan eski savdolar, cheklar va
+      hisobotlar buzilmaydi. Kerak bo'lsa «Qaytarish» bilan tiklanadi.
+      <br><br>
+      <b>MoySklad hisobi</b> — naqdsiz pul MoySklad'da qaysi hisobga
+      tushishini belgilaydi. «Asosiy hisob» deb turgan bo'lsa ham pul
+      yo'qolmaydi: MoySklad uni tashkilotning asosiy hisobiga yozadi.
+      Alohida hisob biriktirish kerak bo'lsa — ayting.
+    </div>
+  </div>
+{% endblock %}
