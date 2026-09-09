@@ -132,7 +132,7 @@ def connect(request):
     password = (data.get("password") or "").strip()
 
     register = Register.objects.filter(
-        login=login, active=True
+        login=login, active=True, archived=False
     ).select_related("store").first()
 
     if not register or not register.check_password(password):

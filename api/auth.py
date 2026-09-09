@@ -105,7 +105,8 @@ def get_register(request) -> Register | None:
         return None
 
     # Tokenni bazadan qidiramiz, keyin doimiy vaqtda solishtiramiz
-    for reg in Register.objects.filter(active=True).select_related("store"):
+    for reg in (Register.objects.filter(active=True, archived=False)
+                .select_related("store")):
         if secrets.compare_digest(reg.api_token, token):
             return reg
     return None

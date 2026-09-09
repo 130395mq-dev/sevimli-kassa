@@ -123,6 +123,15 @@ class Register(models.Model):
     )
     active = models.BooleanField(default=True)
 
+    # Ro'yxatdan yashirilgan («o'chirilgan») kassa.
+    #
+    # Kassani BUTUNLAY o'chirib bo'lmaydi: unga bog'langan smenalar, cheklar
+    # va Z-hisobotlar bor — ular savdo tarixi, yo'qotib bo'lmaydi. Shuning
+    # uchun «O'chirish» kassani arxivlaydi: panel ro'yxatidan yo'qoladi va
+    # kassaga kira olmaydi (active ham False bo'ladi), lekin bazada butun
+    # qoladi. Kerak bo'lsa «Arxiv» dan qaytariladi.
+    archived = models.BooleanField(default=False)
+
     # Kassani sozlashda kiritiladigan login va parol.
     #
     # Nega token emas: token 43 belgi, uni sensorli ekranda terish yoki

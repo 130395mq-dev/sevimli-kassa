@@ -210,3 +210,14 @@ LOGGING = {
 # Brauzer sessiyasi/CSRF talab qilinmaydi — shuning uchun avtomatik
 # yuklash ishonchli ishlaydi. Bo'sh bo'lsa — bu yo'l butunlay o'chiq.
 RELEASE_UPLOAD_TOKEN = env("RELEASE_UPLOAD_TOKEN", "")
+
+# ------------------------------------------------- MoySklad vaqt zonasi
+#
+# MoySklad hujjat vaqtini O'Z HISOBINING zonasida qabul qiladi. Biz Toshkent
+# (UTC+5) vaqtini yuborsak, hisob esa Moskva (UTC+3) bo'lsa — hujjat 2 soat
+# kelajakka tushadi va MoySklad uni «hozirgi qoldiq»ga qo'shmaydi: otgruzka
+# bor, ostatka kamaymaydi. Shuning uchun vaqt shu zonaga o'girib yuboriladi.
+#
+# Hisob zonasini MoySklad'da «Настройки компании → Часовой пояс» dan ko'rish
+# mumkin. O'zgarsa — shu o'zgaruvchini almashtiring, kodga tegmang.
+MOYSKLAD_TZ = env("MOYSKLAD_TZ", "Europe/Moscow")

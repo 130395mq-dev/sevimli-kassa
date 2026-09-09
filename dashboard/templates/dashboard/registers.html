@@ -61,7 +61,8 @@
             {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
         <td class="tight">
           {{ r.name }}
-          {% if not r.active %}<span class="badge off">bloklangan</span>{% endif %}
+          {% if r.archived %}<span class="badge off">arxivlangan</span>
+          {% elif not r.active %}<span class="badge off">bloklangan</span>{% endif %}
         </td>
         <td class="num tight"><code class="token">{{ r.login|default:"—" }}</code></td>
         <td class="num tight">
@@ -84,20 +85,29 @@
             <input type="hidden" name="id" value="{{ r.pk }}">
             <button type="submit" class="small ghost">Aloqani uzish</button>
           </form>
-          <form method="post" class="inline"
-                onsubmit="return confirm('«{{ r.name }}» o\'chirilsinmi?\n\nKassa ro\'yxatdan ketadi va bu login bilan kirib bo\'lmaydi. Smenasi bo\'lsa — savdo tarixi saqlanib, kassa bloklanadi.');">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="delete">
-            <input type="hidden" name="id" value="{{ r.pk }}">
-            <button type="submit" class="small ghost" style="color: var(--danger);">O'chirish</button>
-          </form>
-          {% if not r.active %}
+          {% if r.archived %}
             <form method="post" class="inline">
               {% csrf_token %}
-              <input type="hidden" name="action" value="toggle">
+              <input type="hidden" name="action" value="restore">
               <input type="hidden" name="id" value="{{ r.pk }}">
-              <button type="submit" class="small ghost">Yoqish</button>
+              <button type="submit" class="small">Arxivdan qaytarish</button>
             </form>
+          {% else %}
+            <form method="post" class="inline"
+                  onsubmit="return confirm('«{{ r.name }}» ro\'yxatdan olib tashlansinmi?\n\nSavdo tarixi (smenalar, cheklar, Z-hisobotlar) saqlanib qoladi. Kerak bo\'lsa arxivdan qaytarasiz.');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="id" value="{{ r.pk }}">
+              <button type="submit" class="small ghost" style="color: var(--danger);">O'chirish</button>
+            </form>
+            {% if not r.active %}
+              <form method="post" class="inline">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="toggle">
+                <input type="hidden" name="id" value="{{ r.pk }}">
+                <button type="submit" class="small ghost">Yoqish</button>
+              </form>
+            {% endif %}
           {% endif %}
         </td>
       </tr>
@@ -105,6 +115,18 @@
       <tr><td colspan="7" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
   </table>
+
+  {% if show_archived %}
+    <p class="sec" style="margin-top: 10px;">
+      Arxivlanganlar ham ko'rsatilyapti.
+      <a href="{% url 'dashboard:registers' %}">Faqat ishlaydiganlarini ko'rsatish</a>
+    </p>
+  {% elif archived_count %}
+    <p class="sec" style="margin-top: 10px;">
+      Arxivda {{ archived_count }} ta kassa bor.
+      <a href="?arxiv=1">Ko'rsatish va qaytarish</a>
+    </p>
+  {% endif %}
 
   <div class="alert warn" style="margin-top: 22px;">
     <span>i</span>
@@ -123,8 +145,9 @@
       <br><br>
       <b>«Aloqani uzish»</b> kassaning kalitini bekor qiladi: dastur
       login-parol bilan qaytadan ulanadi. <b>«O'chirish»</b> esa kassani
-      ro'yxatdan oladi — smenasi bo'lsa, savdo tarixi buzilmasligi uchun
-      o'chirilmaydi, bloklanadi.
+      ro'yxatdan olib tashlaydi va u kira olmaydi. Smenasi bo'lsa savdo
+      tarixi (cheklar, Z-hisobotlar) bazada butun saqlanadi — kassa
+      arxivga tushadi, jadval ostidagi havoladan qaytarish mumkin.
     </div>
   </div>
 {% endblock %}

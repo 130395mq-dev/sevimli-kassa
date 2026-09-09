@@ -162,7 +162,8 @@ class RegistersPageTest(TestCase):
         self.client.post("/kassalar/", {"action": "delete", "id": reg.pk})
         self.assertEqual(Register.objects.count(), 0)
 
-    def test_smenali_kassa_ochirilmaydi_bloklanadi(self):
+    def test_smenali_kassa_ochirilmaydi_arxivlanadi(self):
+        """Smenasi bor kassa o'chirilmaydi — arxivlanadi, tarix saqlanadi."""
         from django.utils import timezone
 
         from sales.models import Register, Shift
@@ -179,9 +180,12 @@ class RegistersPageTest(TestCase):
             "/kassalar/", {"action": "delete", "id": reg.pk}, follow=True
         )
         reg.refresh_from_db()
+        # Kassa ham, smenasi ham bazada qoladi
         self.assertEqual(Register.objects.count(), 1)
+        self.assertEqual(Shift.objects.filter(register=reg).count(), 1)
+        self.assertTrue(reg.archived)
         self.assertFalse(reg.active)
-        self.assertIn("savdo tarixi", r.content.decode())
+        self.assertIn("Savdo tarixi", r.content.decode())
 
     def test_kassirlar_sahifasi_yoq(self):
         self.assertEqual(self.client.get("/kassirlar/").status_code, 404)

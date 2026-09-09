@@ -297,28 +297,43 @@ def registers(request):
                 )
 
         elif action == "delete":
-            # Smenasi bor kassani o'chirib bo'lmaydi (Shift.register —
-            # PROTECT): aks holda savdo tarixi yo'qoladi. Bunday kassani
-            # bloklash kerak — u ro'yxatda qoladi, lekin kira olmaydi.
+            # Smenasi bor kassani BUTUNLAY o'chirib bo'lmaydi (Shift.register —
+            # PROTECT): unga bog'langan smenalar, cheklar va Z-hisobotlar —
+            # savdo tarixi, yo'qotib bo'lmaydi. Shuning uchun kassa
+            # ARXIVLANADI: ro'yxatdan yo'qoladi va kira olmaydi, lekin bazada
+            # butun qoladi. Kerak bo'lsa arxivdan qaytariladi.
             reg = Register.objects.filter(pk=request.POST.get("id")).first()
             if not reg:
                 messages.error(request, "Kassa topilmadi")
             else:
                 shifts_count = reg.shifts.count()
                 if shifts_count:
+                    reg.archived = True
                     reg.active = False
-                    reg.save(update_fields=["active"])
-                    messages.error(
+                    reg.save(update_fields=["archived", "active"])
+                    messages.success(
                         request,
-                        f"«{reg.name}» da {shifts_count} ta smena bor — "
-                        "butunlay o'chirib bo'lmaydi, savdo tarixi yo'qolardi. "
-                        "Buning o'rniga bloklandi: endi bu login bilan "
-                        "kassaga kirib bo'lmaydi.",
+                        f"«{reg.name}» ro'yxatdan olib tashlandi. Savdo tarixi "
+                        f"({shifts_count} ta smena) saqlanib qoldi — kerak "
+                        "bo'lsa pastdagi «Arxiv» dan qaytarasiz.",
                     )
                 else:
                     label = reg.name
                     reg.delete()
                     messages.success(request, f"«{label}» o'chirildi.")
+
+        elif action == "restore":
+            reg = Register.objects.filter(pk=request.POST.get("id")).first()
+            if not reg:
+                messages.error(request, "Kassa topilmadi")
+            else:
+                reg.archived = False
+                reg.save(update_fields=["archived"])
+                messages.success(
+                    request,
+                    f"«{reg.name}» arxivdan qaytarildi. Ishlashi uchun uni "
+                    "«Yoqish» tugmasi bilan yoqing.",
+                )
 
         elif action == "toggle":
             reg = Register.objects.filter(pk=request.POST.get("id")).first()
@@ -336,7 +351,12 @@ def registers(request):
     from sales.models import KassaRelease, version_key
 
     latest = KassaRelease.latest()
-    rows = list(Register.objects.select_related("store", "settings_row"))
+    # Arxivlangan («o'chirilgan») kassalar ro'yxatda ko'rinmaydi.
+    # ?arxiv=1 bilan ularni ko'rish va qaytarish mumkin.
+    show_archived = request.GET.get("arxiv") == "1"
+    qs = Register.objects.select_related("store", "settings_row")
+    rows = list(qs if show_archived else qs.filter(archived=False))
+    archived_count = Register.objects.filter(archived=True).count()
     warehouses = list(Warehouse.objects.filter(archived=False))
     for r in rows:
         r.wh_name = r.warehouse_name
@@ -352,6 +372,8 @@ def registers(request):
         "rows": rows,
         "warehouses": warehouses,
         "latest": latest,
+        "show_archived": show_archived,
+        "archived_count": archived_count,
     })
 
 
@@ -392,7 +414,8 @@ def prices(request):
         return redirect("dashboard:prices")
 
     rows = []
-    for reg in Register.objects.select_related("settings_row").order_by("name"):
+    for reg in (Register.objects.select_related("settings_row")
+                .filter(archived=False).order_by("name")):
         st = reg.settings
         rows.append({
             "reg": reg,

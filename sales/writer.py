@@ -75,8 +75,28 @@ def meta(entity_type: str, ms_id) -> dict:
 
 
 def ms_moment(dt: datetime) -> str:
-    """MoySklad vaqt formati: 2026-08-31 21:39:00 (mahalliy vaqt)."""
-    return timezone.localtime(dt).strftime("%Y-%m-%d %H:%M:%S")
+    """MoySklad uchun vaqt: 2026-08-31 21:39:00.
+
+    MUHIM — nega mahalliy (Toshkent) vaqt EMAS:
+
+    MoySklad kelgan vaqtni O'Z HISOBINING vaqt zonasida tushunadi, bizning
+    zonamizda emas. Hisob Moskva (UTC+3) da bo'lsa va biz Toshkent (UTC+5)
+    vaqtini yuborsak — hujjat 2 soat KELAJAKKA tushadi. MoySklad esa
+    «hozirgi qoldiq»ni hisoblaganda kelajakdagi hujjatlarni QO'SHMAYDI.
+    Natija: Отгрузка ro'yxatda ko'rinadi, lekin ostatka kamaymaydi —
+    ombor hisobi yolg'on bo'lib qoladi.
+
+    Shuning uchun vaqtni MoySklad hisobining zonasiga o'giramiz. Zona
+    MOYSKLAD_TZ sozlamasida (Railway muhit o'zgaruvchisi) — hisob zonasi
+    o'zgarsa, kodni emas, o'sha sozlamani almashtirish kifoya.
+    """
+    from zoneinfo import ZoneInfo
+
+    # Naive vaqt kelib qolsa (eski yozuv) — avval mahalliy deb qaraymiz,
+    # aks holda astimezone() xato beradi.
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt)
+    return dt.astimezone(ZoneInfo(settings.MOYSKLAD_TZ)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def allocate(reduction: int, amounts: list[int]) -> list[int]:
