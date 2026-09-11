@@ -54,7 +54,7 @@
   <table>
     <tr>
       <th>Ombor (sklad)</th><th>Kassa</th><th>Login</th><th>Parol</th>
-      <th>Versiya</th><th>Oxirgi aloqa</th><th></th>
+      <th>Versiya</th><th>Oxirgi aloqa</th><th>Kim kirgan</th><th></th>
     </tr>
     {% for r in rows %}
       <tr>
@@ -71,6 +71,18 @@
         </td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
         <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
+        <td class="tight">
+          {% if r.session %}
+            <b>{{ r.session.cashier_name|default:r.name }}</b>
+            <span class="sec">· {{ r.session.device_name|default:"kompyuter" }} · {{ r.session.started_at|date:"H:i" }} dan</span>
+            <form method="post" class="inline" style="margin-top:4px;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="release">
+              <input type="hidden" name="id" value="{{ r.pk }}">
+              <button type="submit" class="small ghost" title="Kompyuter buzilgan/o'chgan bo'lsa — loginni darhol bo'shatish">Bo'shatish</button>
+            </form>
+          {% else %}<span class="sec">—</span>{% endif %}
+        </td>
         <td class="actions">
           <a href="{% url 'dashboard:register-edit' r.pk %}" class="badge ok" style="padding:6px 12px;">Sozlash</a>
           <form method="post" class="inline">
@@ -113,7 +125,7 @@
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="7" class="empty">Kassa qo'shilmagan.</td></tr>
+      <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
   </table>
 

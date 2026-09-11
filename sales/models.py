@@ -819,3 +819,51 @@ class MoySkladCheck(models.Model):
     @classmethod
     def latest(cls) -> "MoySkladCheck | None":
         return cls.objects.order_by("-started_at").first()
+
+
+class KassaSession(models.Model):
+    """Kim qaysi kompyuterda kirgan — «bir login bir vaqtda bitta kassada».
+
+    Kassir kirganda login shu kompyuterga (qurilma ID) biriktiriladi.
+    Boshqa kompyuter o'sha login bilan kirmoqchi bo'lsa — rad etiladi:
+    «Bu login hozir Kassa-1 kompyuterida ishlayapti». «Chiqish» bosilsa
+    yozuv o'chadi; kompyuter jim qolsa (o'chirilgan, buzilgan) — ALIVE
+    muddatidan keyin o'zi bo'shaydi, boshqa kompyuter kira oladi.
+
+    Bitta login — bitta yozuv (`login` unique). Qurilma ID ni kassa
+    ilovasi o'zi yaratadi va har so'rovda `X-Device` sarlavhasida yuboradi.
+    """
+
+    #: Shuncha soniya jim qolgan kompyuter «ishlamayapti» deb hisoblanadi
+    ALIVE_SECONDS = 180
+
+    login = models.CharField(max_length=64, unique=True)
+    register = models.ForeignKey(
+        Register, on_delete=models.CASCADE, related_name="sessions",
+    )
+    device = models.CharField(max_length=64)
+    device_name = models.CharField(max_length=128, blank=True)
+    #: 0 — kassaning o'z logini; aks holda Cashier.pk
+    cashier_id = models.IntegerField(default=0)
+    cashier_name = models.CharField(max_length=128, blank=True)
+    started_at = models.DateTimeField(default=timezone.now)
+    seen_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Kassa sessiyasi"
+        verbose_name_plural = "Kassa sessiyalari"
+
+    def __str__(self) -> str:
+        return f"{self.login} — {self.holder}"
+
+    def alive(self, now=None) -> bool:
+        now = now or timezone.now()
+        return (now - self.seen_at).total_seconds() <= self.ALIVE_SECONDS
+
+    @property
+    def holder(self) -> str:
+        """Kim ushlab turibdi — xabar va panel uchun: «Kassa-1 · DESKTOP-7»."""
+        parts = [self.register.name]
+        if self.device_name:
+            parts.append(self.device_name)
+        return " · ".join(parts)

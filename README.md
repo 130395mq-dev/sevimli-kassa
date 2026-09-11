@@ -22,7 +22,7 @@ yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
 
 | Modul | Vazifasi |
 |---|---|
-| `api/` | Kassa dasturi uchun API: ulanish, login, katalog, mijoz (karta bo'yicha), smena, chek, qaytarish, versiya, `release/upload` |
+| `api/` | Kassa dasturi uchun API: ulanish, login / `session/resume` / `logout` (bir login — bir kompyuter, `X-Device` sarlavhasi), katalog, mijoz (karta bo'yicha), smena, chek (aralash to'lov — bir necha `payments`), qaytarish, versiya, `release/upload` |
 | `dashboard/` | Panel: savdo dashboardi (`dashboard/savdo.py` — sana filtri, nuqtalar reytingi, kunlik grafik/jadval), kassalar (arxiv bilan), smenalar, narxlar, to'lov turlari, SEVIMLI BONUS, versiyalar, o'rnatish |
 | `sales/models.py` | Register, RegisterSettings, Shift, Sale, Payment, PaymentMethod, BonusProgram, KassaRelease, MoySkladCheck |
 | `sales/writer.py` | Chekni MoySklad'ga yozish: Отгрузка + kirim (cashin/paymentin), Возврат + chiqim (cashout/paymentout, xarajat moddasi bilan) |
@@ -30,6 +30,7 @@ yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
 | `sales/sender.py` | Navbatdagi cheklarni yuborish (backoff, stuck) — `sales-sync` va zaxira yo'l uchun bitta kod |
 | `sales/healer.py` | O'z-o'zini davolash: `sales-sync` jim bo'lsa hub cheklarni o'zi yozadi; katalog sinxroni jim bo'lsa o'zi tortadi (`hello`/`aloqa.json` kelganda, 60 s da bir) |
 | `sales/selftest.py` | MoySklad o'z-o'zini tekshirish — kassa yozadigan hamma hujjat turi sinov rejimida (applicable=false, `SINOV-…`, o'chiriladi) |
+| `sales/sessions.py` | Bir login — bir vaqtda bitta kompyuter (`KassaSession`): `login` biriktiradi, `session/resume` parolsiz davom etadi, `logout` bo'shatadi, `hello` tirik tutadi (3 daqiqa jim = bo'sh) |
 | `catalog/` | MoySklad katalogining lokal nusxasi: tovar, shtrix-kodlar, qoldiq, mijoz, narx turlari; delta sinxron (`catalog/sync.py`) |
 | `moysklad/client.py` | MoySklad API klienti — limitlarni hisobga oladi, 429 dan qochadi |
 | `shared/receipt.py` | Smena cheki (X/Z) — kassa va panel uchun bitta kod |
@@ -118,7 +119,7 @@ python manage.py seed_demo                   # FAQAT lokal: o'ylab topilgan smen
 ```bash
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test            # ~250 ta
+python manage.py test            # ~320 ta
 python -m shared.test_receipt
 ```
 
@@ -150,6 +151,14 @@ paytda ishlaydi. O'chmay qolgani keyingi sinovda tozalanadi.
 bog'langan — yo'qotib bo'lmaydi. Arxivdan qaytarish mumkin.
 
 **To'lov turi o'chirilmaydi, yashiriladi** — eski cheklar buzilmasin.
+
+**Bir login — bir kompyuter.** Kassa har so'rovda `X-Device` (kassa o'zi
+yaratgan UUID, `device.txt`) yuboradi. `login`/`session/resume` loginni shu
+qurilmaga biriktiradi (`KassaSession`, login unique); boshqa qurilma tirik
+egasi bo'lsa 409 oladi. `hello` + yaroqli `X-Session` = «tirik» (seen_at);
+3 daqiqa jimlik = bo'sh. Kassa loginni «Chiqish» bosilguncha diskda saqlaydi
+va qayta ochilganda parolsiz `session/resume` qiladi; hello sessiya tokenini
+uzaytirib turadi (`login_session.session`).
 
 **Chek hech narsa hisoblamaydi.** `shared/receipt.py` faqat chizadi; hamma
 raqam tayyor keladi. Yig'indi mos kelmasa chekda katta harflar bilan yozadi.

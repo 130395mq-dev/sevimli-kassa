@@ -369,6 +369,20 @@ def registers(request):
                     f"{reg.name}: " + ("yoqildi" if reg.active else "bloklandi"),
                 )
 
+        elif action == "release":
+            # «Bo'shatish» — login ushlab turgan kompyuter buzilgan/o'chgan
+            # bo'lsa, 3 daqiqa kutmasdan boshqa kompyuterda kirish uchun.
+            from sales import sessions
+
+            reg = Register.objects.filter(pk=request.POST.get("id")).first()
+            if reg:
+                sessions.release_all(reg)
+                messages.success(
+                    request,
+                    f"{reg.name}: login bo'shatildi — endi boshqa kompyuterda "
+                    "shu login bilan kirish mumkin.",
+                )
+
         return redirect("dashboard:registers")
 
     from catalog.models import Warehouse
@@ -382,11 +396,16 @@ def registers(request):
     rows = list(qs if show_archived else qs.filter(archived=False))
     archived_count = Register.objects.filter(archived=True).count()
     warehouses = list(Warehouse.objects.filter(archived=False))
+    from sales import sessions
+
     now = timezone.now()
+    holders = sessions.holders(now)
     for r in rows:
         r.wh_name = r.warehouse_name
         # Aloqa chirog'i — kassa ↔ server (JS 15 soniyada bir yangilaydi)
         r.link = aloqa.register_state(r, now)
+        # Kim kirgan (bir login — bir kompyuter): tirik sessiya bo'lsa
+        r.session = holders.get(r.pk)
         # Panelda: yashil — eng yangi, sariq — eskirgan, kulrang — noma'lum
         if not r.app_version:
             r.version_state = "off"

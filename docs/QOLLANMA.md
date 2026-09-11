@@ -129,10 +129,49 @@ o'zgarishni **15 soniya ichida** oladi — qayta ochish shart emas.
 cheklar va hisobotlar buzilmaydi. Naqd — «naqd» belgisi bilan (qaytim
 hisoblanadi), qolganlari naqdsiz.
 
+### Aralash to'lov (yarmi naqd, yarmi karta)
+
+Kassaning to'lov oynasida **«ARALASH TO'LOV (naqd + karta)»** tugmasi bor
+(1.16.0 dan). Bosilsa har to'lov turi uchun bitta qator chiqadi: Naqd,
+UzCard, Humo, Click, Karta. Kassir qatorga bosib summani teradi;
+**«QOLGANINI»** tanlangan qatorga hali yopilmagan summani qo'yadi. Pastda
+«QOLDI» (sariq) yoki «QAYTIM» (yashil) ko'rinib turadi, hammasi yopilganda
+**YAKUNLASH** yonadi.
+
+Qoidalar: karta/onlayn summasi chekdan oshmaydi (kartadan qaytim yo'q);
+ortiqcha naqd — qaytim; karta chekni to'liq yopgan bo'lsa naqd summasi
+xato deb ko'rsatiladi (ikki marta pul olinmasin). Chekda va panelda har
+qism alohida yoziladi (masalan Naqd 100 000 · Click 100 000), MoySklad'ga
+ham har qism o'z to'lov turi bilan tushadi.
+
 ## 7. Kassalar
 
 Panel → **Kassalar**. Omborni tanlab «Yaratish» — login va parol beriladi,
 monoblokda shu teriladi.
+
+### Kirish, «Chiqish» va bir login — bir kompyuter (1.16.0 dan)
+
+- Kassir bir marta login-parol bilan kiradi va **«Chiqish» bosilguncha**
+  kirgan bo'lib qoladi: smena yopib-ochilganda, dastur yangilanganda,
+  kompyuter o'chib-yonganda parol qayta so'ralmaydi. Smena yopilgach
+  «Kirgan: … / SMENA OCHISH» ekrani chiqadi — bitta tugma, keyin razmen
+  puli. Boshqa kassir kirishi kerak bo'lsa — o'sha ekrandagi
+  **«CHIQISH — boshqa kassir kiradi»** yoki menyudagi «Chiqish».
+- **Bitta login bir vaqtda faqat bitta kompyuterda** ishlaydi. Kassir
+  kirgan zahoti login shu kompyuterga biriktiriladi. Boshqa kompyuter shu
+  login bilan kirmoqchi bo'lsa: «Bu login hozir «Kassa-1 · DESKTOP-7»
+  kompyuterida ishlayapti, 08:12 dan beri. Avval o'sha kassada «Chiqish»
+  ni bosing» deb rad etiladi.
+- Login qachon bo'shaydi: «Chiqish» bosilganda; kompyuter **3 daqiqa** jim
+  qolganda (o'chirilgan, buzilgan — kassa har 15 soniyada serverga
+  «tirikman» deydi); yoki panelda **Kassalar → «Kim kirgan» → «Bo'shatish»**
+  bosilganda (kompyuter buzilgan bo'lsa 3 daqiqa kutmaslik uchun).
+- Panel → Kassalar → **«Kim kirgan»** ustuni: kim, qaysi kompyuter,
+  qachondan beri.
+- Internet yo'q paytda kassa kirishni o'zi tekshiradi (ilgari shu kassada
+  kirgan login bilan); qoida internet qaytganda tekshiriladi — boshqa
+  kompyuter shu login bilan kirib olgan bo'lsa, kassa kirish ekraniga
+  qaytadi va sababini yozadi.
 
 - **Sozlash** — ombor, tashkilot, chegirma chegarasi, narx turi va h.k.
   Paneldagi o'zgarish kassaga 15 soniyada boradi.

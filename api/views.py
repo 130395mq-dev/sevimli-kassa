@@ -15,6 +15,9 @@ Endpointlar:
     POST /api/v1/shift/close        smena yopish, chek matni qaytadi
     POST /api/v1/sales              chek yuborish (takrorlansa ham xavfsiz)
     POST /api/v1/cash               kassaga kirim/chiqim
+    POST /api/v1/login              kassir kirishi (bir login — bir kompyuter)
+    POST /api/v1/session/resume     parolsiz davom etish («Chiqish» bosilmagan)
+    POST /api/v1/logout             «Chiqish» — login bo'shaydi
 
 Hamma summa **tiyinda**, butun son. Kasr yo'q.
 """
@@ -49,7 +52,7 @@ from sales.models import (
     SaleItem,
     Shift,
 )
-from sales import healer
+from sales import healer, sessions
 from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
@@ -180,33 +183,120 @@ def login(request):
 
     # 1. Kassaning o'z login-paroli
     if name == (reg.login or "").lower() and reg.check_password(secret):
-        return JsonResponse({
-            "cashier": {
-                "id": 0,
-                "name": reg.name,
-                "login": reg.login,
-                "is_manager": True,
-            },
-            # Manager-only amallar uchun imzolangan token (mijoz yasay olmaydi)
-            "session": make_session_token(0, True),
-        })
+        who = _own_cashier(reg)
+    else:
+        # 2. Eski kassir hisobi (o'tish davri uchun)
+        cashier = Cashier.objects.filter(login=name, active=True).first()
+        if not cashier or not cashier.check_password(secret):
+            return error("Login yoki parol noto'g'ri", status=401)
+        Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
+        who = _cashier_json(cashier)
 
-    # 2. Eski kassir hisobi (o'tish davri uchun)
-    cashier = Cashier.objects.filter(login=name, active=True).first()
-    if not cashier or not cashier.check_password(secret):
-        return error("Login yoki parol noto'g'ri", status=401)
+    return _start_session(request, reg, who)
 
-    Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
+
+def _own_cashier(reg) -> dict:
+    """Kassaning o'z logini bilan kirgan odam — «kassir» sifatida."""
+    return {"id": 0, "name": reg.name, "login": reg.login, "is_manager": True}
+
+
+def _cashier_json(cashier) -> dict:
+    return {
+        "id": cashier.pk,
+        "name": cashier.name,
+        "login": cashier.login,
+        "is_manager": cashier.is_manager,
+    }
+
+
+def _start_session(request, reg, who: dict):
+    """Loginni shu kompyuterga biriktiradi va sessiya tokenini beradi.
+
+    Bir login — bir vaqtda bitta kompyuter: boshqa kompyuter o'sha login
+    bilan ishlayotgan bo'lsa 409 va tushunarli xabar qaytadi (kassa uni
+    kirish ekranida ko'rsatadi).
+    """
+    device, device_name = sessions.device_of(request)
+    try:
+        sessions.acquire(
+            who["login"], reg, device, device_name,
+            cashier_id=who["id"], cashier_name=who["name"],
+        )
+    except sessions.Busy as e:
+        return error(str(e), status=409, holder=e.session.holder)
 
     return JsonResponse({
-        "cashier": {
-            "id": cashier.pk,
-            "name": cashier.name,
-            "login": cashier.login,
-            "is_manager": cashier.is_manager,
-        },
-        "session": make_session_token(cashier.pk, cashier.is_manager),
+        "cashier": who,
+        # Manager-only amallar uchun imzolangan token (mijoz yasay olmaydi)
+        "session": make_session_token(who["id"], who["is_manager"]),
     })
+
+
+@csrf_exempt
+@require_POST
+@register_required
+def session_resume(request):
+    """Kassa qayta ochilganda (yoki smena yopib-ochilganda) parolsiz davom
+    etish: kassir «Chiqish» ni bosmagan — login shu kompyuterda saqlangan.
+
+    Parol so'ralmaydi, chunki kompyuter allaqachon kassa tokeni bilan
+    tasdiqlangan va ilgari shu yerda parol bilan kirilgan. Lekin «bir login
+    bir kompyuter» qoidasi tekshiriladi: shu orada boshqa kompyuter o'sha
+    login bilan kirgan bo'lsa — 409, kassa kirish ekraniga qaytadi.
+    """
+    reg = request.register
+    data = body(request)
+    try:
+        cashier_id = int(data.get("cashier_id") or 0)
+    except (TypeError, ValueError):
+        cashier_id = 0
+
+    if cashier_id == 0:
+        if not reg.login:
+            return error("Kassaning logini yo'q", status=401)
+        who = _own_cashier(reg)
+    else:
+        cashier = Cashier.objects.filter(pk=cashier_id, active=True).first()
+        if not cashier:
+            return error("Kassir topilmadi yoki o'chirilgan", status=401)
+        who = _cashier_json(cashier)
+
+    return _start_session(request, reg, who)
+
+
+@csrf_exempt
+@require_POST
+@register_required
+def logout(request):
+    """«Chiqish» — login shu kompyuterdan bo'shatiladi; boshqa kompyuter
+    endi shu login bilan kira oladi."""
+    device, _ = sessions.device_of(request)
+    n = sessions.release(request.register, device)
+    return JsonResponse({"ok": True, "released": n})
+
+
+def _session_json(request, reg) -> dict:
+    """hello uchun: sessiya shu kompyuterdami, tokenni uzaytirish.
+
+    Kassa har 15 soniyada keladi — shu bilan «kompyuter tirik» belgisi
+    yangilanadi va 24 soatlik sessiya tokeni sirg'alib uzayadi (kassir
+    haftalab «Chiqish» bosmasa ham menejer amallari ishlayveradi).
+    """
+    device, _ = sessions.device_of(request)
+    minfo = verify_session_token((request.headers.get("X-Session") or "").strip())
+    out: dict = {"mine": None, "holder": ""}
+    if not device:
+        return out
+    if minfo:
+        sessions.touch(reg, device)
+        login = reg.login or ""
+        if minfo["cashier_id"]:
+            c = Cashier.objects.filter(pk=minfo["cashier_id"]).first()
+            login = c.login if c else ""
+        out = sessions.state_for(reg, device, login)
+        if out.get("mine"):
+            out["session"] = make_session_token(minfo["cashier_id"], minfo["is_manager"])
+    return out
 
 
 # ---------------------------------------------------------------- versiya
@@ -348,6 +438,10 @@ def hello(request):
             # pastki qatorda dumaloq belgi qilib ko'rsatadi (kassa
             # MoySklad'ga o'zi ulanmaydi — serverdan so'raydi).
             "links": {"moysklad": moysklad_health()},
+            # «Bir login — bir kompyuter»: sessiya shu kompyuterdami.
+            # mine=False bo'lsa kassa kirish ekraniga qaytadi (boshqa
+            # kompyuter o'sha login bilan kirib olgan).
+            "login_session": _session_json(request, reg),
         }
     )
 
