@@ -26,14 +26,25 @@ RETAIL_CUSTOMER = "00000000-0000-0000-0000-0000000000c9"
 class FakeClient:
     """MoySklad o'rniga. Nima yuborilganini eslab qoladi."""
 
-    def __init__(self, *, existing=None, sum_override=None):
+    #: Hisobdagi xarajat moddalari (Статьи расходов) — qaytarish uchun
+    EXPENSE_ITEMS = [
+        {"id": "ee000000-0000-0000-0000-000000000001", "name": "Закупка товаров"},
+        {"id": "ee000000-0000-0000-0000-000000000002", "name": "Возврат покупателю"},
+    ]
+
+    def __init__(self, *, existing=None, sum_override=None, expense_items=None):
         self.posts: list[tuple[str, dict]] = []
         self.gets: list[tuple[str, dict]] = []
         self.existing = existing or {}  # syncId → hujjat
         self.sum_override = sum_override
+        self.expense_items = (
+            self.EXPENSE_ITEMS if expense_items is None else expense_items
+        )
 
     def get(self, path, **params):
         self.gets.append((path, params))
+        if path == "entity/expenseitem":
+            return {"rows": list(self.expense_items)}
         sync_id = (params.get("filter") or "").replace("syncId=", "")
         doc = self.existing.get(sync_id)
         return {"rows": [doc] if doc else []}
@@ -309,6 +320,9 @@ class ReturnTest(TestCase):
     """Qaytarish — Возврат (salesreturn) + pulni qaytarish."""
 
     def setUp(self):
+        # Xarajat moddasi jarayon ichida keshlanadi — testlar bir-biriga
+        # ta'sir qilmasin
+        SaleWriter._expense_item_cache = None
         self.store = RetailStore.objects.create(
             ms_id="00000000-0000-0000-0000-0000000000de",
             name="Namuna filiali",
@@ -411,3 +425,79 @@ class ReturnTest(TestCase):
 
         self.assertEqual(len(client.posted("salesreturn")), 1)
         self.assertEqual(len(client.posted("cashout")), 1)
+
+    # ---- xarajat moddasi (expenseItem) — MoySklad'da MAJBURIY --------
+
+    def test_cashout_xarajat_moddasi_bilan_yoziladi(self):
+        """Jonli xato (2026-09): expenseItem'siz cashout 412 qaytaradi va
+        qaytarish cheki tiqilib qoladi. Endi har doim yuboriladi."""
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+
+        client = FakeClient()
+        SaleWriter(client).send(ret)
+
+        item = client.posted("cashout")[0]["expenseItem"]["meta"]
+        self.assertEqual(item["type"], "expenseitem")
+        # «Возврат» degani tanlanadi, ro'yxatdagi birinchisi emas
+        self.assertIn("ee000000-0000-0000-0000-000000000002", item["href"])
+
+    def test_paymentout_ham_xarajat_moddasi_bilan(self):
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.card, amount=50_000_00)
+
+        client = FakeClient()
+        SaleWriter(client).send(ret)
+
+        self.assertIn("expenseItem", client.posted("paymentout")[0])
+
+    def test_vozvrat_bolmasa_birinchisi(self):
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+
+        client = FakeClient(expense_items=[
+            {"id": "ee000000-0000-0000-0000-000000000009", "name": "Прочее"},
+        ])
+        SaleWriter(client).send(ret)
+        self.assertIn("000000000009", client.posted("cashout")[0]["expenseItem"]["meta"]["href"])
+
+    def test_xarajat_moddasi_umuman_yoq_bolsa_tushunarli_xato(self):
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+
+        client = FakeClient(expense_items=[])
+        with self.assertRaises(WriteError) as cm:
+            SaleWriter(client).send(ret)
+        self.assertIn("Статья расходов", str(cm.exception))
+        self.assertIn("yarating", str(cm.exception))
+
+    def test_sozlamadagi_id_ustun_va_moysklad_soralmaydi(self):
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+
+        client = FakeClient()
+        with self.settings(MOYSKLAD_EXPENSE_ITEM_ID="ee000000-0000-0000-0000-0000000000aa"):
+            SaleWriter(client).send(ret)
+        self.assertIn("0000000000aa", client.posted("cashout")[0]["expenseItem"]["meta"]["href"])
+        self.assertFalse([g for g in client.gets if g[0] == "entity/expenseitem"])
+
+    def test_xarajat_moddasi_bir_marta_soraladi(self):
+        client = FakeClient()
+        writer = SaleWriter(client)
+        for n in (1, 2):
+            ret = self.make_sale(kind=Sale.RETURN, number=n)
+            Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+            writer.send(ret)
+        asked = [g for g in client.gets if g[0] == "entity/expenseitem"]
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(len(client.posted("cashout")), 2)
+
+    def test_dry_run_xarajat_moddasini_soramaydi(self):
+        ret = self.make_sale(kind=Sale.RETURN)
+        Payment.objects.create(sale=ret, method=self.cash, amount=50_000_00)
+
+        client = FakeClient(expense_items=[])  # so'ralsa xato bo'lardi
+        writer = SaleWriter(client, dry_run=True)
+        writer.send(ret)
+        self.assertTrue(any(e == "cashout" for e, _ in writer.payloads))
+        self.assertFalse(client.posts)

@@ -77,6 +77,23 @@ def day_start():
 
 @login_required
 def points(request):
+    # «Qayta yuborish» — tiqilib qolgan (stuck) cheklarni navbatga
+    # qaytaradi. Sabab tuzatilgach (masalan MoySklad sozlamasi) shu tugma
+    # bosiladi; yozuvchi 20 soniyada bir navbatni oladi.
+    if request.method == "POST" and request.POST.get("action") == "retry_stuck":
+        n = Sale.objects.filter(sync_status=Sale.STUCK).update(
+            sync_status=Sale.NEW, sync_attempts=0, next_attempt_at=None,
+        )
+        if n:
+            messages.success(
+                request,
+                f"{n} ta chek navbatga qaytarildi — bir daqiqa ichida MoySklad'ga "
+                "yozilishga qayta uriniladi. Yana tiqilsa, sababi shu jadvalda chiqadi.",
+            )
+        else:
+            messages.info(request, "Tiqilib qolgan chek yo'q.")
+        return redirect("dashboard:points")
+
     today = day_start()
     now = timezone.now()
 

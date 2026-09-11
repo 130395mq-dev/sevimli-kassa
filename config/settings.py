@@ -146,6 +146,12 @@ MOYSKLAD_TOKEN = env("MOYSKLAD_TOKEN")
 # kontragentining ID'si. Busiz mijozsiz chek yozilmaydi.
 MOYSKLAD_RETAIL_CUSTOMER_ID = env("MOYSKLAD_RETAIL_CUSTOMER_ID")
 
+# Qaytarishda pul qaysi xarajat moddasi (Статья расходов) bilan chiqadi.
+# Bo'sh qoldirilsa server MoySklad ro'yxatidan «Возврат» deganini, u ham
+# bo'lmasa birinchisini o'zi oladi. Aniq bittasini xohlasangiz — ID'sini
+# shu yerga (Railway muhit o'zgaruvchisi) yozing.
+MOYSKLAD_EXPENSE_ITEM_ID = env("MOYSKLAD_EXPENSE_ITEM_ID", "")
+
 # Kassa ilovasining yangilanishi.
 #
 # Asosiy yo'l — panel: «Versiyalar» sahifasida yangi SevimliKassa.exe

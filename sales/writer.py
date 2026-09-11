@@ -231,9 +231,12 @@ class SaleWriter:
         if not payment.method.is_cash and payment.method.ms_account_id:
             payload["organizationAccount"] = meta("account", payment.method.ms_account_id)
 
-        # Расходный ордер uchun xarajat moddasi kerak bo'lishi mumkin —
-        # UNKNOWN, jonli hisobda tekshiriladi. Kerak bo'lsa shu yerga
-        # `expenseItem` qo'shiladi.
+        # Xarajat moddasi (Статья расходов) — MAJBURIY. Jonli hisobda
+        # tasdiqlandi (2026-09): usiz MoySklad 412 qaytaradi —
+        # «поле 'expenseItem' не может быть пустым» — va qaytarish
+        # cheki STUCK bo'lib qoladi. Расходный ордер uchun ham, Исходящий
+        # платёж uchun ham qo'yamiz.
+        payload["expenseItem"] = meta("expenseitem", self._expense_item_id())
 
         result = self._ensure(entity, sync_id, payload)
         if self.dry_run:
@@ -386,6 +389,48 @@ class SaleWriter:
         )
         SaleWriter._retail_id_cache = created["id"]
         return created["id"]
+
+    # Xarajat moddasi ID'si — jarayon ichida bir marta qidiriladi
+    _expense_item_cache: str | None = None
+
+    def _expense_item_id(self) -> str:
+        """Qaytarilgan pul uchun «Статья расходов» ID'si.
+
+        Tartib: (1) MOYSKLAD_EXPENSE_ITEM_ID sozlamasi, (2) MoySklad'dagi
+        ro'yxatdan nomi «возврат»/«qaytar» bo'lgani, (3) bo'lmasa —
+        ro'yxatdagi birinchisi. Ro'yxat umuman bo'sh bo'lsa — tushunarli
+        xato: do'kon egasi MoySklad'da bitta modda yaratishi kerak.
+        Topilgani jarayon ichida keshlanadi (har chekda qayta so'ralmaydi).
+        """
+        if self.dry_run:
+            return "dry-run-expenseitem"
+        if SaleWriter._expense_item_cache:
+            return SaleWriter._expense_item_cache
+
+        configured = (getattr(settings, "MOYSKLAD_EXPENSE_ITEM_ID", "") or "").strip()
+        if configured:
+            SaleWriter._expense_item_cache = configured
+            return configured
+
+        try:
+            rows = (self.client.get("entity/expenseitem", limit=100) or {}).get("rows") or []
+        except MoySkladError as e:
+            raise WriteError(f"Xarajat moddalari ro'yxati olinmadi: {e}") from e
+        rows = [r for r in rows if r.get("id") and not r.get("archived")]
+        if not rows:
+            raise WriteError(
+                "MoySklad'da xarajat moddasi (Статья расходов) yo'q. "
+                "MoySklad → Настройки → Справочники → Статьи расходов bo'limida "
+                "bitta modda yarating (masalan «Возврат покупателю»)."
+            )
+        chosen = next(
+            (r for r in rows
+             if any(k in (r.get("name") or "").lower() for k in ("возврат", "qaytar", "vozvrat"))),
+            rows[0],
+        )
+        logger.info("Qaytarish uchun xarajat moddasi: «%s»", chosen.get("name"))
+        SaleWriter._expense_item_cache = chosen["id"]
+        return chosen["id"]
 
     # ------------------------------------------------------------ to'lov
 

@@ -12,13 +12,28 @@
   <h1>Nuqtalar</h1>
   <div class="sub">Bugungi savdo — kassalar bo'yicha</div>
 
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
   {# Diqqat talab qiladiganlar tepada: bular haqida bugun bir narsa qilish kerak #}
   {% if stuck_count %}
     <div class="alert err">
       <span>✕</span>
       <div>
         <b>{{ stuck_count }} ta chek MoySklad'ga yozilmadi</b>
-        Bular o'z-o'zidan tuzalmaydi — sababini ko'rish kerak. Pastda ro'yxati bor.
+        Bular o'z-o'zidan tuzalmaydi — sababi pastdagi «Yozilmagan cheklar»
+        jadvalida. Sabab tuzatilgan bo'lsa «Qayta yuborish» ni bosing.
+        <form method="post" class="inline" style="margin-top: 8px;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="retry_stuck">
+          <button type="submit" class="small" style="margin-top: 0;">Qayta yuborish</button>
+        </form>
       </div>
     </div>
   {% endif %}
