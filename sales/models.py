@@ -20,6 +20,7 @@ import secrets
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 from catalog.models import Customer, Product, RetailStore
 
@@ -763,3 +764,58 @@ class KassaRelease(models.Model):
         if not rows:
             return None
         return max(rows, key=lambda r: r.key)
+
+
+class MoySkladCheck(models.Model):
+    """MoySklad o'z-o'zini tekshirish (sinov) natijasi.
+
+    Nega kerak: 2026-09 da qaytarish cheklari MoySklad'da «expenseItem
+    majburiy» deb rad etilib, 1,5 kun sezilmay tiqilib turdi. Bu sinov
+    haqiqiy chek yozilishidan OLDIN, kassa yozadigan hamma hujjat turini
+    (Отгрузка, Возврат, naqd/karta kirim va chiqim) MoySklad hisobida
+    sinab ko'radi va rad etilganini panel/kassa chirog'ida ko'rsatadi.
+
+    Sinov hujjatlari savdoga ta'sir qilmaydi: «проведён» qilinmaydi
+    (applicable=false) — qoldiq va pulga tegmaydi — va shu zahoti
+    o'chiriladi. O'chmay qolgani `leftovers` da eslab qolinadi va keyingi
+    sinovda qayta o'chiriladi.
+    """
+
+    DEPLOY, PERIODIC, MANUAL = "deploy", "periodic", "manual"
+    TRIGGER = [(DEPLOY, "Deploy"), (PERIODIC, "Vaqti-vaqti bilan"), (MANUAL, "Qo'lda")]
+
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    trigger = models.CharField(max_length=12, choices=TRIGGER, default=MANUAL)
+    ok = models.BooleanField(default=False)
+    # [{"name": "...", "ok": true, "detail": "..."}] — bosqichma-bosqich
+    steps = models.JSONField(default=list, blank=True)
+    # [{"entity": "demand", "id": "..."}] — o'chirilmay qolgan sinov hujjatlari
+    leftovers = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "MoySklad sinovi"
+        verbose_name_plural = "MoySklad sinovlari"
+
+    def __str__(self) -> str:
+        return f"Sinov {self.started_at:%d.%m %H:%M} — {'o‘tdi' if self.ok else 'o‘tmadi'}"
+
+    @property
+    def failed_steps(self) -> list[dict]:
+        return [s for s in (self.steps or []) if not s.get("ok")]
+
+    @property
+    def summary(self) -> str:
+        """Bir qatorli xulosa — chiroq izohi va panel uchun."""
+        if self.finished_at is None:
+            return "sinov ketmoqda"
+        bad = self.failed_steps
+        if not bad:
+            return "sinov o'tdi"
+        first = bad[0]
+        return f"{first.get('name', '?')}: {first.get('detail', '')}"[:160]
+
+    @classmethod
+    def latest(cls) -> "MoySkladCheck | None":
+        return cls.objects.order_by("-started_at").first()

@@ -38,6 +38,18 @@
     </div>
   {% endif %}
 
+  {% if check and check.finished_at and not check.ok %}
+    <div class="alert err">
+      <span>✕</span>
+      <div>
+        <b>MoySklad sinovi o'tmadi — {{ check.summary }}</b>
+        Kassa yozadigan hujjatlardan birini MoySklad hisobi qabul qilmayapti.
+        Bu tuzatilmasa keyingi chek tiqilib qoladi. Tafsilot pastdagi
+        «MoySklad tekshiruvi» jadvalida.
+      </div>
+    </div>
+  {% endif %}
+
   {% if offline_count %}
     <div class="alert warn">
       <span>!</span>
@@ -60,7 +72,7 @@
     </div>
   {% endif %}
 
-  {% if not stuck_count and not offline_count and not queued %}
+  {% if not stuck_count and not offline_count and not queued and not check.failed_steps %}
     <div class="alert ok">
       <span>✓</span>
       <div><b>Hammasi joyida</b> Barcha kassalar ulangan, navbat bo'sh.</div>
@@ -173,6 +185,45 @@
           <td class="num">{{ s.created_at|date:"d.m H:i" }}</td>
           <td class="right num">{{ s.net_sum|som }}</td>
           <td class="sec">{{ s.sync_error|truncatechars:160 }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  <h2>MoySklad tekshiruvi</h2>
+  <div class="sub" style="margin-bottom: 10px;">
+    Server kassa yozadigan hamma hujjat turini (Отгрузка, Возврат, naqd/karta
+    kirim-chiqim) MoySklad'da sinab ko'radi — haqiqiy chek tiqilmasdan oldin.
+    Sinov hujjatlari «проведён» qilinmaydi va shu zahoti o'chiriladi:
+    qoldiq va pulga ta'sir yo'q. Har deploy'da va har 3 soatda o'zi ishlaydi.
+  </div>
+  <form method="post" class="inline" style="margin-bottom: 12px;"
+        onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Tekshirilmoqda… (20 soniyagacha)';">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="selftest">
+    <button type="submit" class="small" style="margin-top: 0;">Hozir tekshirish</button>
+    {% if check %}
+      <span class="sec" style="margin-left: 10px;">
+        Oxirgi sinov: {{ check.started_at|date:"d.m H:i" }}
+        {% if check.finished_at %}
+          — {% if check.ok %}<span class="badge ok">o'tdi</span>{% else %}<span class="badge err">o'tmadi</span>{% endif %}
+        {% else %}— ketmoqda{% endif %}
+      </span>
+    {% else %}
+      <span class="sec" style="margin-left: 10px;">Hali sinov bo'lmagan.</span>
+    {% endif %}
+  </form>
+  {% if check and check.steps %}
+    <table>
+      <tr><th class="tight"></th><th>Bosqich</th><th>Natija</th></tr>
+      {% for st in check.steps %}
+        <tr>
+          <td class="tight">
+            {% if st.ok %}<span class="badge {% if st.skipped %}off{% else %}ok{% endif %}">{% if st.skipped %}—{% else %}✓{% endif %}</span>
+            {% else %}<span class="badge err">✕</span>{% endif %}
+          </td>
+          <td>{{ st.name }}</td>
+          <td class="sec">{{ st.detail|truncatechars:220 }}</td>
         </tr>
       {% endfor %}
     </table>

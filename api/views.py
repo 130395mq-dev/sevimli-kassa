@@ -464,10 +464,14 @@ def catalog(request):
     qs = qs.order_by("pk")[:PAGE_SIZE]
     rows = list(qs)
 
-    codes = {
-        b.product_id: b.value
-        for b in Barcode.objects.filter(product__in=rows).order_by("-pk")
-    }
+    # Tovarning BARCHA shtrix-kodlari (dona, blok, quti, MoySklad o'zi
+    # yaratgani…). Kassa 1.15.0+ «barcodes» ro'yxatini oladi — qaysi kodi
+    # skanerlansa ham topadi. «barcode» (bittasi) eski kassalar uchun qoladi.
+    codes: dict[int, str] = {}
+    all_codes: dict[int, list[str]] = {}
+    for b in Barcode.objects.filter(product__in=rows).order_by("pk"):
+        codes.setdefault(b.product_id, b.value)
+        all_codes.setdefault(b.product_id, []).append(b.value)
     stock = {
         s.product_id: s.quantity
         for s in Stock.objects.filter(
@@ -488,6 +492,7 @@ def catalog(request):
                     "plu": p.plu,
                     "tracked": p.tracked,
                     "barcode": codes.get(p.pk, ""),
+                    "barcodes": all_codes.get(p.pk, []),
                     "stock": float(stock.get(p.pk, 0)),
                     "prices": p.prices or {},
                     "archived": p.archived,

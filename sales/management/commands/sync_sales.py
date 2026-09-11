@@ -34,7 +34,8 @@ from django.db import close_old_connections
 from django.utils import timezone
 
 from moysklad.client import MoySkladClient
-from sales.models import Sale
+from sales import selftest
+from sales.models import MoySkladCheck, Sale
 from sales.writer import SaleWriter, SumMismatch, WriteError
 
 BACKOFF_MINUTES = [1, 2, 4, 8, 15, 30, 60]
@@ -55,6 +56,8 @@ class Command(BaseCommand):
                             help="Tiqilib qolgan cheklarni ko'rsatadi")
         parser.add_argument("--retry-stuck", action="store_true",
                             help="Tiqilganlarni navbatga qaytaradi")
+        parser.add_argument("--selftest", action="store_true",
+                            help="MoySklad o'z-o'zini tekshirish (sinov) — bir marta")
         parser.add_argument("--loop", action="store_true",
                             help="To'xtovsiz ishlaydi (har --interval soniyada)")
         parser.add_argument("--interval", type=int, default=20,
@@ -65,6 +68,8 @@ class Command(BaseCommand):
             return self.show_stuck()
         if o["retry_stuck"]:
             return self.retry_stuck()
+        if o["selftest"]:
+            return self.selftest(MoySkladCheck.MANUAL)
 
         if o["loop"]:
             return self.run_forever(o)
@@ -100,6 +105,10 @@ class Command(BaseCommand):
         self.stdout.flush()
 
         last_beat = 0.0
+        # MoySklad o'z-o'zini tekshirish: xizmat ishga tushganda (deploy)
+        # bir marta, keyin har 3 soatda. FAQAT navbat bo'sh bo'lganda —
+        # haqiqiy cheklar har doim birinchi (sales/selftest.py).
+        first_selftest = True
         while not stop["now"]:
             close_old_connections()
             try:
@@ -108,6 +117,15 @@ class Command(BaseCommand):
                 # Kutilmagan xato (DB uzildi, MoySklad tushdi...) — log'ga
                 # yozamiz va davom etamiz. Xizmat yiqilmaydi.
                 self.stderr.write(self.style.ERROR(f"Sikl xatosi: {e}"))
+                self.stderr.flush()
+
+            try:
+                if self.queue_empty() and (first_selftest or selftest.is_due()):
+                    trigger = MoySkladCheck.DEPLOY if first_selftest else MoySkladCheck.PERIODIC
+                    first_selftest = False
+                    self.selftest(trigger)
+            except Exception as e:  # pragma: no cover - himoya
+                self.stderr.write(self.style.ERROR(f"Sinov xatosi: {e}"))
                 self.stderr.flush()
 
             # Yurak urishi — bo'sh bo'lsa ham vaqti-vaqti bilan «tirikman».
@@ -127,6 +145,30 @@ class Command(BaseCommand):
 
         self.stdout.write("sync_sales --loop to'xtadi.")
         self.stdout.flush()
+
+    # ------------------------------------------------------------------ sinov
+
+    def queue_empty(self) -> bool:
+        return not Sale.objects.filter(sync_status__in=[Sale.NEW, Sale.FAILED]).exists()
+
+    def selftest(self, trigger: str) -> None:
+        if not settings.MOYSKLAD_TOKEN:
+            return
+        self.stdout.write(f"[{timezone.now():%H:%M:%S}] MoySklad sinovi boshlandi ({trigger})…")
+        self.stdout.flush()
+        try:
+            check = selftest.run_selftest(trigger)
+        except selftest.SelfTestBusy:
+            return
+        if check.ok:
+            self.stdout.write(self.style.SUCCESS(
+                f"  ✓ Sinov o'tdi ({len(check.steps)} bosqich)"))
+        else:
+            self.stderr.write(self.style.ERROR("  ✗ SINOV O'TMADI:"))
+            for step in check.failed_steps:
+                self.stderr.write(self.style.ERROR(f"     - {step['name']}: {step['detail']}"))
+        self.stdout.flush()
+        self.stderr.flush()
 
     # ------------------------------------------------------------------ bir marta
 

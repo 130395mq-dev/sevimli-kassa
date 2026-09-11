@@ -35,7 +35,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from catalog.models import SyncState
-from sales.models import Register, Sale
+from sales.models import MoySkladCheck, Register, Sale
 
 # Katalog sinxroni (server → MoySklad) uchun chegaralar
 CATALOG_WARN = timedelta(minutes=15)
@@ -107,6 +107,15 @@ def _moysklad_health(now) -> dict:
     ).count()
     if lagging:
         problems.append(("warn", f"{lagging} ta chek {_minutes(WRITE_LAG)} daqiqadan beri navbatda"))
+
+    # O'z-o'zini tekshirish (sinov): hisob sozlamasi biror hujjatni rad
+    # etsa — haqiqiy chek tiqilmasdan OLDIN qizil yonadi.
+    check = MoySkladCheck.latest()
+    if check is not None and check.finished_at is not None:
+        if check.failed_steps:
+            problems.append(("bad", "sinov o'tmadi — " + check.summary))
+        elif check.leftovers:
+            problems.append(("warn", f"{len(check.leftovers)} ta sinov hujjati MoySklad'da o'chmay qoldi"))
 
     if not problems:
         return {"state": "ok", "text": "aloqa yaxshi", "last_ok": _iso(last_ok)}

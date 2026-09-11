@@ -29,10 +29,10 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
-from sales import aloqa
+from sales import aloqa, selftest
 from sales.models import (
-    BonusEntry, BonusProgram, Payment, PaymentMethod, POINT_TIYIN, Register,
-    Sale, Shift,
+    BonusEntry, BonusProgram, MoySkladCheck, Payment, PaymentMethod, POINT_TIYIN,
+    Register, Sale, Shift,
 )
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
@@ -92,6 +92,21 @@ def points(request):
             )
         else:
             messages.info(request, "Tiqilib qolgan chek yo'q.")
+        return redirect("dashboard:points")
+
+    # «Hozir tekshirish» — MoySklad sinovini shu zahoti yurgizadi
+    # (10–20 soniya). Sinov hujjatlari «проведён» qilinmaydi va o'chiriladi —
+    # savdoga ta'sir yo'q (sales/selftest.py).
+    if request.method == "POST" and request.POST.get("action") == "selftest":
+        try:
+            check = selftest.run_selftest(MoySkladCheck.MANUAL)
+        except selftest.SelfTestBusy:
+            messages.info(request, "Sinov allaqachon ketmoqda — bir daqiqadan keyin qarang.")
+            return redirect("dashboard:points")
+        if check.ok:
+            messages.success(request, f"MoySklad sinovi o'tdi — {len(check.steps)} bosqich, hammasi joyida.")
+        else:
+            messages.error(request, "MoySklad sinovi O'TMADI — sababi pastdagi «MoySklad tekshiruvi» jadvalida.")
         return redirect("dashboard:points")
 
     today = day_start()
@@ -180,6 +195,8 @@ def points(request):
         ],
         "stuck": stuck,
         "stuck_count": Sale.objects.filter(sync_status=Sale.STUCK).count(),
+        # MoySklad o'z-o'zini tekshirish — oxirgi natija
+        "check": MoySkladCheck.latest(),
         "queued": queued,
         "offline_count": sum(1 for r in rows if r["offline"]),
         "sync_rows": SyncState.objects.order_by("entity"),

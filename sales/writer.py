@@ -120,10 +120,24 @@ def allocate(reduction: int, amounts: list[int]) -> list[int]:
 class SaleWriter:
     """Bitta chekni MoySklad'ga yozadi."""
 
-    def __init__(self, client: MoySkladClient, *, dry_run: bool = False):
+    def __init__(
+        self,
+        client: MoySkladClient,
+        *,
+        dry_run: bool = False,
+        applicable: bool | None = None,
+        name_prefix: str = "",
+    ):
         self.client = client
         self.dry_run = dry_run
         self.payloads: list[tuple[str, dict]] = []  # dry-run uchun
+        # SINOV rejimi (sales/selftest.py): hujjatlar «проведён» QILINMAYDI
+        # (applicable=False — qoldiq va pulga tegmaydi) va nomi
+        # «SINOV-…» bo'ladi (MoySklad'ning avtomatik raqamlarini
+        # sarflamaydi, ro'yxatda darrov tanilyadi). Haqiqiy yozuvda
+        # ikkalasi ham None/bo'sh — hech narsa o'zgarmaydi.
+        self.applicable = applicable
+        self.name_prefix = name_prefix
 
     # ------------------------------------------------------------ asosiy
 
@@ -532,6 +546,11 @@ class SaleWriter:
 
         Ikki marta yozilmasligining kafolati shu yerda.
         """
+        if self.applicable is not None:
+            payload["applicable"] = self.applicable
+        if self.name_prefix:
+            payload["name"] = f"{self.name_prefix}{str(sync_id)[:8]}"
+
         if self.dry_run:
             self.payloads.append((entity, payload))
             return {"id": f"dry-run-{entity}", "sum": None}
