@@ -172,6 +172,45 @@
     }
     .alert .fix b { display: inline; margin: 0; }
 
+    /* ------------------------------------------------ savdo dashboardi */
+    form.davr {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+      margin: 0 0 18px; font-size: 13.5px; color: var(--muted);
+    }
+    form.davr .presets { display: inline-flex; gap: 6px; }
+    form.davr .chip {
+      padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 4px;
+      background: var(--surface); color: var(--ink-soft); font-size: 13px;
+      text-decoration: none;
+    }
+    form.davr .chip.on { background: var(--wine); color: #fff; border-color: var(--wine); }
+    form.davr label { display: inline-flex; align-items: center; gap: 6px; }
+    form.davr input[type=date] { padding: 5px 8px; font-size: 13px; margin: 0; }
+    .delta { font-weight: 600; white-space: nowrap; }
+    .delta.up   { color: var(--ok); }
+    .delta.down { color: var(--danger); }
+    table.rating tr.best td { background: var(--ok-soft); }
+    .sharecell { min-width: 150px; }
+    .share {
+      display: inline-block; vertical-align: middle; width: 96px; height: 8px;
+      border-radius: 4px; background: var(--ok-soft); margin-right: 8px; overflow: hidden;
+    }
+    .share .fill { height: 100%; background: var(--ok); border-radius: 4px; }
+    .chartwrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px 8px 4px; margin-bottom: 14px; }
+    svg.chart { display: block; max-width: 100%; height: auto; font-family: inherit; }
+    svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+    svg.chart .axis { stroke: var(--line-strong); stroke-width: 1; }
+    svg.chart .tick { fill: var(--faint); font-size: 10.5px; text-anchor: end; }
+    svg.chart .day  { fill: var(--muted); font-size: 10.5px; text-anchor: middle; }
+    svg.chart .val  { fill: var(--ink); font-size: 11px; font-weight: 600; text-anchor: middle; }
+    svg.chart .bar path { fill: var(--wine); }
+    svg.chart .bar.sel path { fill: var(--ok); }
+    svg.chart .bar .hit { fill: transparent; }
+    svg.chart .bar:hover path { fill: var(--wine-dark); }
+    svg.chart .bar.sel:hover path { fill: #176644; }
+    .tablewrap { overflow-x: auto; }
+    table.daily tr.sel td { background: var(--ok-soft); }
+
     /* ------------------------------------------------------------ plita */
     .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
     .tile {

@@ -8,16 +8,17 @@ ko'raman? Javob — shu yerdan.
 Uchta narsa ko'rinadi, muhimlik tartibida:
 
 1. **Diqqat talab qiladiganlar** — tiqilib qolgan cheklar, aloqasi
-   uzilgan kassalar. Bular tepada, chunki ular haqida bugun bir narsa
-   qilish kerak.
-2. **Bugungi savdo** — nuqta va kassa bo'yicha, naqd va naqdsiz ajratib.
-3. **Fon** — katalog sinxronizatsiyasi, bonus majburiyati.
+   uzilgan kassalar, «nima qilish kerak» bilan. Bular tepada.
+2. **Savdo dashboardi** (dashboard/savdo.py) — sana filtri (bugun / kecha /
+   7 kun / 30 kun / dan–gacha), nuqtalar reytingi (qaysi nuqta yaxshi
+   sotyapti), kunlik ko'rsatkichlar grafik va jadval bilan, kassalar,
+   to'lov turlari.
+3. **Fon** — MoySklad sinovi, katalog sinxronizatsiyasi, bonus majburiyati.
 """
 
 from __future__ import annotations
 
 import secrets
-from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -31,17 +32,13 @@ from django.utils.text import slugify
 from catalog.models import Customer, Product, SyncState
 from sales import aloqa, healer, selftest, sender
 from sales.models import (
-    BonusEntry, BonusProgram, MoySkladCheck, Payment, PaymentMethod, POINT_TIYIN,
+    BonusEntry, BonusProgram, MoySkladCheck, PaymentMethod, POINT_TIYIN,
     Register, Sale, Shift,
 )
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
 
-# Kassa shuncha vaqt jim tursa — aloqa uzilgan deb hisoblaymiz.
-# Kassa har daqiqada bir marta ko'rinadi, shuning uchun 5 daqiqa
-# tasodifiy uzilish emas.
-OFFLINE_AFTER = timedelta(minutes=5)
-
+from . import savdo
 
 def _free_login(base: str) -> str:
     """Band bo'lmagan login: «chilonzor», bo'lmasa «chilonzor-2» …"""
@@ -68,12 +65,6 @@ def aloqa_json(request):
     """
     healer.tick()
     return JsonResponse(aloqa.snapshot())
-
-
-def day_start():
-    """Bugungi kun boshi — mahalliy vaqt bo'yicha."""
-    now = timezone.localtime()
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 @login_required
@@ -108,57 +99,21 @@ def points(request):
             messages.error(request, "MoySklad sinovi O'TMADI — sababi pastdagi «MoySklad tekshiruvi» jadvalida.")
         return redirect("dashboard:points")
 
-    today = day_start()
     now = timezone.now()
 
-    sales_today = Sale.objects.filter(kind=Sale.SALE, created_at__gte=today)
+    # Davr bo'yicha savdo, nuqtalar reytingi, kunlik ko'rsatkichlar —
+    # hammasi dashboard/savdo.py da. Sana filtri: ?davr= yoki ?dan=&gacha=.
+    board = savdo.build(request.GET, now)
 
-    # --- kassalar bo'yicha
+    # --- kassalar qatorlari (davr bo'yicha) + aloqa chirog'i
     rows = []
-    for reg in Register.objects.filter(active=True).select_related("store"):
-        shift = reg.shifts.filter(status=Shift.OPEN).first()
-        mine = sales_today.filter(shift__register=reg)
-        agg = mine.aggregate(n=Count("id"), total=Sum("net_total"))
-
-        cash = (
-            Payment.objects.filter(sale__in=mine, method__is_cash=True)
-            .aggregate(t=Sum("amount"))["t"] or 0
-        )
-        total = agg["total"] or 0
-
-        offline = not reg.last_seen_at or (now - reg.last_seen_at) > OFFLINE_AFTER
-
+    for k in board["kassas"]:
+        reg = k["register"]
         rows.append({
-            "register": reg,
-            "point": reg.point_name,
-            "shift": shift,
-            "offline": offline,
-            # Aloqa chirog'i (yashil/sariq/qizil) — tepadagi qator bilan
-            # bir xil hisob, JS 15 soniyada bir yangilab turadi.
-            "link": aloqa.register_state(reg, now, shift_open=shift is not None),
-            "last_seen": reg.last_seen_at,
-            "receipts": agg["n"] or 0,
-            "total": total / 100,
-            "cash": cash / 100,
-            "cashless": (total - cash) / 100,
-            "pending": mine.exclude(sync_status=Sale.SENT).count(),
+            **k,
+            "shift": reg.shifts.filter(status=Shift.OPEN).first() if k["shift_open"] else None,
+            "link": aloqa.register_state(reg, now, shift_open=k["shift_open"]),
         })
-
-    # --- kunlik yakun
-    day = sales_today.aggregate(n=Count("id"), total=Sum("net_total"))
-    day_cash = (
-        Payment.objects.filter(sale__in=sales_today, method__is_cash=True)
-        .aggregate(t=Sum("amount"))["t"] or 0
-    )
-    day_total = day["total"] or 0
-
-    # --- to'lov turlari bo'yicha
-    by_method = (
-        Payment.objects.filter(sale__in=sales_today)
-        .values("method__name", "method__is_cash")
-        .annotate(total=Sum("amount"), n=Count("id"))
-        .order_by("-total")
-    )
 
     # --- diqqat talab qiladiganlar
     stuck = (
@@ -212,21 +167,8 @@ def points(request):
     return render(request, "dashboard/points.html", {
         "alerts": alerts,
         "rows": rows,
-        "day": {
-            "receipts": day["n"] or 0,
-            "total": day_total / 100,
-            "cash": day_cash / 100,
-            "cashless": (day_total - day_cash) / 100,
-        },
-        "by_method": [
-            {
-                "name": m["method__name"],
-                "is_cash": m["method__is_cash"],
-                "total": (m["total"] or 0) / 100,
-                "n": m["n"],
-            }
-            for m in by_method
-        ],
+        "board": board,
+        "by_method": board["methods"],
         "stuck": stuck,
         "stuck_count": stuck_count,
         # MoySklad o'z-o'zini tekshirish — oxirgi natija
@@ -236,7 +178,7 @@ def points(request):
         "products": Product.objects.filter(archived=False).count(),
         "customers": Customer.objects.filter(archived=False).count(),
         "bonus_total": bonus_total,
-        "today": today,
+        "today": timezone.localdate(),
     })
 
 

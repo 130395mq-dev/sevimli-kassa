@@ -23,7 +23,7 @@ yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
 | Modul | Vazifasi |
 |---|---|
 | `api/` | Kassa dasturi uchun API: ulanish, login, katalog, mijoz (karta bo'yicha), smena, chek, qaytarish, versiya, `release/upload` |
-| `dashboard/` | Panel: bugungi savdo, kassalar (arxiv bilan), smenalar, narxlar, to'lov turlari, SEVIMLI BONUS, versiyalar, o'rnatish |
+| `dashboard/` | Panel: savdo dashboardi (`dashboard/savdo.py` — sana filtri, nuqtalar reytingi, kunlik grafik/jadval), kassalar (arxiv bilan), smenalar, narxlar, to'lov turlari, SEVIMLI BONUS, versiyalar, o'rnatish |
 | `sales/models.py` | Register, RegisterSettings, Shift, Sale, Payment, PaymentMethod, BonusProgram, KassaRelease, MoySkladCheck |
 | `sales/writer.py` | Chekni MoySklad'ga yozish: Отгрузка + kirim (cashin/paymentin), Возврат + chiqim (cashout/paymentout, xarajat moddasi bilan) |
 | `sales/aloqa.py` | Aloqa chiroqlari: server ↔ MoySklad, kassa ↔ server (yashil/sariq/qizil/kulrang) + har muammo uchun «nima qilish kerak» matni |

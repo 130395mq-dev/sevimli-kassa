@@ -29,7 +29,24 @@ Railway'da uchta xizmat ishlaydi: `hub` (panel + API), `sales-sync`
 (cheklarni MoySklad'ga yozuvchi, 20 soniyada bir), `sync` (katalogni
 MoySklad'dan tortuvchi).
 
-## 2. Har kuni nimaga qarash — aloqa chiroqlari
+## 2. Bosh sahifa — savdo dashboardi
+
+Panelning bosh sahifasi («Bugungi savdo»):
+
+- **Sana filtri** — tepada tugmalar: Bugun / Kecha / 7 kun / 30 kun, yoki
+  «dan — gacha» sanalarini tanlab «Ko'rsatish». Har raqam yonida oldingi
+  xuddi shunday davr bilan solishtirish (▲ o'sgan / ▼ kamaygan, foizda).
+- **Qaysi nuqta yaxshi sotyapti** — nuqtalar (omborlar) reytingi: savdo,
+  ulush %, chek soni, o'rtacha chek, oldingi davr, farq. Birinchisi
+  «eng yaxshi» belgisi bilan.
+- **Kunlik ko'rsatkichlar** — ustunli grafik (kunlik jami savdo, eng yaxshi
+  kun belgilangan; ustun ustiga sichqonchani olib borsangiz raqam chiqadi)
+  va jadval: har kun uchun nuqtalar bo'yicha savdo, jami, chek soni,
+  o'rtacha chek. Bitta kun tanlanganda oxirgi 14 kun ko'rsatiladi
+  (tanlangan kun yashil bilan ajratilgan).
+- **Kassalar** va **To'lov turlari** — tanlangan davr bo'yicha.
+
+## 3. Har kuni nimaga qarash — aloqa chiroqlari
 
 **Panel** — har sahifaning tepasida: `● MoySklad  ● kassa  ● optom-1 …`
 **Kassa** — ekranning pastki chap burchagida: `● Server  ● MoySklad`
@@ -48,8 +65,8 @@ o'chirilgan bo'lsa — kulrang, ogohlantirish yo'q.
 
 MoySklad chirog'i qizil bo'lishining sabablari (izohda va panelda yoziladi):
 - «sinov o'tmadi — …» — MoySklad hisobi kassa yozadigan hujjatlardan
-  birini rad etyapti (4-bo'limga qarang);
-- «… ta chek MoySklad'ga yozilmay tiqilib qoldi» — 3-bo'limga qarang;
+  birini rad etyapti (5-bo'limga qarang);
+- «… ta chek MoySklad'ga yozilmay tiqilib qoldi» — 4-bo'limga qarang;
 - «… daqiqadan beri MoySklad javob bermayapti» — MoySklad o'zi ishlamayapti
   yoki token bekor bo'lgan.
 
@@ -71,7 +88,7 @@ xarajat moddasi / «Розничный покупатель» yo'q bo'lsa, kassa
 tashkilot tanlanmagan bo'lsa, kassadagi internet uzilgan bo'lsa. Har birida
 panel «Nima qilish kerak» deb aniq qadamni yozadi.
 
-## 3. Tiqilib qolgan cheklar
+## 4. Tiqilib qolgan cheklar
 
 Panel bosh sahifasida qizil «N ta chek MoySklad'ga yozilmadi» chiqsa:
 
@@ -85,7 +102,7 @@ Panel bosh sahifasida qizil «N ta chek MoySklad'ga yozilmadi» chiqsa:
 Tiqilgan chek — bu kassada allaqachon sotilgan, faqat MoySklad'ga hali
 yetmagan chek. Savdo yo'qolmaydi.
 
-## 4. MoySklad o'z-o'zini tekshirish (sinov)
+## 5. MoySklad o'z-o'zini tekshirish (sinov)
 
 Server kassa yozadigan **hamma** hujjat turini MoySklad'da sinab ko'radi:
 Отгрузка, Возврат, har bir to'lov turi bilan kirim va chiqim. Sinov
@@ -102,7 +119,7 @@ hujjatlari «проведён» qilinmaydi (qoldiq va pulga tegmaydi), nomi
 - Sinov hujjati MoySklad'da qolib ketsa (juda kam) — keyingi sinov o'zi
   o'chiradi; MoySklad'da `SINOV-` deb qidirib qo'lda ham o'chirsa bo'ladi.
 
-## 5. To'lov turlari
+## 6. To'lov turlari
 
 Panel → **To'lov turlari**. Kassaning to'lov oynasida «ko'rinadi» deb
 turganlar chiqadi (hozir: Naqd, UzCard, Humo, Click, Karta). Kassa
@@ -112,7 +129,7 @@ o'zgarishni **15 soniya ichida** oladi — qayta ochish shart emas.
 cheklar va hisobotlar buzilmaydi. Naqd — «naqd» belgisi bilan (qaytim
 hisoblanadi), qolganlari naqdsiz.
 
-## 6. Kassalar
+## 7. Kassalar
 
 Panel → **Kassalar**. Omborni tanlab «Yaratish» — login va parol beriladi,
 monoblokda shu teriladi.
@@ -125,7 +142,7 @@ monoblokda shu teriladi.
 - **Versiya** ustuni — kassada qaysi dastur versiyasi turibdi. Sariq bo'lsa
   eskirgan (30 daqiqa ichida o'zi yangilanadi).
 
-## 7. Kassa dasturining yangi versiyasini chiqarish
+## 8. Kassa dasturining yangi versiyasini chiqarish
 
 Ish stolidagi tugmalar (bat fayllar), tartib bilan:
 
@@ -144,7 +161,7 @@ Fleshkaga o'rnatish uchun — **`FLESHKAGA-TAYYORLASH.bat`**, keyin fleshkadagi
 ZIP'ni monoblokka ko'chirib «Извлечь все» qilib ochish (ZIP ichidagi butun
 papka kerak, yakka .exe emas).
 
-## 8. Serverni yangilash
+## 9. Serverni yangilash
 
 Kod `sevimli-kassa-SERVER\sevimli-kassa-SERVER\` papkasiga tushadi (Claude
 yozadi). **`SERVERNI-YUKLASH.bat`** — GitHub'ga yuboradi, Railway 2–3
@@ -152,10 +169,10 @@ daqiqada o'zi qayta o'rnatadi. Oynada «TAYYOR — kod GitHub ga yuklandi!»
 chiqishi kerak.
 
 Deploy paytida kassa to'xtamaydi: server bir necha soniya javob bermasa
-kassa cheklarni saqlab turadi. Yangilanish tugagach sinov (4-bo'lim) o'zi
+kassa cheklarni saqlab turadi. Yangilanish tugagach sinov (5-bo'lim) o'zi
 o'tadi.
 
-## 9. Shtrix-kod qoidalari
+## 10. Shtrix-kod qoidalari
 
 - Tovarning o'z kodi (EAN-13 va h.k.) — 1 dona. Tovarning **barcha**
   kodlari (dona, blok, quti, MoySklad yaratgani) kassaga boradi — qaysinisi
@@ -169,21 +186,21 @@ o'tadi.
 - Himoya: 50 kg dan og'ir yorliq va donali tovarga tushgan tarozi yorlig'i
   sotilmaydi — «topilmadi» chiqadi.
 
-## 10. Qaytarish
+## 11. Qaytarish
 
 Kassada qaytarish MoySklad'ga **Возврат** + pulni qaytarish (naqd —
 Расходный ордер, karta — Исходящий платёж) bo'lib yoziladi, tovar
 qoldiqqa qaytadi. Pul chiqimi uchun MoySklad'da xarajat moddasi
 («Возврат») ishlatiladi — u hisobda bo'lishi shart (sinov buni tekshiradi).
 
-## 11. Vaqt
+## 12. Vaqt
 
 MoySklad hisobi Moskva vaqtida (UTC+3). Server hujjat vaqtini shunga
 o'girib yuboradi — shuning uchun MoySklad'da Отгрузка «kelajakka» tushmaydi
 va qoldiq to'g'ri kamayadi. Sozlama: Railway'da `MOYSKLAD_TZ`
 (standart `Europe/Moscow`).
 
-## 12. Muammo bo'lsa
+## 13. Muammo bo'lsa
 
 1. Panel bosh sahifasi — qizil ogohlantirishlar sababi bilan.
 2. Kassa pastidagi chiroqlar va yonidagi izoh.

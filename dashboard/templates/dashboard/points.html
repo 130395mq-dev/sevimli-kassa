@@ -1,16 +1,16 @@
 {% extends "dashboard/base.html" %}
-{% load pul aloqa_tags %}
+{% load pul aloqa_tags l10n %}
 
-{% block title %}Nuqtalar — Sevimli Kassa{% endblock %}
+{% block title %}Savdo — Sevimli Kassa{% endblock %}
 {% block nav_points %}on{% endblock %}
 {% block when %}{{ today|date:"d.m.Y" }}{% endblock %}
 
-{% block crumb %}Bugungi savdo{% endblock %}
+{% block crumb %}Savdo{% endblock %}
 
 {% block body %}
 
-  <h1>Nuqtalar</h1>
-  <div class="sub">Bugungi savdo — kassalar bo'yicha</div>
+  <h1>Savdo</h1>
+  <div class="sub">Nuqtalar bo'yicha — {{ board.label }}</div>
 
   {% if messages %}
     {% for m in messages %}
@@ -65,30 +65,157 @@
     </div>
   {% endif %}
 
+  {# ---------------------------------------------------- sana filtri #}
+  <form method="get" class="davr" id="davr">
+    <div class="presets">
+      {% for key, name in board.presets %}
+        <a class="chip {% if board.preset == key %}on{% endif %}" href="?davr={{ key }}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <label>dan <input type="date" name="dan" value="{{ board.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>gacha <input type="date" name="gacha" value="{{ board.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <button type="submit" class="small" style="margin-top:0;">Ko'rsatish</button>
+    <span class="sec">Solishtirish: {{ board.prev_label }}</span>
+  </form>
+
+  {# ---------------------------------------------------- asosiy raqamlar #}
   <div class="tiles">
     <div class="tile hero">
-      <div class="label">Bugungi savdo</div>
-      <div class="value num">{{ day.total|som }}</div>
-      <div class="note num">{{ day.receipts }} chek</div>
+      <div class="label">Savdo · {{ board.label }}</div>
+      <div class="value num">{{ board.summary.total|som }}</div>
+      <div class="note num">
+        {% if board.summary.delta_total is not None %}
+          <span class="delta {% if board.summary.delta_total >= 0 %}up{% else %}down{% endif %}">
+            {% if board.summary.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_total }}%</span>
+          oldingi davrga nisbatan ({{ board.summary.prev_total|som }})
+        {% else %}oldingi davrda savdo bo'lmagan{% endif %}
+      </div>
     </div>
     <div class="tile">
-      <div class="label">Naqd</div>
-      <div class="value num">{{ day.cash|som }}</div>
-      <div class="note">so'm</div>
+      <div class="label">Cheklar</div>
+      <div class="value num">{{ board.summary.receipts }}</div>
+      <div class="note num">
+        {% if board.summary.delta_receipts is not None %}
+          <span class="delta {% if board.summary.delta_receipts >= 0 %}up{% else %}down{% endif %}">
+            {% if board.summary.delta_receipts >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_receipts }}%</span>
+        {% else %}—{% endif %}
+      </div>
     </div>
     <div class="tile">
-      <div class="label">Naqdsiz</div>
-      <div class="value num">{{ day.cashless|som }}</div>
-      <div class="note">so'm</div>
+      <div class="label">O'rtacha chek</div>
+      <div class="value num">{{ board.summary.avg|som }}</div>
+      <div class="note num">
+        {% if board.summary.delta_avg is not None %}
+          <span class="delta {% if board.summary.delta_avg >= 0 %}up{% else %}down{% endif %}">
+            {% if board.summary.delta_avg >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_avg }}%</span>
+        {% else %}so'm{% endif %}
+      </div>
     </div>
     <div class="tile">
-      <div class="label">Sarflanmagan ballar</div>
-      <div class="value num">{{ bonus_total|som }}</div>
-      <div class="note">majburiyat</div>
+      <div class="label">Naqd / naqdsiz</div>
+      <div class="value num">{{ board.summary.cash|som }}</div>
+      <div class="note num">naqdsiz {{ board.summary.cashless|som }}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Qaytarish</div>
+      <div class="value num">{{ board.summary.returns|som }}</div>
+      <div class="note num">{{ board.summary.returns_n }} ta</div>
     </div>
   </div>
 
-  <h2>Kassalar</h2>
+  {# ---------------------------------------------------- nuqtalar reytingi #}
+  <h2>Qaysi nuqta yaxshi sotyapti</h2>
+  <table class="rating">
+    <tr>
+      <th class="tight">#</th><th>Nuqta</th><th class="right">Savdo</th><th>Ulush</th>
+      <th class="right">Chek</th><th class="right">O'rtacha chek</th>
+      <th class="right">Oldingi davr</th><th class="right">Farq</th>
+    </tr>
+    {% for p in board.ranking %}
+      <tr class="{% if p.rank == 1 and p.total %}best{% endif %}">
+        <td class="tight num">{{ p.rank }}</td>
+        <td>
+          <b>{{ p.name }}</b>
+          {% if p.rank == 1 and p.total %}<span class="badge ok">eng yaxshi</span>{% endif %}
+          <div class="sec">{{ p.kassas }}</div>
+        </td>
+        <td class="right num"><b>{{ p.total|som }}</b></td>
+        <td class="sharecell">
+          <div class="share"><div class="fill" style="width: {{ p.bar }}%;"></div></div>
+          <span class="num sec">{{ p.share }}%</span>
+        </td>
+        <td class="right num">{{ p.receipts }}</td>
+        <td class="right num">{{ p.avg|som }}</td>
+        <td class="right num sec">{{ p.prev_total|som }}</td>
+        <td class="right num">
+          {% if p.delta_total is not None %}
+            <span class="delta {% if p.delta_total >= 0 %}up{% else %}down{% endif %}">
+              {% if p.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ p.delta_total }}%</span>
+          {% else %}<span class="sec">—</span>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>
+    {% endfor %}
+  </table>
+
+  {# ---------------------------------------------------- kunlik ko'rsatkichlar #}
+  <h2>Kunlik ko'rsatkichlar</h2>
+  <div class="sub" style="margin-bottom: 10px;">
+    {{ board.daily.label }}
+    {% if board.daily.is_window %}<span class="sec">— tanlangan kun ajratib ko'rsatilgan</span>{% endif %}
+    · o'rtacha kuniga <b class="num">{{ board.daily.avg_day|som }}</b>
+    {% if board.daily.best_day %}· eng yaxshi kun <b class="num">{{ board.daily.best_day.date|date:"d.m" }}</b> ({{ board.daily.best_day.total|som }}){% endif %}
+  </div>
+
+  {% with c=board.daily.chart %}{% localize off %}
+  <div class="chartwrap">
+    <svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" width="{{ c.w }}" height="{{ c.h }}" role="img"
+         aria-label="Kunlik savdo, so'm">
+      {% for t in c.ticks %}
+        <line x1="{{ c.left }}" x2="{{ c.left|add:c.plot_w }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+        <text x="{{ c.left|add:'-8' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+      {% endfor %}
+      {% for b in c.bars %}
+        <g class="bar {% if b.selected and board.daily.is_window %}sel{% endif %}">
+          <title>{{ b.date|date:"d.m.Y" }} — {{ b.total|som }} so'm, {{ b.n }} chek</title>
+          <rect x="{{ b.x|add:'-3' }}" y="{{ c.top }}" width="{{ b.w|add:'6' }}" height="{{ c.plot_h }}" class="hit"></rect>
+          {% if b.path %}<path d="{{ b.path }}"></path>{% endif %}
+          {% if b.is_best %}<text x="{{ b.cx }}" y="{{ b.y|add:'-6' }}" class="val">{{ b.total|som }}</text>{% endif %}
+          {% if b.show_label %}<text x="{{ b.cx }}" y="{{ c.baseline|add:'16' }}" class="day">{{ b.date|date:"d.m" }}</text>{% endif %}
+        </g>
+      {% endfor %}
+      <line x1="{{ c.left }}" x2="{{ c.left|add:c.plot_w }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+    </svg>
+  </div>
+  {% endlocalize %}{% endwith %}
+
+  <div class="tablewrap">
+  <table class="daily">
+    <tr>
+      <th>Sana</th>
+      {% for name in board.daily.point_names %}<th class="right">{{ name }}</th>{% endfor %}
+      <th class="right">Jami</th><th class="right">Chek</th><th class="right">O'rtacha</th>
+    </tr>
+    {% for d in board.daily.days reversed %}
+      <tr class="{% if d.selected and board.daily.is_window %}sel{% endif %}">
+        <td class="num">{{ d.date|date:"d.m.Y" }} <span class="sec">{{ d.dow }}</span></td>
+        {% for v in d.points %}<td class="right num">{{ v|som }}</td>{% endfor %}
+        <td class="right num"><b>{{ d.total|som }}</b></td>
+        <td class="right num">{{ d.n }}</td>
+        <td class="right num sec">{{ d.avg|som }}</td>
+      </tr>
+    {% endfor %}
+    <tr class="total">
+      <td>Jami</td>
+      {% for name in board.daily.point_names %}<td></td>{% endfor %}
+      <td class="right num">{{ board.daily.total|som }}</td><td></td><td></td>
+    </tr>
+  </table>
+  </div>
+
+  {# ---------------------------------------------------- kassalar (davr) #}
+  <h2>Kassalar · {{ board.label }}</h2>
   <table>
     <tr>
       <th>Nuqta</th>
@@ -99,6 +226,7 @@
       <th class="right">Naqd</th>
       <th class="right">Naqdsiz</th>
       <th class="right">Jami</th>
+      <th class="right">Farq</th>
     </tr>
     {% for r in rows %}
       <tr>
@@ -125,26 +253,30 @@
         <td class="right num">{{ r.cash|som }}</td>
         <td class="right num">{{ r.cashless|som }}</td>
         <td class="right num"><b>{{ r.total|som }}</b></td>
+        <td class="right num">
+          {% if r.delta_total is not None %}
+            <span class="delta {% if r.delta_total >= 0 %}up{% else %}down{% endif %}">
+              {% if r.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ r.delta_total }}%</span>
+          {% else %}<span class="sec">—</span>{% endif %}
+        </td>
       </tr>
     {% empty %}
-      <tr><td colspan="8" class="empty">
-        Kassa qo'shilmagan.<br>
-        <span class="sec">python manage.py add_register --store "..." --name "Kassa-1"</span>
-      </td></tr>
+      <tr><td colspan="9" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
     {% if rows %}
       <tr class="total">
         <td colspan="4">Jami</td>
-        <td class="right num">{{ day.receipts }}</td>
-        <td class="right num">{{ day.cash|som }}</td>
-        <td class="right num">{{ day.cashless|som }}</td>
-        <td class="right num">{{ day.total|som }}</td>
+        <td class="right num">{{ board.summary.receipts }}</td>
+        <td class="right num">{{ board.summary.cash|som }}</td>
+        <td class="right num">{{ board.summary.cashless|som }}</td>
+        <td class="right num">{{ board.summary.total|som }}</td>
+        <td></td>
       </tr>
     {% endif %}
   </table>
 
   {% if by_method %}
-    <h2>To'lov turlari</h2>
+    <h2>To'lov turlari · {{ board.label }}</h2>
     <table>
       <tr><th>Tur</th><th class="right">Chek</th><th class="right">Summa</th></tr>
       {% for m in by_method %}
@@ -213,6 +345,15 @@
       {% endfor %}
     </table>
   {% endif %}
+
+  <h2>SEVIMLI BONUS</h2>
+  <div class="tiles" style="grid-template-columns: repeat(auto-fit, minmax(190px, 260px));">
+    <div class="tile">
+      <div class="label">Sarflanmagan ballar</div>
+      <div class="value num">{{ bonus_total|som }}</div>
+      <div class="note">majburiyat (mijozlar hisobida)</div>
+    </div>
+  </div>
 
   <h2>Katalog</h2>
   <table>
