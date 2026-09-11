@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static aloqa_tags %}<!doctype html>
 <html lang="uz">
 <head>
   <meta charset="utf-8">
@@ -115,6 +115,28 @@
     }
     header.top .crumb { font-size: 15px; font-weight: 600; }
     header.top .when { margin-left: auto; color: var(--muted); font-size: 13.5px; }
+
+    /* ------------------------------------------------- aloqa chiroqlari
+       Dumaloq belgi: yashil — yaxshi (tinch), sariq — kechikish (sekin
+       yonib-o'chadi), qizil — aloqa yo'q (tez yonib-o'chadi). Tepadagi
+       qatorda hamma joy bir qarashda: MoySklad + har bir kassa. */
+    .aloqa {
+      margin-left: auto; display: flex; align-items: center; gap: 16px;
+      font-size: 12.5px; color: var(--muted); white-space: nowrap;
+    }
+    .aloqa + .when { margin-left: 0; }
+    .aloqa-item { display: inline-flex; align-items: center; gap: 6px; }
+    .dot {
+      display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+      background: #B7C4BC; vertical-align: middle; flex: 0 0 11px;
+      box-shadow: 0 0 0 2px rgba(0,0,0,.04) inset;
+    }
+    .dot.ok   { background: var(--ok);     box-shadow: 0 0 0 3px rgba(31,122,85,.16); }
+    .dot.warn { background: var(--warn);   box-shadow: 0 0 0 3px rgba(184,121,31,.18); animation: dot-blink 1.6s ease-in-out infinite; }
+    .dot.bad  { background: var(--danger); box-shadow: 0 0 0 3px rgba(178,58,58,.20); animation: dot-blink .8s ease-in-out infinite; }
+    @keyframes dot-blink { 50% { opacity: .3; } }
+    .dot-label { color: var(--ink-soft); }
+    td .dot { margin-right: 7px; }
 
     .wrap { max-width: 1280px; padding: 26px 30px 60px; }
 
@@ -398,6 +420,7 @@
   <main class="body">
     <header class="top">
       <span class="crumb">{% block crumb %}{% endblock %}</span>
+      {% aloqa_strip %}
       <span class="when">{% block when %}{% endblock %}</span>
     </header>
     <div class="wrap">
@@ -406,5 +429,35 @@
   </main>
 </div>
 
+<script>
+// Aloqa chiroqlari — sahifani qayta yuklamasdan 15 soniyada bir yangilanadi.
+// Server /aloqa.json beradi; bu yerda faqat rang (class) va izoh (title)
+// almashtiriladi. Tepadagi qator ham, jadval ichidagi nuqtalar ham
+// data-aloqa="…" belgisi bilan topiladi.
+(function () {
+  if (!document.getElementById("aloqa")) return;
+  var STATES = ["ok", "warn", "bad"];
+  function paint(key, link) {
+    var nodes = document.querySelectorAll('[data-aloqa="' + key + '"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      STATES.forEach(function (s) { el.classList.remove(s); });
+      el.classList.add(link.state);
+      el.title = link.text || "";
+    }
+  }
+  function tick() {
+    fetch("/aloqa.json", { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (snap) {
+        if (!snap) return;
+        paint("moysklad", snap.moysklad);
+        (snap.registers || []).forEach(function (r) { paint("reg-" + r.id, r); });
+      })
+      .catch(function () { /* internet uzilsa — oxirgi rang qoladi */ });
+  }
+  setInterval(tick, 15000);
+})();
+</script>
 </body>
 </html>

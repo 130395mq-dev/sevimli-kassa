@@ -49,6 +49,7 @@ from sales.models import (
     SaleItem,
     Shift,
 )
+from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
 
@@ -337,6 +338,10 @@ def hello(request):
             # Kassir ruxsat bo'lsa kassada almashtiradi.
             "price_types": price_types,
             "default_price_type": default_pt,
+            # Aloqa chiroqlari: server ↔ MoySklad holati. Kassa buni
+            # pastki qatorda dumaloq belgi qilib ko'rsatadi (kassa
+            # MoySklad'ga o'zi ulanmaydi — serverdan so'raydi).
+            "links": {"moysklad": moysklad_health()},
         }
     )
 

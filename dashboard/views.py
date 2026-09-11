@@ -29,6 +29,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
+from sales import aloqa
 from sales.models import (
     BonusEntry, BonusProgram, Payment, PaymentMethod, POINT_TIYIN, Register,
     Sale, Shift,
@@ -56,6 +57,16 @@ def _free_login(base: str) -> str:
 def health(request):
     """Railway va monitoring uchun — tez va yengil."""
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+def aloqa_json(request):
+    """Panel tepasidagi aloqa chiroqlari — sahifa 15 soniyada bir so'raydi.
+
+    Sahifa qayta yuklanmaydi (formalar to'ldirilayotgan bo'lishi mumkin),
+    faqat chiroqlarning rangi va izohi yangilanadi.
+    """
+    return JsonResponse(aloqa.snapshot())
 
 
 def day_start():
@@ -91,6 +102,9 @@ def points(request):
             "point": reg.point_name,
             "shift": shift,
             "offline": offline,
+            # Aloqa chirog'i (yashil/sariq/qizil) — tepadagi qator bilan
+            # bir xil hisob, JS 15 soniyada bir yangilab turadi.
+            "link": aloqa.register_state(reg, now),
             "last_seen": reg.last_seen_at,
             "receipts": agg["n"] or 0,
             "total": total / 100,
@@ -359,8 +373,11 @@ def registers(request):
     rows = list(qs if show_archived else qs.filter(archived=False))
     archived_count = Register.objects.filter(archived=True).count()
     warehouses = list(Warehouse.objects.filter(archived=False))
+    now = timezone.now()
     for r in rows:
         r.wh_name = r.warehouse_name
+        # Aloqa chirog'i — kassa ↔ server (JS 15 soniyada bir yangilaydi)
+        r.link = aloqa.register_state(r, now)
         # Panelda: yashil — eng yangi, sariq — eskirgan, kulrang — noma'lum
         if not r.app_version:
             r.version_state = "off"

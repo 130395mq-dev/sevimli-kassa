@@ -1,0 +1,15 @@
+{% if snap %}
+{# Aloqa chiroqlari — har sahifaning tepasida. Yashil: yaxshi, sariq: kechikish, qizil (yonib-o'chadi): aloqa yo'q. #}
+<div class="aloqa" id="aloqa" title="Aloqa holati — 15 soniyada bir yangilanadi">
+  <span class="aloqa-item">
+    <span class="dot {{ snap.moysklad.state }}" data-aloqa="moysklad" title="{{ snap.moysklad.text }}"></span>
+    <span class="dot-label">MoySklad</span>
+  </span>
+  {% for r in snap.registers %}
+    <span class="aloqa-item">
+      <span class="dot {{ r.state }}" data-aloqa="reg-{{ r.id }}" title="{{ r.text }}"></span>
+      <span class="dot-label">{{ r.name }}</span>
+    </span>
+  {% endfor %}
+</div>
+{% endif %}

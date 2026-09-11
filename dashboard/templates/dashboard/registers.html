@@ -1,4 +1,5 @@
 {% extends "dashboard/base.html" %}
+{% load aloqa_tags %}
 
 {% block title %}Kassalar — Sevimli Kassa{% endblock %}
 {% block nav_registers %}on{% endblock %}
@@ -60,7 +61,7 @@
         <td>{% if r.wh_name %}<b>{{ r.wh_name }}</b>
             {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
         <td class="tight">
-          {{ r.name }}
+          {% if not r.archived %}{% dot r.link %}{% endif %}{{ r.name }}
           {% if r.archived %}<span class="badge off">arxivlangan</span>
           {% elif not r.active %}<span class="badge off">bloklangan</span>{% endif %}
         </td>

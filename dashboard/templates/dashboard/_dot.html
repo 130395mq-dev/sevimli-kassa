@@ -1,0 +1,4 @@
+{# Bitta aloqa chirog'i. `link` — sales.aloqa.register_state() / moysklad_health() lug'ati. #}
+<span class="dot {{ link.state }}"
+      {% if link.id %}data-aloqa="reg-{{ link.id }}"{% endif %}
+      title="{{ link.text }}"></span>{% if label %}<span class="dot-label">{{ label }}</span>{% endif %}

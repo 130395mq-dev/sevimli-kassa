@@ -18,4 +18,5 @@ urlpatterns = [
     path("ornatish/", views.installer, name="installer"),
     path("ornatish/fayl/", views.installer_download, name="installer-download"),
     path("health/", views.health, name="health"),
+    path("aloqa.json", views.aloqa_json, name="aloqa-json"),
 ]

@@ -1,5 +1,5 @@
 {% extends "dashboard/base.html" %}
-{% load pul %}
+{% load pul aloqa_tags %}
 
 {% block title %}Nuqtalar — Sevimli Kassa{% endblock %}
 {% block nav_points %}on{% endblock %}
@@ -90,7 +90,7 @@
     {% for r in rows %}
       <tr>
         <td>{{ r.point }}</td>
-        <td>{{ r.register.name }}</td>
+        <td>{% dot r.link %}{{ r.register.name }}</td>
         <td>
           {% if r.offline %}
             <span class="badge off">Aloqa yo'q</span>
