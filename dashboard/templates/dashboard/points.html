@@ -21,45 +21,31 @@
     {% endfor %}
   {% endif %}
 
-  {# Diqqat talab qiladiganlar tepada: bular haqida bugun bir narsa qilish kerak #}
-  {% if stuck_count %}
-    <div class="alert err">
-      <span>✕</span>
+  {% comment %}
+    Diqqat talab qiladiganlar tepada. Har birida «nima bo'ldi» va «nima
+    qilish kerak». Tizim o'zi hal qila oladiganini o'zi qiladi (zaxira
+    yozuvchi, sinov o'tganda tiqilganlarni qaytarish); bu yerda odam
+    bilishi kerak bo'lgani.
+  {% endcomment %}
+  {% for a in alerts %}
+    <div class="alert {{ a.level }}">
+      <span>{% if a.level == 'err' %}✕{% else %}!{% endif %}</span>
       <div>
-        <b>{{ stuck_count }} ta chek MoySklad'ga yozilmadi</b>
-        Bular o'z-o'zidan tuzalmaydi — sababi pastdagi «Yozilmagan cheklar»
-        jadvalida. Sabab tuzatilgan bo'lsa «Qayta yuborish» ni bosing.
-        <form method="post" class="inline" style="margin-top: 8px;">
-          {% csrf_token %}
-          <input type="hidden" name="action" value="retry_stuck">
-          <button type="submit" class="small" style="margin-top: 0;">Qayta yuborish</button>
-        </form>
+        <b>{{ a.title }}</b>
+        {% if a.text %}{{ a.text }}{% endif %}
+        {% if a.fix %}
+          <div class="fix"><b>Nima qilish kerak:</b> {{ a.fix }}</div>
+        {% endif %}
+        {% if a.action == 'retry_stuck' %}
+          <form method="post" class="inline" style="margin-top: 8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="retry_stuck">
+            <button type="submit" class="small" style="margin-top: 0;">Qayta yuborish</button>
+          </form>
+        {% endif %}
       </div>
     </div>
-  {% endif %}
-
-  {% if check and check.finished_at and not check.ok %}
-    <div class="alert err">
-      <span>✕</span>
-      <div>
-        <b>MoySklad sinovi o'tmadi — {{ check.summary }}</b>
-        Kassa yozadigan hujjatlardan birini MoySklad hisobi qabul qilmayapti.
-        Bu tuzatilmasa keyingi chek tiqilib qoladi. Tafsilot pastdagi
-        «MoySklad tekshiruvi» jadvalida.
-      </div>
-    </div>
-  {% endif %}
-
-  {% if offline_count %}
-    <div class="alert warn">
-      <span>!</span>
-      <div>
-        <b>{{ offline_count }} ta kassaning aloqasi yo'q</b>
-        Kassa ishlashda davom etayotgan bo'lishi mumkin — cheklar unda saqlanadi
-        va aloqa tiklangach yuboriladi.
-      </div>
-    </div>
-  {% endif %}
+  {% endfor %}
 
   {% if queued %}
     <div class="alert warn">
@@ -72,10 +58,10 @@
     </div>
   {% endif %}
 
-  {% if not stuck_count and not offline_count and not queued and not check.failed_steps %}
+  {% if not alerts and not queued %}
     <div class="alert ok">
       <span>✓</span>
-      <div><b>Hammasi joyida</b> Barcha kassalar ulangan, navbat bo'sh.</div>
+      <div><b>Hammasi joyida</b> MoySklad ulangan, kassalar joyida, navbat bo'sh.</div>
     </div>
   {% endif %}
 
@@ -119,11 +105,10 @@
         <td>{{ r.point }}</td>
         <td>{% dot r.link %}{{ r.register.name }}</td>
         <td>
-          {% if r.offline %}
-            <span class="badge off">Aloqa yo'q</span>
-          {% else %}
-            <span class="badge ok">Ulangan</span>
-          {% endif %}
+          {% if r.link.state == 'ok' %}<span class="badge ok">Ulangan</span>
+          {% elif r.link.state == 'warn' %}<span class="badge warn">Kechikmoqda</span>
+          {% elif r.link.state == 'bad' %}<span class="badge err">Aloqa yo'q</span>
+          {% else %}<span class="badge off">O'chirilgan</span>{% endif %}
           {% if r.pending %}
             <span class="badge warn num">navbat {{ r.pending }}</span>
           {% endif %}

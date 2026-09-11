@@ -28,15 +28,17 @@ qo'rqadi: **bitta savdo ikki marta yozilib qolishi.**
 
 ---
 
-TEKSHIRILMAGAN: bu modul hali jonli MoySklad hisobida sinalmagan.
-Birinchi ishga tushirishda `--dry-run` bilan yuboriladigan JSON'ni
-ko'ring. Ayniqsa quyidagilar tasdiqlanishi kerak:
+JONLI HISOBDA TASDIQLANGAN (2026-09): Отгрузка + kirim, Возврат + chiqim —
+hammasi yoziladi. Ikki narsa jonli hisobda aniqlandi va tuzatildi:
 
-  - `cashin` va `paymentin` da `operations` maydoni Отгрузка'ga to'g'ri
-    bog'lanadimi (hujjat to'langan deb belgilanadimi);
-  - vaznli tovarda (0.750 kg) MoySklad hisoblagan summa bizniki bilan
-    tiyingacha mos keladimi;
-  - `paymentin` uchun `organizationAccount` majburiymi.
+  - `moment` MoySklad hisobining zonasida (Moskva) bo'lishi kerak, aks
+    holda hujjat kelajakka tushib qoldiq kamaymaydi (`ms_moment`);
+  - `cashout`/`paymentout` uchun xarajat moddasi (`expenseItem`) MAJBURIY
+    (`_expense_item_id`).
+
+Bundan keyin hisob sozlamasi o'zgarib biror hujjat rad etilsa, buni
+`sales/selftest.py` (MoySklad o'z-o'zini tekshirish) haqiqiy chek
+tiqilishidan oldin ko'rsatadi.
 """
 
 from __future__ import annotations

@@ -29,7 +29,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
-from sales import aloqa, selftest
+from sales import aloqa, healer, selftest, sender
 from sales.models import (
     BonusEntry, BonusProgram, MoySkladCheck, Payment, PaymentMethod, POINT_TIYIN,
     Register, Sale, Shift,
@@ -66,6 +66,7 @@ def aloqa_json(request):
     Sahifa qayta yuklanmaydi (formalar to'ldirilayotgan bo'lishi mumkin),
     faqat chiroqlarning rangi va izohi yangilanadi.
     """
+    healer.tick()
     return JsonResponse(aloqa.snapshot())
 
 
@@ -81,9 +82,7 @@ def points(request):
     # qaytaradi. Sabab tuzatilgach (masalan MoySklad sozlamasi) shu tugma
     # bosiladi; yozuvchi 20 soniyada bir navbatni oladi.
     if request.method == "POST" and request.POST.get("action") == "retry_stuck":
-        n = Sale.objects.filter(sync_status=Sale.STUCK).update(
-            sync_status=Sale.NEW, sync_attempts=0, next_attempt_at=None,
-        )
+        n = sender.requeue_stuck()
         if n:
             messages.success(
                 request,
@@ -136,7 +135,7 @@ def points(request):
             "offline": offline,
             # Aloqa chirog'i (yashil/sariq/qizil) — tepadagi qator bilan
             # bir xil hisob, JS 15 soniyada bir yangilab turadi.
-            "link": aloqa.register_state(reg, now),
+            "link": aloqa.register_state(reg, now, shift_open=shift is not None),
             "last_seen": reg.last_seen_at,
             "receipts": agg["n"] or 0,
             "total": total / 100,
@@ -167,9 +166,43 @@ def points(request):
         .select_related("shift__register__store")
         .order_by("-created_at")[:20]
     )
+    stuck_count = Sale.objects.filter(sync_status=Sale.STUCK).count()
     queued = Sale.objects.filter(
         sync_status__in=[Sale.NEW, Sale.FAILED]
     ).count()
+    check = MoySkladCheck.latest()
+
+    # Ogohlantirishlar — har biri «nima bo'ldi» + «nima qilish kerak».
+    # Tizim o'zi hal qiladiganini o'zi qiladi (healer/selftest); bu yerda
+    # odam nimani bilishi va (kerak bo'lsa) qilishi yoziladi.
+    snap = aloqa.snapshot(now)
+    alerts = []
+    if stuck_count:
+        alerts.append({
+            "level": "err", "title": f"{stuck_count} ta chek MoySklad'ga yozilmadi",
+            "text": "Sabab pastdagi «Yozilmagan cheklar» jadvalida.",
+            "fix": aloqa.FIX_STUCK, "action": "retry_stuck",
+        })
+    if check is not None and check.finished_at and check.failed_steps:
+        alerts.append({
+            "level": "err", "title": "MoySklad sinovi o'tmadi — " + check.summary,
+            "text": "Kassa yozadigan hujjatlardan birini MoySklad hisobi qabul qilmayapti. "
+                    "Tafsilot pastdagi «MoySklad tekshiruvi» jadvalida. Sinov har 30 daqiqada "
+                    "qayta o'tadi; tuzalgach tiqilganlar o'zi qayta yuboriladi.",
+            "fix": aloqa._fix_for_step(check.failed_steps[0]),
+        })
+    ms = snap["moysklad"]
+    if ms["state"] != "ok" and not ms["text"].startswith("sinov o'tmadi") and "tiqilib" not in ms["text"]:
+        alerts.append({
+            "level": "err" if ms["state"] == "bad" else "warn",
+            "title": "MoySklad — " + ms["text"], "text": "", "fix": ms.get("fix", ""),
+        })
+    for r in snap["registers"]:
+        if r["state"] in ("bad", "warn"):
+            alerts.append({
+                "level": "err" if r["state"] == "bad" else "warn",
+                "title": f"{r['name']} — {r['text']}", "text": "", "fix": r.get("fix", ""),
+            })
 
     bonus_total = (
         Customer.objects.filter(archived=False)
@@ -177,6 +210,7 @@ def points(request):
     )
 
     return render(request, "dashboard/points.html", {
+        "alerts": alerts,
         "rows": rows,
         "day": {
             "receipts": day["n"] or 0,
@@ -194,11 +228,10 @@ def points(request):
             for m in by_method
         ],
         "stuck": stuck,
-        "stuck_count": Sale.objects.filter(sync_status=Sale.STUCK).count(),
+        "stuck_count": stuck_count,
         # MoySklad o'z-o'zini tekshirish — oxirgi natija
-        "check": MoySkladCheck.latest(),
+        "check": check,
         "queued": queued,
-        "offline_count": sum(1 for r in rows if r["offline"]),
         "sync_rows": SyncState.objects.order_by("entity"),
         "products": Product.objects.filter(archived=False).count(),
         "customers": Customer.objects.filter(archived=False).count(),

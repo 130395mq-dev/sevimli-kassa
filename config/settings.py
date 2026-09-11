@@ -6,6 +6,7 @@ o'qiladi. Kodda hech qanday token yoki parol bo'lmasligi kerak.
 """
 
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -151,6 +152,10 @@ MOYSKLAD_RETAIL_CUSTOMER_ID = env("MOYSKLAD_RETAIL_CUSTOMER_ID")
 # bo'lmasa birinchisini o'zi oladi. Aniq bittasini xohlasangiz — ID'sini
 # shu yerga (Railway muhit o'zgaruvchisi) yozing.
 MOYSKLAD_EXPENSE_ITEM_ID = env("MOYSKLAD_EXPENSE_ITEM_ID", "")
+
+# O'z-o'zini davolash (sales/healer.py): zaxira yozuvchi va katalog fon
+# oqimida ishlaydi. Testlarda o'chiq — fon oqimi test bazasiga tegmasin.
+HEALER_ENABLED = env("HEALER_ENABLED", "1") == "1" and "test" not in sys.argv[1:2]
 
 # Kassa ilovasining yangilanishi.
 #

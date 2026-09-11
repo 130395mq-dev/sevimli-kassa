@@ -102,25 +102,44 @@ class MoySkladHealthTest(TestCase):
 
 
 class RegisterStateTest(TestCase):
+    """Kassa chirog'i: smena OCHIQ bo'lsa jimlik — muammo; YOPIQ bo'lsa
+    kassa shunchaki o'chirilgan — kulrang, bekorga qizil yonmaydi."""
+
     def setUp(self):
         self.store = RetailStore.objects.create(ms_id="00000000-0000-0000-0000-0000000000de", name="N")
 
-    def reg(self, seen):
-        return Register.objects.create(code="k", name="Kassa-1", store=self.store, last_seen_at=seen)
+    def reg(self, seen, shift_open=True):
+        r = Register.objects.create(code="k", name="Kassa-1", store=self.store, last_seen_at=seen)
+        if shift_open:
+            Shift.objects.create(register=r, opened_at=timezone.now(), number=1, status=Shift.OPEN)
+        return r
 
-    def test_hali_ulanmagan_qizil(self):
-        self.assertEqual(aloqa.register_state(self.reg(None))["state"], "bad")
+    def test_smena_ochiq_hali_ulanmagan_qizil(self):
+        s = aloqa.register_state(self.reg(None))
+        self.assertEqual(s["state"], "bad")
+        self.assertTrue(s["fix"])
+
+    def test_smena_yopiq_hali_ulanmagan_kulrang(self):
+        self.assertEqual(aloqa.register_state(self.reg(None, shift_open=False))["state"], "unknown")
 
     def test_1_daqiqa_oldin_korinsa_yashil(self):
         self.assertEqual(aloqa.register_state(self.reg(_ago(seconds=70)))["state"], "ok")
 
-    def test_3_daqiqa_jim_bolsa_sariq(self):
+    def test_smena_ochiq_3_daqiqa_jim_bolsa_sariq(self):
         self.assertEqual(aloqa.register_state(self.reg(_ago(minutes=3)))["state"], "warn")
 
-    def test_6_daqiqa_jim_bolsa_qizil(self):
+    def test_smena_ochiq_6_daqiqa_jim_bolsa_qizil_va_nima_qilish(self):
         s = aloqa.register_state(self.reg(_ago(minutes=6)))
         self.assertEqual(s["state"], "bad")
         self.assertIn("6 daqiqa", s["text"])
+        self.assertIn("smena ochiq", s["text"])
+        self.assertIn("internet", s["fix"].lower())
+
+    def test_smena_yopiq_6_daqiqa_jim_bolsa_kulrang_ogohlantirishsiz(self):
+        s = aloqa.register_state(self.reg(_ago(minutes=6), shift_open=False))
+        self.assertEqual(s["state"], "unknown")
+        self.assertIn("o'chirilgan", s["text"])
+        self.assertEqual(s["fix"], "")
 
     def test_arxivlangan_kassa_royxatga_kirmaydi(self):
         self.reg(_ago(seconds=10))
@@ -131,11 +150,19 @@ class RegisterStateTest(TestCase):
     def test_umumiy_holat_eng_yomonini_oladi(self):
         cache.clear()
         SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
-        self.reg(_ago(minutes=10))  # qizil
+        self.reg(_ago(minutes=10))  # smena ochiq, 10 daqiqa jim — qizil
         with self.settings(MOYSKLAD_TOKEN="x"):
             snap = aloqa.snapshot()
         self.assertEqual(snap["moysklad"]["state"], "ok")
         self.assertEqual(snap["overall"], "bad")
+
+    def test_ochirilgan_kassa_umumiy_holatni_buzmaydi(self):
+        cache.clear()
+        SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
+        self.reg(_ago(hours=5), shift_open=False)
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            snap = aloqa.snapshot()
+        self.assertEqual(snap["overall"], "ok")
 
 
 class HelloLinksTest(TestCase):
@@ -205,3 +232,57 @@ class PanelAloqaTest(TestCase):
         self.client.logout()
         html = self.client.get("/kirish/").content.decode()
         self.assertNotIn('id="aloqa"', html)
+
+
+class FixTextTest(TestCase):
+    """Har qizil sabab bilan birga «nima qilish kerak» keladi."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_tokensiz_fix_token_haqida(self):
+        with self.settings(MOYSKLAD_TOKEN=""):
+            h = aloqa.moysklad_health(use_cache=False)
+        self.assertIn("MOYSKLAD_TOKEN", h["fix"])
+
+    def test_tiqilgan_chek_fix_ozi_hal_qiladi_deydi(self):
+        SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
+        store = RetailStore.objects.create(ms_id="00000000-0000-0000-0000-0000000000de", name="N")
+        reg = Register.objects.create(code="k", name="K", store=store)
+        shift = Shift.objects.create(register=reg, opened_at=timezone.now(), number=1)
+        Sale.objects.create(shift=shift, number=1, created_at=timezone.now(), sync_status=Sale.STUCK)
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            h = aloqa.moysklad_health(use_cache=False)
+        self.assertEqual(h["state"], "bad")
+        self.assertIn("o'zi hal qiladi", h["fix"])
+
+    def test_sinov_xarajat_moddasi_fix(self):
+        from sales.models import MoySkladCheck
+        SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
+        MoySkladCheck.objects.create(
+            finished_at=timezone.now(), ok=False,
+            steps=[{"name": "Xarajat moddasi", "ok": False, "detail": "yo'q"}],
+        )
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            h = aloqa.moysklad_health(use_cache=False)
+        self.assertEqual(h["state"], "bad")
+        self.assertIn("Статьи расходов", h["fix"])
+
+    def test_yozuvchi_jim_bolsa_sariq_va_fix(self):
+        from sales import healer
+        SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
+        SyncState.objects.create(entity=healer.WRITER_ENTITY, last_run_at=_ago(minutes=10))
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            h = aloqa.moysklad_health(use_cache=False)
+        self.assertEqual(h["state"], "warn")
+        self.assertIn("yozuvchi xizmat", h["text"])
+        self.assertIn("sales-sync", h["fix"])
+
+    def test_yozuvchi_tirik_bolsa_yashil(self):
+        from sales import healer
+        SyncState.objects.create(entity="assortment", last_success_at=_ago(minutes=1))
+        healer.writer_heartbeat()
+        with self.settings(MOYSKLAD_TOKEN="x"):
+            h = aloqa.moysklad_health(use_cache=False)
+        self.assertEqual(h["state"], "ok")
+        self.assertEqual(h["fix"], "")

@@ -1,231 +1,158 @@
-# Sevimli Kassa — Hub
+# Sevimli Kassa — Hub (server + panel)
 
-MoySklad ustida ishlaydigan kassa tizimining markaziy qismi.
+MoySklad ustida ishlaydigan Sevimli Market kassa tizimining markaziy qismi:
+Django + PostgreSQL, Railway'da. Kassa dasturi (alohida repo `sevimli-kassa-pos`, PySide6, Windows)
+faqat shu server bilan HTTPS API orqali gaplashadi; MoySklad'ga ham, bazaga
+ham to'g'ridan-to'g'ri ulanmaydi.
 
-**Hozirgi holat: 1-bosqich — faqat o'qish.** MoySklad'ga hech narsa yozilmaydi.
-Kassalar hozircha MoySklad'ning o'z dasturida ishlayveradi.
+```
+Kassa (Windows)  →  HTTPS API  →  Hub (Django)  →  PostgreSQL / MoySklad
+```
+
+> **Do'kon egasi uchun oddiy tildagi qo'llanma — `docs/QOLLANMA.md`:**
+> aloqa chiroqlari, tiqilgan cheklar, MoySklad sinovi, to'lov turlari,
+> versiya chiqarish, shtrix-kod qoidalari.
+
+**Holat (2026-09): to'liq ishlaydi.** Savdo va qaytarish MoySklad'ga
+yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
 
 ---
 
-## Nima qilingan
+## Nima bor
 
 | Modul | Vazifasi |
 |---|---|
+| `api/` | Kassa dasturi uchun API: ulanish, login, katalog, mijoz (karta bo'yicha), smena, chek, qaytarish, versiya, `release/upload` |
+| `dashboard/` | Panel: bugungi savdo, kassalar (arxiv bilan), smenalar, narxlar, to'lov turlari, SEVIMLI BONUS, versiyalar, o'rnatish |
+| `sales/models.py` | Register, RegisterSettings, Shift, Sale, Payment, PaymentMethod, BonusProgram, KassaRelease, MoySkladCheck |
+| `sales/writer.py` | Chekni MoySklad'ga yozish: Отгрузка + kirim (cashin/paymentin), Возврат + chiqim (cashout/paymentout, xarajat moddasi bilan) |
+| `sales/aloqa.py` | Aloqa chiroqlari: server ↔ MoySklad, kassa ↔ server (yashil/sariq/qizil/kulrang) + har muammo uchun «nima qilish kerak» matni |
+| `sales/sender.py` | Navbatdagi cheklarni yuborish (backoff, stuck) — `sales-sync` va zaxira yo'l uchun bitta kod |
+| `sales/healer.py` | O'z-o'zini davolash: `sales-sync` jim bo'lsa hub cheklarni o'zi yozadi; katalog sinxroni jim bo'lsa o'zi tortadi (`hello`/`aloqa.json` kelganda, 60 s da bir) |
+| `sales/selftest.py` | MoySklad o'z-o'zini tekshirish — kassa yozadigan hamma hujjat turi sinov rejimida (applicable=false, `SINOV-…`, o'chiriladi) |
+| `catalog/` | MoySklad katalogining lokal nusxasi: tovar, shtrix-kodlar, qoldiq, mijoz, narx turlari; delta sinxron (`catalog/sync.py`) |
 | `moysklad/client.py` | MoySklad API klienti — limitlarni hisobga oladi, 429 dan qochadi |
-| `catalog/models.py` | Katalog keshi: tovar, shtrix-kod, qoldiq, mijoz, savdo nuqtasi |
-| `catalog/sync.py` | MoySklad → lokal baza sinxronizatsiyasi (delta) |
-| `dashboard/` | Nuqtalar paneli |
-| `sales/` | Smena, chek, to'lov — bizning o'z hisobimiz |
-| `sales/writer.py` | Chekni MoySklad'ga yozish (Отгрузка + to'lov) |
-| `api/` | Kassa ilovasi uchun API |
-| `pos/` | Kassa ilovasi (PySide6) — Windows uchun .exe |
-| `shared/receipt.py` | Smena yopilish cheki — POS va panel uchun bitta kod |
+| `shared/receipt.py` | Smena cheki (X/Z) — kassa va panel uchun bitta kod |
 
 ---
 
-## Kassa ilovasi
+## Railway'dagi xizmatlar (bitta repo)
+
+| Xizmat | Buyruq | Vazifasi |
+|---|---|---|
+| `hub` | `Procfile` → migrate, collectstatic, gunicorn | panel + API |
+| `sales-sync` | `python manage.py sync_sales --loop` | cheklarni MoySklad'ga yozish (20 s da bir); MoySklad sinovi deploy'da va har 3 soatda (navbat bo'sh bo'lsa) |
+| `sync` | katalog sinxroni (`sync_catalog`) | tovar / qoldiq / mijoz / narx turlarini MoySklad'dan tortish (5 daqiqa) |
+
+Chek kelganda API uni **darhol** fon oqimida MoySklad'ga yozadi
+(`_push_sale_now`); `sales-sync` — qayta urinishlar (1, 2, 4, 8… daqiqa).
+`SYNC_MAX_ATTEMPTS` dan keyin chek `stuck` bo'ladi; MoySklad sinovi o'tganda
+(3 soatda bir; o'tmasa 30 daqiqada bir) o'zi navbatga qaytariladi, panelda
+«Qayta yuborish» tugmasi ham bor. `sales-sync` 3 daqiqa jim qolsa hub
+(`sales/healer.py`) cheklarni o'zi yozadi.
+
+Deploy: `SERVERNI-YUKLASH.bat` (GitHub'ga push) → Railway 2–3 daqiqada
+o'zi qayta o'rnatadi. Health check: `/health/`.
+
+---
+
+## Muhit o'zgaruvchilari (Railway → Variables)
+
+| O'zgaruvchi | Tavsif |
+|---|---|
+| `SECRET_KEY` | Django maxfiy kaliti — **majburiy** |
+| `DEBUG` | Production'da `False` |
+| `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` | Domenlar (vergul bilan) |
+| `DATABASE_URL` | PostgreSQL (Railway o'zi to'ldiradi) |
+| `MOYSKLAD_TOKEN` | **Alohida** integratsiya foydalanuvchisining tokeni (pastdagi ogohlantirish) |
+| `MOYSKLAD_TZ` | MoySklad hisobining vaqt zonasi (standart `Europe/Moscow`) — hujjat vaqti shunga o'giriladi, aks holda Отгрузка kelajakka tushib qoldiq kamaymaydi |
+| `MOYSKLAD_RETAIL_CUSTOMER_ID` | «Розничный покупатель» ID; bo'sh bo'lsa server o'zi topadi/yaratadi |
+| `MOYSKLAD_EXPENSE_ITEM_ID` | Qaytarishda pul chiqimi uchun xarajat moddasi; bo'sh bo'lsa «Возврат» deganini o'zi topadi |
+| `RELEASE_UPLOAD_TOKEN` | Kassa ZIP'ini skript orqali yuklash kaliti (`X-Release-Token`) |
+| `MARKET_NAME`, `RECEIPT_WIDTH` | Chek sarlavhasi va kengligi (80mm=48, 58mm=32) |
+| `SYNC_MAX_ATTEMPTS` | Chekni necha marta urinib, keyin `stuck` qilish |
+| `MEDIA_ROOT` | Yuklangan versiya fayllari — Railway'da **doimiy disk (Volume)** |
+
+> ⚠️ **Token haqida.** MoySklad'da yangi token yaratilganda o'sha
+> foydalanuvchining eski tokenlari bekor bo'ladi. Shuning uchun bu loyiha
+> **alohida MoySklad foydalanuvchisi** (masalan `kassa-integration`,
+> administrator) tokeni bilan ishlaydi — Jamlov (TZD) boshqa foydalanuvchi
+> tokenida, bir-biriga xalaqit bermaydi. Tokenni almashtirish kerak bo'lsa —
+> savdo kam paytda, keyin darhol Jamlov ishlayotganini tekshiring.
+
+Tekshirish: `python manage.py sync_catalog --check` — foydalanuvchi kim,
+administratormi, limit qancha (45 bo'lishi kerak).
+
+---
+
+## Lokal ishga tushirish
 
 ```bash
-python -m pos.demo          # namuna ma'lumot bilan ochiladi, serversiz
-python -m pos.main          # haqiqiy ishlash (server manzili so'raladi)
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                                # qiymatlarni to'ldiring
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py sync_catalog --full                # birinchi to'liq yuklash
+python manage.py runserver
 ```
 
-Yangi kassa qo'shish va token olish:
+Panel: `http://127.0.0.1:8000/` · API: `http://127.0.0.1:8000/api/v1/`
+
+Foydali buyruqlar:
 
 ```bash
-python manage.py add_register --store "Chilonzor" --name "Kassa-1"
-python manage.py add_register --list
+python manage.py sync_sales --dry-run        # nima yuborilishini ko'rish
+python manage.py sync_sales --stuck          # tiqilgan cheklar
+python manage.py sync_sales --retry-stuck    # ularni navbatga qaytarish
+python manage.py sync_sales --selftest       # MoySklad sinovi bir marta
+python manage.py add_register --list         # kassalar
+python manage.py shift_receipt --shift 3     # smena cheki
+python manage.py seed_demo                   # FAQAT lokal: o'ylab topilgan smena
 ```
-
-Token faqat bir marta ko'rsatiladi. Yo'qolsa `--new-token <kod>` bilan
-yangisi beriladi va eskisi ishlamay qoladi.
-
-### Nega kassa offline ishlaydi
-
-Chek **avval kassaning o'z diskiga** yoziladi (`kassa.db`), keyin serverga
-yuboriladi. Internet uzilsa kassir buni sezmaydi — faqat status qatorida
-navbat soni ko'payadi. Internet qaytganda navbat o'zi bo'shaydi.
-
-Har chekning `local_uuid` si bor, shuning uchun takroriy yuborish xavfsiz:
-server o'sha kalitni ko'rib, ikkinchi hujjat yaratmaydi.
-
-### .exe yig'ish
-
-Windows'da:
-
-```bash
-pip install -r pos/requirements.txt pyinstaller
-pyinstaller build/SevimliKassa.spec --noconfirm
-```
-
-Natija: `dist/SevimliKassa.exe` — bitta fayl, Python o'rnatish shart emas.
-
-GitHub'da `v` bilan boshlangan teg qo'yilsa, EXE avtomatik yig'iladi va
-Releases'ga chiqadi (`.github/workflows/build-exe.yml`).
 
 ---
 
 ## Testlar
 
 ```bash
-python manage.py test        # hammasi — 96 ta
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test            # ~250 ta
+python -m shared.test_receipt
 ```
-
-## Nima ataylab qilinmagan
-
-- **Qaytarishni MoySklad'ga yozish** — `salesreturn` kerak, hali qo'shilmagan
-- **Vendor API** — `appId` va `secret key` kelgach yoziladi
-- **POS ilovasi** — hozircha faqat server tomoni
-
----
-
-## ⚠️ Yozuvchi modul hali jonli sinalmagan
-
-`sales/writer.py` haqiqiy MoySklad hisobida sinab ko'rilmagan. Birinchi
-ishga tushirishda **albatta** avval quruq urinish qiling:
-
-```bash
-python manage.py sync_sales --dry-run
-```
-
-Bu hech narsa yubormaydi — faqat yuboriladigan JSON'ni ko'rsatadi.
-Tekshirish kerak bo'lgan uchta narsa:
-
-1. `cashin` / `paymentin` dagi `operations` maydoni Отгрузка'ni
-   «to'langan» qilib belgilaydimi
-2. Vaznli tovarda (0.750 kg) MoySklad hisoblagan summa bizniki bilan
-   tiyingacha mos keladimi
-3. `paymentin` uchun `organizationAccount` majburiymi
-
-Shundan keyin **bitta** chekni haqiqiy yuborib, MoySklad'da ko'zdan
-kechiring. Hammasi joyida bo'lsa — cron'ni yoqing.
-
----
-
-## Ishga tushirish
-
-### 1. Railway'da loyiha yarating
-
-GitHub repozitoriyni ulang. Railway `Procfile` ni o'zi topadi.
-
-**PostgreSQL qo'shing** — Railway `DATABASE_URL` ni avtomatik to'ldiradi.
-
-### 2. Variables bo'limiga qo'ying
-
-```
-SECRET_KEY=<uzun tasodifiy satr>
-DEBUG=False
-MOYSKLAD_TOKEN=<token>
-MOYSKLAD_RETAIL_CUSTOMER_ID=<«Розничный покупатель» kontragentining ID'si>
-MARKET_NAME=Sevimli Market
-RECEIPT_WIDTH=48
-```
-
-> ⚠️ **Token haqida muhim ogohlantirish**
->
-> MoySklad'da yangi token yaratilganda, **o'sha foydalanuvchining** eski
-> tokenlari bekor qilinadi. Bekor qilish akkaunt darajasida emas,
-> foydalanuvchi darajasida.
->
-> Shuning uchun bu loyiha uchun **alohida MoySklad foydalanuvchisi** yarating
-> (masalan `kassa-integration`), unga administrator huquqini bering va
-> **o'sha foydalanuvchining** tokenini ishlating.
->
-> Jamlov (TZD) boshqa foydalanuvchining tokeni bilan ishlaydi — shunda
-> ular bir-biriga xalaqit bermaydi.
->
-> Buni **savdo kam bo'lgan vaqtda** qiling va darhol Jamlov ishlayotganini
-> tekshiring.
-
-### 3. Ulanishni tekshiring
-
-```bash
-python manage.py sync_catalog --check
-```
-
-Ko'rsatadi: foydalanuvchi kim, administratormi, limit qancha.
-
-Agar limit **45 dan kam** chiqsa — bu foydalanuvchi tokeni.
-«Приватное решение» tokeni bilan 45 bo'ladi.
-
-### 4. Birinchi to'liq yuklash
-
-```bash
-python manage.py migrate
-python manage.py sync_catalog --full
-```
-
-Katalog hajmiga qarab bir necha daqiqa oladi.
-
-### 5. Muntazam sinxronizatsiya
-
-Railway'da cron sifatida sozlang:
-
-| Buyruq | Davri |
-|---|---|
-| `python manage.py sync_catalog --only stock` | 3 daqiqa |
-| `python manage.py sync_catalog --only products` | 10 daqiqa |
-| `python manage.py sync_catalog --only customers` | 15 daqiqa |
-| `python manage.py sync_catalog --only folders` | 60 daqiqa |
-| `python manage.py sync_sales` | 2 daqiqa |
-
-### 6. Smena cheki
-
-```bash
-python manage.py shift_receipt                              # ochiq smenalar
-python manage.py shift_receipt --shift 3                    # oraliq hisobot
-python manage.py shift_receipt --shift 3 --close --counted 626000
-```
-
-`--counted` — kassir sanagan naqd pul, **so'mda**.
-
-### Sinab ko'rish uchun
-
-```bash
-python manage.py seed_demo          # o'ylab topilgan smena yaratadi
-python manage.py shift_receipt      # chek qanday chiqishini ko'rasiz
-```
-
-`seed_demo` MoySklad'ga tegmaydi va undan o'qimaydi. Ishlab chiqarish
-bazasida ishlatmang.
 
 ---
 
 ## Muhim texnik qarorlar
 
-**Narxlar tiyinlarda saqlanadi** (`BigIntegerField`), `float` emas.
-Pul hisobida yaxlitlash xatosi bo'lmasligi kerak. MoySklad ham tiyinda beradi.
+**Narxlar tiyinlarda** (`BigIntegerField`), `float` emas — yaxlitlash xatosi
+bo'lmasin. MoySklad ham tiyinda beradi.
 
-**Klient bir vaqtda bitta so'rov yuboradi.** MoySklad'da parallel so'rovlar
-limiti ham bor (xato 1073). Ehtiyotkorlik tezlikdan muhimroq.
+**Bir savdo ikki marta yozilmaydi.** Har chekning `local_uuid` si bor —
+kassaga `syncId`, MoySklad'ga `syncId`. Natijasi noma'lum xatoda avval
+`syncId` bo'yicha qidiriladi, keyin yoziladi. Yozilgach summa tekshiriladi
+(farq bo'lsa `stuck`, panelda ko'rinadi).
 
-**429 dan oldin sekinlashadi.** Agar bir soat ichida daqiqasiga 200 dan
-ortiq 429 bo'lsa, MoySklad API'ni **butunlay o'chiradi** va qayta yoqish
-uchun support kerak bo'ladi. Shuning uchun klient limit tugashiga
-yaqinlashganda o'zi sekinlashadi.
+**Kassa oflayn ishlaydi.** Chek avval kassa diskiga, keyin serverga.
+Internet qaytganda navbat o'zi bo'shaydi. Yangilanishdan keyin kassa o'sha
+smena va ekranga qaytadi.
 
-**Bir xil xato takrorlanmaydi.** Qayta urinish faqat 429 va 5xx uchun.
-Boshqa xatolarda darhol uziladi — chunki bir xil xatoli so'rovni takrorlash
-ham API o'chirilishiga olib keladi.
+**MoySklad klienti ehtiyotkor.** Bir vaqtda bitta so'rov; 429 dan oldin
+sekinlashadi (limit tugashiga yaqin); bir xil xatoli so'rov takrorlanmaydi —
+aks holda MoySklad API'ni butunlay o'chirib qo'yadi.
 
-**Chek hech narsa hisoblamaydi.** `shared/receipt.py` faqat chizadi —
-hamma raqam tayyor holda keladi. Sabab: bitta summa ikki joyda hisoblansa,
-ertami-kechmi ikki xil chiqadi. Chek to'lovlar yig'indisi sof savdoga
-teng emasligini sezsa — buni yashirmaydi, chekda katta harflar bilan yozadi.
+**Sinov savdoga ta'sir qilmaydi.** `selftest` hujjatlari «проведён»
+qilinmaydi, nomi `SINOV-…`, yozilgan zahoti o'chiriladi, faqat navbat bo'sh
+paytda ishlaydi. O'chmay qolgani keyingi sinovda tozalanadi.
 
-Tekshirish: `python -m shared.test_receipt`
+**Kassani o'chirish = arxiv.** Smenalar, cheklar, Z-hisobotlar kassaga
+bog'langan — yo'qotib bo'lmaydi. Arxivdan qaytarish mumkin.
 
-**Panel iframe'da ishlaydi.** MoySklad moderatsiyasi sozlashni o'z
-interfeysi ichida talab qilishi mumkin. `FrameAncestorsMiddleware` shunga
-tayyorlab qo'ygan — faqat MoySklad domenlariga ruxsat beradi.
+**To'lov turi o'chirilmaydi, yashiriladi** — eski cheklar buzilmasin.
 
----
+**Chek hech narsa hisoblamaydi.** `shared/receipt.py` faqat chizadi; hamma
+raqam tayyor keladi. Yig'indi mos kelmasa chekda katta harflar bilan yozadi.
 
-## Keyingi qadamlar
-
-1. MoySklad javobini kutish — `retaildemand` API orqali yozilsa ball va
-   nakopitelniy hisoblanadimi
-2. Dasturchi kabinetida черновик yaratish → `appId`, `secret key`
-3. Vendor API endpoint'lari
-4. Savdo yozish moduli
-5. POS ilovasi (PySide6)
+**Panel iframe'da ochilishi mumkin** (MoySklad ichida) —
+`FrameAncestorsMiddleware` faqat MoySklad domenlariga ruxsat beradi.

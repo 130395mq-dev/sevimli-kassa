@@ -41,6 +41,7 @@ from django.utils import timezone
 from catalog.models import Product, Stock
 from moysklad.client import MoySkladClient, MoySkladError
 
+from . import sender
 from .models import MoySkladCheck, PaymentMethod, Register, Sale
 from .writer import SaleWriter, WriteError
 
@@ -51,8 +52,11 @@ NAME_PREFIX = "SINOV-"
 AMOUNT_PER_METHOD = 10_00
 #: Bazada nechta oxirgi sinov saqlanadi
 KEEP_RUNS = 30
-#: Vaqti-vaqti bilan sinov oralig'i
+#: Vaqti-vaqti bilan sinov oralig'i — hammasi joyida bo'lsa
 PERIODIC_EVERY = timedelta(hours=3)
+#: Oxirgi sinov O'TMAGAN bo'lsa — tez-tez: odam MoySklad'ni tuzatgach,
+#: tizim buni tez sezib, tiqilganlarni o'zi qaytarsin
+PERIODIC_WHILE_FAILING = timedelta(minutes=30)
 
 # Bir vaqtda ikkita sinov yurmasin (panel tugmasi + sikl)
 _lock = threading.Lock()
@@ -150,9 +154,24 @@ class SelfTest:
             logger.exception("Sinov kutilmagan xato bilan to'xtadi")
             self._fail("Sinov", f"kutilmagan xato: {e}")
         finally:
+            ok = all(s.get("ok") for s in self.steps) and not self.leftovers
+            if ok:
+                # O'Z-O'ZINI DAVOLASH: MoySklad hozir hamma hujjatni qabul
+                # qilyapti — demak ilgari tiqilib qolgan cheklar ham o'tadi.
+                # Ularni navbatga qaytaramiz; odam tugma bosmaydi. Sinov
+                # 3 soatda bir o'tadi — bitta chek shundan tez-tez
+                # urinilmaydi, MoySklad bezovta bo'lmaydi.
+                try:
+                    n = sender.requeue_stuck()
+                except Exception as e:  # sinov natijasiga ta'sir qilmasin
+                    n = 0
+                    logger.warning("Tiqilganlarni qaytarib bo'lmadi: %s", e)
+                if n:
+                    logger.warning("Sinov o'tdi — %s ta tiqilgan chek navbatga qaytarildi", n)
+                    self._ok("Tiqilgan cheklar", f"{n} ta chek navbatga qaytarildi — bir daqiqada qayta yoziladi")
             check.steps = self.steps
             check.leftovers = self.leftovers
-            check.ok = all(s.get("ok") for s in self.steps) and not self.leftovers
+            check.ok = ok
             check.finished_at = timezone.now()
             check.save()
             _prune()
@@ -371,8 +390,12 @@ def run_selftest(trigger: str = MoySkladCheck.MANUAL, client: MoySkladClient | N
         _lock.release()
 
 
-def is_due(now=None, every: timedelta = PERIODIC_EVERY) -> bool:
-    """Navbatdagi vaqti-vaqti bilan sinov vaqti keldimi."""
+def is_due(now=None, every: timedelta | None = None) -> bool:
+    """Navbatdagi vaqti-vaqti bilan sinov vaqti keldimi.
+
+    Hammasi joyida — 3 soatda bir; oxirgisi o'tmagan bo'lsa — 30 daqiqada
+    bir (tuzalganini tez sezish uchun).
+    """
     now = now or timezone.now()
     last = MoySkladCheck.latest()
     if last is None:
@@ -380,4 +403,6 @@ def is_due(now=None, every: timedelta = PERIODIC_EVERY) -> bool:
     if last.finished_at is None:
         # Tugallanmagan yozuv (jarayon o'lgan bo'lsa) — 10 daqiqadan keyin qayta
         return now - last.started_at > timedelta(minutes=10)
+    if every is None:
+        every = PERIODIC_EVERY if last.ok else PERIODIC_WHILE_FAILING
     return now - last.started_at >= every

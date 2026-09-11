@@ -49,6 +49,7 @@ from sales.models import (
     SaleItem,
     Shift,
 )
+from sales import healer
 from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
@@ -312,6 +313,11 @@ def hello(request):
     st = reg.settings
 
     price_types, default_pt = _price_types_for(reg, st)
+
+    # O'z-o'zini davolash (zaxira yozuvchi / katalog) — kassa har 15
+    # soniyada keladi, demak server hech qachon «uxlamaydi». 60 soniyada
+    # bir marta, fon oqimida — bu so'rovni kutdirmaydi.
+    healer.tick()
 
     return JsonResponse(
         {

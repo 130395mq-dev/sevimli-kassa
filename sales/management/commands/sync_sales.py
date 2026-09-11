@@ -26,19 +26,17 @@ qo'yadi. Shoshilgandan ko'ra kutgan yaxshi.
 import json
 import signal
 import time
-from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
+from django.db.utils import ProgrammingError
 from django.utils import timezone
 
 from moysklad.client import MoySkladClient
-from sales import selftest
+from sales import healer, selftest, sender
 from sales.models import MoySkladCheck, Sale
-from sales.writer import SaleWriter, SumMismatch, WriteError
-
-BACKOFF_MINUTES = [1, 2, 4, 8, 15, 30, 60]
+from sales.writer import SaleWriter, WriteError
 
 #: `--loop` da ikki heartbeat oralig'i (navbat bo'sh bo'lsa ham shu
 #: oraliqда bir marta «tirikman» belgisi log'ga chiqadi).
@@ -105,6 +103,9 @@ class Command(BaseCommand):
         self.stdout.flush()
 
         last_beat = 0.0
+        # Yurak urishi bazaga ham yoziladi (SyncState «writer»): panel
+        # serveri shundan bu xizmat tirikligini biladi; 3 daqiqa jim qolsak
+        # u cheklarni o'zi yoza boshlaydi (sales/healer.py — zaxira yo'l).
         # MoySklad o'z-o'zini tekshirish: xizmat ishga tushganda (deploy)
         # bir marta, keyin har 3 soatda. FAQAT navbat bo'sh bo'lganda —
         # haqiqiy cheklar har doim birinchi (sales/selftest.py).
@@ -122,8 +123,15 @@ class Command(BaseCommand):
             try:
                 if self.queue_empty() and (first_selftest or selftest.is_due()):
                     trigger = MoySkladCheck.DEPLOY if first_selftest else MoySkladCheck.PERIODIC
-                    first_selftest = False
                     self.selftest(trigger)
+                    first_selftest = False
+            except ProgrammingError:
+                # Deploy paytida bu xizmat hub'dan OLDIN ishga tushishi mumkin —
+                # yangi jadval (migratsiya) hali yaratilmagan. Bu xato emas:
+                # 20 soniyadan keyin yana urinamiz, «deploy» sinovi o'sha
+                # paytda bo'ladi.
+                self.stdout.write("Sinov: baza hali tayyor emas (migratsiya ketmoqda) — kutamiz.")
+                self.stdout.flush()
             except Exception as e:  # pragma: no cover - himoya
                 self.stderr.write(self.style.ERROR(f"Sinov xatosi: {e}"))
                 self.stderr.flush()
@@ -136,6 +144,10 @@ class Command(BaseCommand):
                 )
                 self.stdout.flush()
                 last_beat = now
+                try:
+                    healer.writer_heartbeat()
+                except Exception as e:  # pragma: no cover - himoya
+                    self.stderr.write(self.style.WARNING(f"Yurak urishi yozilmadi: {e}"))
 
             # Uyquni bo'laklab uxlaymiz — signal kelsa tez uyg'onish uchun.
             slept = 0
@@ -174,15 +186,7 @@ class Command(BaseCommand):
 
     def run_once(self, o, quiet_when_empty=False):
         now = timezone.now()
-        queue = (
-            Sale.objects.filter(
-                sync_status__in=[Sale.NEW, Sale.FAILED]
-            )
-            .filter(models_q(now))
-            .select_related("shift__register__store", "customer")
-            .order_by("created_at")[: o["limit"]]
-        )
-        queue = list(queue)
+        queue = sender.due_queue(now, o["limit"])
 
         if not queue:
             if not quiet_when_empty:
@@ -196,35 +200,14 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("MOYSKLAD_TOKEN sozlanmagan"))
             return
 
-        client = MoySkladClient(token=settings.MOYSKLAD_TOKEN)
-        writer = SaleWriter(client)
-
-        sent = failed = 0
-        for sale in queue:
-            try:
-                writer.send(sale)
-            except SumMismatch as e:
-                # Hujjat yozildi, lekin raqam mos kelmadi. Qayta yuborish
-                # yordam bermaydi — odam ko'rishi kerak.
-                self.mark_stuck(sale, str(e))
-                failed += 1
-                self.stderr.write(self.style.ERROR(f"  ✗ {sale} — {e}"))
-            except WriteError as e:
-                self.mark_failed(sale, str(e))
-                failed += 1
-                self.stderr.write(self.style.WARNING(f"  ! {sale} — {e}"))
-            else:
-                sale.sync_status = Sale.SENT
-                sale.synced_at = timezone.now()
-                sale.sync_error = ""
-                sale.next_attempt_at = None
-                sale.save(update_fields=[
-                    "sync_status", "synced_at", "sync_error", "next_attempt_at"
-                ])
-                sent += 1
+        writer = SaleWriter(MoySkladClient(token=settings.MOYSKLAD_TOKEN))
+        result = sender.send_due(limit=o["limit"], writer=writer, now=now)
+        for sale, err in result["errors"]:
+            self.stderr.write(self.style.WARNING(f"  ! {sale} — {err}"))
 
         self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS(f"Yuborildi: {sent}"))
+        self.stdout.write(self.style.SUCCESS(f"Yuborildi: {result['sent']}"))
+        failed = result["failed"] + result["stuck"]
         if failed:
             self.stdout.write(self.style.WARNING(f"Xato: {failed}"))
         self.stdout.flush()
@@ -255,33 +238,6 @@ class Command(BaseCommand):
             )
         )
 
-    def mark_failed(self, sale, error):
-        sale.sync_attempts += 1
-        sale.sync_error = error[:2000]
-
-        if sale.sync_attempts >= settings.SYNC_MAX_ATTEMPTS:
-            sale.sync_status = Sale.STUCK
-            sale.next_attempt_at = None
-        else:
-            sale.sync_status = Sale.FAILED
-            idx = min(sale.sync_attempts - 1, len(BACKOFF_MINUTES) - 1)
-            sale.next_attempt_at = timezone.now() + timedelta(
-                minutes=BACKOFF_MINUTES[idx]
-            )
-
-        sale.save(update_fields=[
-            "sync_attempts", "sync_error", "sync_status", "next_attempt_at"
-        ])
-
-    def mark_stuck(self, sale, error):
-        sale.sync_attempts += 1
-        sale.sync_error = error[:2000]
-        sale.sync_status = Sale.STUCK
-        sale.next_attempt_at = None
-        sale.save(update_fields=[
-            "sync_attempts", "sync_error", "sync_status", "next_attempt_at"
-        ])
-
     def show_stuck(self):
         rows = Sale.objects.filter(sync_status=Sale.STUCK).select_related("shift")
         if not rows:
@@ -294,14 +250,5 @@ class Command(BaseCommand):
             self.stdout.write(f"      {s.sync_error[:200]}")
 
     def retry_stuck(self):
-        n = Sale.objects.filter(sync_status=Sale.STUCK).update(
-            sync_status=Sale.NEW, sync_attempts=0, next_attempt_at=None
-        )
+        n = sender.requeue_stuck()
         self.stdout.write(self.style.SUCCESS(f"{n} ta chek navbatga qaytarildi."))
-
-
-def models_q(now):
-    """Vaqti kelgan cheklar: yangi, yoki kutish muddati o'tgan."""
-    from django.db.models import Q
-
-    return Q(next_attempt_at__isnull=True) | Q(next_attempt_at__lte=now)

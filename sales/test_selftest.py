@@ -45,6 +45,12 @@ class FakeMoySklad:
             return {"rows": [{"id": "cc000000-0000-0000-0000-000000000001", "name": "Розничный покупатель"}]}
         return {"rows": []}  # syncId bo'yicha qidiruv — hech narsa yo'q
 
+    @staticmethod
+    def doc_id(entity, n):
+        """Haqiqiy UUID (Sale.ms_demand_id UUIDField) — lekin taxmin qilsa bo'ladigan."""
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{entity}-{n}"))
+
     def post(self, path, payload):
         entity = path.split("/")[-1]
         if entity in self.reject:
@@ -52,7 +58,7 @@ class FakeMoySklad:
             raise MoySkladError(412, message=self.reject[entity])
         self._n += 1
         self.created.append((entity, payload))
-        doc = {"id": f"{entity}-{self._n}", "syncId": payload.get("syncId")}
+        doc = {"id": self.doc_id(entity, self._n), "syncId": payload.get("syncId")}
         if entity in ("demand", "salesreturn"):
             doc["sum"] = sum(round(p["price"] * p["quantity"]) for p in payload["positions"])
         return doc
@@ -119,7 +125,7 @@ class SelfTestRunTest(SelfTestBase):
     def test_hujjatlar_ochiriladi(self):
         ms = FakeMoySklad()
         check = SelfTest(ms).run()
-        created_ids = {f"{e}-{i + 1}" for i, (e, _) in enumerate(ms.created)}
+        created_ids = {ms.doc_id(e, i + 1) for i, (e, _) in enumerate(ms.created)}
         self.assertEqual(set(ms.deleted), created_ids)
         self.assertTrue(check.ok)
 
@@ -167,7 +173,7 @@ class SelfTestRunTest(SelfTestBase):
         ms2 = FakeMoySklad()
         check2 = SelfTest(ms2).run()
         self.assertTrue(check2.ok, check2.steps)
-        self.assertIn("demand-1", ms2.deleted)
+        self.assertIn(FakeMoySklad.doc_id("demand", 1), ms2.deleted)
         self.assertTrue(any(s["name"] == "Eski sinov hujjatlari" and s["ok"] for s in check2.steps))
         # Eski yozuvdan ham tozalandi
         self.assertEqual(MoySkladCheck.objects.exclude(leftovers=[]).count(), 0)
