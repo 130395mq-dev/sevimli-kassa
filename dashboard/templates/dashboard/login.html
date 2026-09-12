@@ -7,12 +7,13 @@
   <style>
     body {
       margin: 0; min-height: 100vh; display: flex; align-items: center;
-      justify-content: center; background: #F7F6F3; color: #1C1517;
-      font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+      justify-content: center; background: #F3F5F4; color: #172D25;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     }
     .box {
       background: #fff; border: 1px solid #E2E0DA; border-radius: 14px;
-      padding: 34px 32px; width: 340px;
+      padding: 40px 36px; width: min(380px, calc(100vw - 80px));
+      box-shadow: 0 16px 60px rgba(16,61,50,.07);
     }
     h1 { font-size: 20px; margin: 0 0 4px; }
     .sub { color: #6B7672; font-size: 14px; margin-bottom: 22px; }
@@ -20,10 +21,10 @@
     input {
       width: 100%; box-sizing: border-box; border: 1px solid #CFCEC6;
       border-radius: 9px; padding: 11px 13px; font-size: 15px;
-      margin-bottom: 15px; font-family: inherit; background: #FBFAF7;
+      margin-bottom: 15px; font-family: inherit; background: #F7F9F8;
     }
     button {
-      width: 100%; background: #8E1F2F; color: #fff; border: none;
+      width: 100%; background: #18724F; color: #fff; border: none;
       border-radius: 9px; padding: 13px; font-size: 16px; font-weight: 700;
       cursor: pointer; font-family: inherit;
     }
@@ -38,24 +39,24 @@
 <body>
   <form class="box" method="post">
     {% csrf_token %}
-    <h1>Sevimli Kassa</h1>
+    <h1 style="color:#103D32;font-size:28px;letter-spacing:2px">SEVIMLI</h1>
     <div class="sub">Boshqaruv paneli</div>
 
     {% if form.errors %}
       <div class="err">Login yoki parol noto'g'ri</div>
     {% endif %}
 
-    <label>Login</label>
-    <input name="username" autofocus autocomplete="username">
+    <label for="username">Login</label>
+    <input id="username" required name="username" autofocus autocomplete="username">
 
-    <label>Parol</label>
-    <input name="password" type="password" autocomplete="current-password">
+    <label for="password">Parol</label>
+    <input id="password" required name="password" type="password" autocomplete="current-password">
 
     <button type="submit">Kirish</button>
 
     <div class="note">
       Bu panel — do'kon egasi va buxgalter uchun.
-      Kassirlar bu yerga kirmaydi, ular kassa ilovasiga PIN bilan kiradi.
+      Kassirlar bu yerga kirmaydi, ular kassa ilovasiga login va parol bilan kiradi.
     </div>
   </form>
 </body>

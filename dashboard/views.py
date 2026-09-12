@@ -53,7 +53,20 @@ def _free_login(base: str) -> str:
 
 def health(request):
     """Railway va monitoring uchun — tez va yengil."""
-    return JsonResponse({"status": "ok"})
+    import os
+    from django.db import connection, DatabaseError
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except DatabaseError:
+        return JsonResponse({"status": "unavailable"}, status=503)
+    response = JsonResponse({
+        "status": "ok",
+        "release": "sevimli-refresh-20260912",
+        "revision": os.environ.get("RAILWAY_GIT_COMMIT_SHA", ""),
+    })
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @login_required

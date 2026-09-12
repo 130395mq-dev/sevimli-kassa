@@ -1,7 +1,59 @@
 {% extends "admin/base.html" %}
-{#
-  Django admin — STANDART ko'rinishda qoladi.
-
-  Bu fayl ataylab bo'sh: hech qanday blok o'zgartirilmaydi, shuning uchun
-  admin Django'ning o'z ko'rinishida (o'zgarishsiz) ishlaydi.
-#}
+{% block title %}{{ title }} | SEVIMLI{% endblock %}
+{% block branding %}<div id="site-name"><a href="{% url 'admin:index' %}">SEVIMLI</a><span class="brand-sub">Boshqaruv</span></div>{% endblock %}
+{% block extrastyle %}{{ block.super }}
+<style>
+:root, html[data-theme="light"], html[data-theme="dark"] {
+  --primary: #18724F; --secondary: #103D32; --accent: #FFFFFF;
+  --primary-fg: #FFFFFF; --body-fg: #172D25; --body-bg: #F3F5F4;
+  --body-quiet-color: #63776D; --body-loud-color: #103D32;
+  --header-color: #FFFFFF; --header-branding-color: #FFFFFF;
+  --header-bg: #103D32; --header-link-color: #D5E8DD;
+  --breadcrumbs-fg: #63776D; --breadcrumbs-link-fg: #18724F; --breadcrumbs-bg: #FFFFFF;
+  --link-fg: #18724F; --link-hover-color: #10593C; --link-selected-fg: #10593C;
+  --hairline-color: #DFE7E2; --border-color: #DFE7E2;
+  --darkened-bg: #F0F4F2; --selected-bg: #E8F4ED; --selected-row: #E8F4ED;
+  --button-fg: #FFFFFF; --button-bg: #18724F; --button-hover-bg: #10593C;
+  --default-button-bg: #103D32; --default-button-hover-bg: #18724F;
+  --close-button-bg: #63776D; --close-button-hover-bg: #405B4D;
+  --delete-button-bg: #BD3C3C; --delete-button-hover-bg: #963030;
+  --message-success-bg: #E8F4ED; --message-warning-bg: #FFF4DF;
+  --message-error-bg: #FDEDED; --error-fg: #BD3C3C;
+  color-scheme: light;
+}
+body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; }
+#header { min-height: 52px; padding: 18px 28px; box-sizing: content-box; }
+#site-name { font-size: 25px; font-weight: 750; letter-spacing: 2px; display: flex; align-items: center; gap: 18px; }
+.brand-sub { font-size: 12px; letter-spacing: .5px; color: #C5DFD0; font-weight: 400; }
+div.breadcrumbs { padding: 16px 28px; border-bottom: 1px solid var(--border-color); }
+#content { padding: 30px; }
+#content h1 { font-size: 27px; font-weight: 650; margin-bottom: 26px; }
+.module, #changelist, .submit-row { border: 1px solid var(--border-color); border-radius: 14px;
+  background: #FFFFFF; box-shadow: 0 4px 20px rgba(16,61,50,.04); overflow: hidden; }
+.module { margin-bottom: 22px; }
+.module h2, .module caption, .inline-group h2 { background: #E8F4ED; color: #103D32; padding: 16px 20px; }
+.module caption a.section { color: #103D32; font-weight: 650; }
+th, td { padding: 13px 18px; }
+thead th { background: #F7F9F8; }
+#changelist #toolbar { padding: 18px; background: #FFFFFF; }
+#changelist-filter { background: #FFFFFF; border-left: 1px solid var(--border-color); }
+#changelist-filter h2 { background: #E8F4ED; color: #103D32; padding: 16px; }
+#nav-sidebar { background: #FFFFFF; padding: 12px; border-right: 1px solid var(--border-color); }
+#nav-sidebar .module { border: 0; box-shadow: none; border-radius: 8px; }
+#nav-sidebar th, #nav-sidebar td { padding: 10px; }
+#nav-sidebar .current-model { background: #E8F4ED; }
+input, textarea, select { padding: 10px 12px; border-radius: 8px !important; border: 1px solid #BDCEC3; }
+input:focus, textarea:focus, select:focus { outline: 2px solid #18724F; outline-offset: 2px; }
+input[type=checkbox], input[type=radio] { min-height: auto; }
+.button, input[type=submit], input[type=button], .submit-row input, button {
+  border-radius: 8px; padding: 11px 18px; font-weight: 600; }
+.object-tools a { border-radius: 8px; padding: 11px 16px; }
+.form-row { padding: 16px 20px; }
+.submit-row { padding: 18px 22px; }
+.login #container { border-radius: 18px; overflow: hidden; border-color: #DFE7E2; box-shadow: 0 18px 60px rgba(16,61,50,.09); }
+.login #header { padding: 22px; }
+.login #content { padding: 26px; }
+@media(max-width: 767px) { #content {padding: 16px;} #header {padding: 16px;}
+  #site-name {font-size: 21px;} .brand-sub {display:none;} }
+</style>
+{% endblock %}
