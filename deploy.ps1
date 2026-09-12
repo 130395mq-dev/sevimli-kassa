@@ -6,17 +6,20 @@ if (-not (Test-Path (Join-Path $dir 'manage.py'))) {
 }
 Set-Location $dir
 
-# 1. Git bor-yoqligini tekshiramiz, bolmasa vaqtincha yuklab olamiz
+# 1. Git bor-yoqligini tekshiramiz, bolmasa vaqtincha yuklab olamiz.
+#    PortableGit REPO PAPKASIGA EMAS — C:\Sevimli\PortableGit ga olinadi
+#    (aks holda 400 MB git fayllari GitHub'ga ketib qoladi).
 $git = 'git'
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    $pg = Join-Path $dir 'PortableGit'
+    $pg = 'C:\Sevimli\PortableGit'
     $gitexe = Join-Path $pg 'bin\git.exe'
     if (-not (Test-Path $gitexe)) {
         try {
+            New-Item -ItemType Directory -Force -Path (Split-Path $pg) | Out-Null
             Write-Host 'Git yuklab olinmoqda (~50 MB), kuting...' -ForegroundColor Yellow
             $rel = Invoke-RestMethod 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'sevimli' }
             $asset = $rel.assets | Where-Object { $_.name -match 'PortableGit-.*-64-bit\.7z\.exe$' } | Select-Object -First 1
-            $out = Join-Path $dir 'pgit.exe'
+            $out = Join-Path (Split-Path $pg) 'pgit.exe'
             Invoke-WebRequest $asset.browser_download_url -OutFile $out
             Write-Host 'Ochilmoqda...' -ForegroundColor Yellow
             Start-Process -FilePath $out -ArgumentList "-o`"$pg`"", '-y' -Wait -NoNewWindow
@@ -37,6 +40,7 @@ Write-Host ('Git: ' + (& $git --version))
 if (-not (Test-Path '.git')) { & $git init 2>&1 | Out-Null }
 & $git config user.email 'deploy@sevimli.uz' 2>&1 | Out-Null
 & $git config user.name 'Sevimli Deploy' 2>&1 | Out-Null
+& $git rm -r -q --cached PortableGit 2>&1 | Out-Null   # eski nusxa repo'dan chiqsin
 & $git add -A 2>&1 | Out-Null
 & $git commit -m 'Sevimli Kassa server' 2>&1 | Out-Null
 & $git branch -M main 2>&1 | Out-Null

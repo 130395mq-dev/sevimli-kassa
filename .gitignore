@@ -6,3 +6,8 @@ db.sqlite3-*
 staticfiles/
 .env
 *.log
+
+# Yuklash skriptlarining vaqtinchaliklari — repo'ga tushmasin
+PortableGit/
+pgit.exe
+*.lock

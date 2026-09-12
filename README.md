@@ -56,6 +56,12 @@ Chek kelganda API uni **darhol** fon oqimida MoySklad'ga yozadi
 Deploy: `SERVERNI-YUKLASH.bat` (GitHub'ga push) → Railway 2–3 daqiqada
 o'zi qayta o'rnatadi. Health check: `/health/`.
 
+Avto yo'l: egasining kompyuterida `C:\Sevimli\server` papkasi (shu repo)
+har 5 daqiqada `sevimli-kassa-pos` dagi `tools/avto_yuklash.ps1` orqali
+GitHub bilan ikki tomonlama sinxronlanadi (fetch + rebase, keyin push,
+`--force` yo'q). `PortableGit/` va `pgit.exe` `.gitignore` da — git'ning
+o'zi (~400 MB) repo'ga tushmasligi kerak.
+
 ---
 
 ## Muhit o'zgaruvchilari (Railway → Variables)
