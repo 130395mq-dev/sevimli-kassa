@@ -57,6 +57,8 @@ from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
 
+from . import pricing, session_security
+
 from .auth import (
     error,
     make_session_token,
@@ -190,6 +192,9 @@ def login(request):
         if not cashier or not cashier.check_password(secret):
             return error("Login yoki parol noto'g'ri", status=401)
         Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
+        allowed = reg.settings.allowed_cashiers
+        if allowed.exists() and not allowed.filter(pk=cashier.pk).exists():
+            return error("Bu kassaga kirishga ruxsat yo'q", status=403)
         who = _cashier_json(cashier)
 
     return _start_session(request, reg, who)
@@ -197,7 +202,7 @@ def login(request):
 
 def _own_cashier(reg) -> dict:
     """Kassaning o'z logini bilan kirgan odam — «kassir» sifatida."""
-    return {"id": 0, "name": reg.name, "login": reg.login, "is_manager": True}
+    return {"id": 0, "name": reg.name, "login": reg.login, "is_manager": False}
 
 
 def _cashier_json(cashier) -> dict:
@@ -228,7 +233,7 @@ def _start_session(request, reg, who: dict):
     return JsonResponse({
         "cashier": who,
         # Manager-only amallar uchun imzolangan token (mijoz yasay olmaydi)
-        "session": make_session_token(who["id"], who["is_manager"]),
+        "session": session_security.issue(request, who),
     })
 
 
@@ -246,10 +251,16 @@ def session_resume(request):
     """
     reg = request.register
     data = body(request)
+    proof = session_security.verify(request)
+    if not proof:
+        return error("Sessiya tugagan. Login va parol bilan qayta kiring.", status=401)
     try:
         cashier_id = int(data.get("cashier_id") or 0)
     except (TypeError, ValueError):
         cashier_id = 0
+
+    if cashier_id != proof["cashier_id"]:
+        return error("Sessiya boshqa kassirga tegishli", status=401)
 
     if cashier_id == 0:
         if not reg.login:
@@ -283,9 +294,14 @@ def _session_json(request, reg) -> dict:
     haftalab «Chiqish» bosmasa ham menejer amallari ishlayveradi).
     """
     device, _ = sessions.device_of(request)
-    minfo = verify_session_token((request.headers.get("X-Session") or "").strip())
+    minfo = session_security.verify(request)
     out: dict = {"mine": None, "holder": ""}
     if not device:
+        return out
+    if not minfo and request.headers.get("X-Session"):
+        out = sessions.state_for(reg, device)
+        if out.get("mine") is not False:
+            out = {"mine": False, "holder": "", "message": "Sessiya tugagan. Qayta kiring."}
         return out
     if minfo:
         sessions.touch(reg, device)
@@ -295,7 +311,7 @@ def _session_json(request, reg) -> dict:
             login = c.login if c else ""
         out = sessions.state_for(reg, device, login)
         if out.get("mine"):
-            out["session"] = make_session_token(minfo["cashier_id"], minfo["is_manager"])
+            out["session"] = session_security.issue(request, {"id": minfo["cashier_id"]})
     return out
 
 
@@ -386,7 +402,7 @@ def _price_types_for(reg, st) -> tuple[list[dict], str]:
         for r in rows:
             if r["name"].strip().lower() == wanted:
                 return rows, r["id"]
-    store_pt = str(reg.store.price_type_ms_id or "").lower()
+    store_pt = str(reg.store.price_type_ms_id or "").lower() if reg.store else ""
     if store_pt and any(r["id"] == store_pt for r in rows):
         return rows, store_pt
     for r in rows:
@@ -545,6 +561,7 @@ def catalog(request):
     Kassa birinchi marta hammasini oladi, keyin faqat farqni. Katalog
     katta bo'lgani uchun sahifalab beriladi.
     """
+    snapshot_time = timezone.now().isoformat()
     since = request.GET.get("since")
     dt = parse_datetime(since) if since else None
 
@@ -595,12 +612,13 @@ def catalog(request):
                     "barcodes": all_codes.get(p.pk, []),
                     "stock": float(stock.get(p.pk, 0)),
                     "prices": p.prices or {},
+                    "price_quote": pricing.quote(p, request.register),
                     "archived": p.archived,
                 }
                 for p in rows
             ],
             "next_after": rows[-1].pk if len(rows) == PAGE_SIZE else None,
-            "server_time": timezone.now().isoformat(),
+            "server_time": snapshot_time,
         }
     )
 
@@ -982,13 +1000,33 @@ def create_sale(request):
 
     existing = Sale.objects.filter(local_uuid=local_uuid).first()
     if existing:
+        if existing.shift.register_id != reg.pk:
+            return error("Chek boshqa kassaga tegishli", status=409)
         return JsonResponse(
             {"id": existing.pk, "number": existing.number, "duplicate": True}
         )
 
-    shift = reg.shifts.filter(status=Shift.OPEN).first()
+    # Bind every receipt to the shift in which it was actually created.
+    shift_id = data.get("shift_id")
+    shift_uuid = data.get("shift_local_uuid")
+    if shift_id:
+        shift = reg.shifts.filter(pk=shift_id).first()
+    elif shift_uuid:
+        shift = reg.shifts.filter(local_uuid=shift_uuid).first()
+    else:
+        # Older POS versions: match the original timestamp, never today's
+        # open shift for a receipt created in an earlier shift.
+        created = parse_datetime(data.get("created_at") or "")
+        if created and timezone.is_naive(created):
+            created = timezone.make_aware(created)
+        candidates = reg.shifts.filter(opened_at__lte=created).order_by("-opened_at") if created else reg.shifts.none()
+        shift = candidates.first()
+        if shift and shift.closed_at and created > shift.closed_at:
+            shift = None
     if not shift:
-        return error("Ochiq smena yo'q", status=409)
+        return error("Chekning asl smenasi topilmadi", status=409)
+    if shift.status != Shift.OPEN:
+        return error("Asl smena yopilgan. Chekni panel orqali tekshiring.", status=409)
 
     items = data.get("items") or []
     if not items:
@@ -1000,7 +1038,7 @@ def create_sale(request):
 
     # Menejer huquqi (chegirma chegarasini oshirishga ruxsat) — imzolangan
     # X-Session tokeni bilan. Mijozning «men managerman» so'ziga ISHONMAYMIZ.
-    minfo = verify_session_token((request.headers.get("X-Session") or "").strip())
+    minfo = session_security.verify(request)
     manager_ok = bool(minfo and minfo.get("is_manager"))
 
     try:
@@ -1012,6 +1050,8 @@ def create_sale(request):
         # Ikkinchisiga o'shaning javobini qaytaramiz (idempotent, xato emas).
         existing = Sale.objects.filter(local_uuid=local_uuid).first()
         if existing:
+            if existing.shift.register_id != reg.pk:
+                return error("Chek boshqa kassaga tegishli", status=409)
             return JsonResponse(
                 {"id": existing.pk, "number": existing.number, "duplicate": True}
             )
@@ -1024,6 +1064,8 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
     # (parallel kassa yoki qayta yuborish) bir xil tartib raqamini olmasin.
     # PostgreSQL'da bu row-lock; SQLite testida e'tiborsiz, lekin zararsiz.
     shift = Shift.objects.select_for_update().get(pk=shift.pk)
+    if shift.status != Shift.OPEN:
+        raise ValueError("Asl smena yopilgan")
 
     kind = data.get("kind") or Sale.SALE
     if kind not in (Sale.SALE, Sale.RETURN):
@@ -1044,6 +1086,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
     # summaga ko'r-ko'rona ishonmaymiz: har qatorda `total` narx×miqdordan
     # (brutto) oshmasligi (chegirma faqat kamaytiradi) va manfiy bo'lmasligi
     # shart. Bu — soxta (shishirilgan yoki manfiy) summani bloklaydi.
+    allowed_types, default_type = _price_types_for(shift.register, rs)
     lines = []
     lines_total = 0
     gross_sum = 0
@@ -1052,7 +1095,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
             qty = Decimal(str(raw.get("quantity", "1")))
         except (InvalidOperation, TypeError):
             raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
-        if qty <= 0:
+        if not qty.is_finite() or qty <= 0:
             raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
 
         price = int(raw.get("price") or 0)
@@ -1082,17 +1125,9 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
                     f"(eng ko'p {max_discount}%)"
                 )
 
-        # Soft signal: mijoz narxi katalogdagidan past bo'lsa — log qilamiz
-        # (offline narx eskirishi qonuniy bo'lishi mumkin, rad etmaymiz).
-        pid = raw.get("product_id")
-        if pid:
-            cat = (Product.objects.filter(pk=pid)
-                   .values_list("sale_price", flat=True).first())
-            if cat and price < int(cat):
-                logger.warning(
-                    "Narx katalogdan past: kassa=%s tovar=%s narx=%s katalog=%s",
-                    shift.register_id, pid, price, cat,
-                )
+        if kind == Sale.SALE:
+            pricing.validate(raw, shift.register, allowed_types, default_type,
+                             data.get("price_type_id") or "")
 
         lines_total += total
         gross_sum += gross_line

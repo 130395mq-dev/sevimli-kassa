@@ -66,6 +66,7 @@ def acquire(login: str, register: Register, device: str, device_name: str = "",
         return None
     now = timezone.now()
     with transaction.atomic():
+        Register.objects.select_for_update().get(pk=register.pk)
         row = (KassaSession.objects.select_for_update()
                .select_related("register").filter(login=login).first())
         if row and row.device != device and row.alive(now):

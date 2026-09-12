@@ -125,31 +125,32 @@ class LoginExclusiveTest(SessionBase):
 
 class ResumeTest(SessionBase):
     def test_parolsiz_davom_etish(self):
-        self.login(PC1)
-        r = self.call("/api/v1/session/resume", {"cashier_id": 0}, PC1)
+        token = self.login(PC1).json()["session"]
+        r = self.call("/api/v1/session/resume", {"cashier_id": 0}, PC1, token)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["cashier"]["login"], "kassa1")
-        self.assertTrue(verify_session_token(r.json()["session"])["is_manager"])
+        self.assertFalse(r.json()["cashier"]["is_manager"])
 
-    def test_bosh_kompyuter_ham_davom_eta_oladi(self):
-        """Server qayta o'rnatilib sessiya jadvali bo'sh bo'lsa ham kassa
-        (tokeni bor) parolsiz davom etadi — kassir qayta login qilmaydi."""
+    def test_bosh_kompyuter_davom_eta_olmaydi(self):
         r = self.call("/api/v1/session/resume", {"cashier_id": 0}, PC1)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-1111")
-
-    def test_boshqa_kompyuter_olib_qoygan_bolsa_409(self):
-        self.login(PC2)
-        r = self.call("/api/v1/session/resume", {"cashier_id": 0}, PC1)
-        self.assertEqual(r.status_code, 409)
-        self.assertIn("OMBOR-PC", r.json()["error"])
-
-    def test_ochirilgan_kassir_davom_eta_olmaydi(self):
-        c = Cashier(name="N", login="n", active=False)
-        c.set_pin("1")
-        c.save()
-        r = self.call("/api/v1/session/resume", {"cashier_id": c.pk}, PC1)
         self.assertEqual(r.status_code, 401)
+        self.assertFalse(KassaSession.objects.exists())
+
+    def test_boshqa_qurilmada_token_ishlamaydi(self):
+        token = self.login(PC1).json()["session"]
+        r = self.call("/api/v1/session/resume", {"cashier_id": 0}, PC2, token)
+        self.assertEqual(r.status_code, 401)
+
+    def test_logout_tokenni_bekor_qiladi(self):
+        token = self.login(PC1).json()["session"]
+        self.call("/api/v1/logout", {}, PC1)
+        self.assertEqual(self.call("/api/v1/session/resume",
+            {"cashier_id": 0}, PC1, token).status_code, 401)
+
+    def test_kassir_id_almashtirish_rad(self):
+        token = self.login(PC1).json()["session"]
+        self.assertEqual(self.call("/api/v1/session/resume",
+            {"cashier_id": 999}, PC1, token).status_code, 401)
 
 
 class HelloSessionTest(SessionBase):
@@ -162,7 +163,8 @@ class HelloSessionTest(SessionBase):
         self.assertEqual(r.status_code, 200)
         ls = r.json()["login_session"]
         self.assertTrue(ls["mine"])
-        self.assertTrue(verify_session_token(ls["session"]))
+        self.assertEqual(self.call("/api/v1/session/resume",
+            {"cashier_id": 0}, PC1, ls["session"]).status_code, 200)
         row = KassaSession.objects.get(login="kassa1")
         self.assertLess((timezone.now() - row.seen_at).total_seconds(), 5)
 
