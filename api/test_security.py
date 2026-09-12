@@ -85,7 +85,7 @@ class FinancialIntegrityTest(ApiTestCase):
         p = self.sale_payload()
         p["items"][0]["total"] = 30_00
         p["payments"] = [{"method": "naqd", "amount": 30_00}]
-        token = make_session_token(1, True)
+        token = self.manager_token()
         r = self.post("/api/v1/sales", p, HTTP_X_SESSION=token)
         self.assertEqual(r.status_code, 201)
         self.assertEqual(Sale.objects.get().net_total, 30_00)
@@ -136,11 +136,10 @@ class ManagerAuthTest(ApiTestCase):
                       {"login": self.register.login, "password": "1234"})
         self.assertEqual(r.status_code, 200)
         self.assertIn("session", r.json())
-        info = verify_session_token(r.json()["session"])
-        self.assertTrue(info and info["is_manager"])
+        self.assertEqual(self.cash_op(r.json()["session"]).status_code, 403)
 
     def test_manager_token_bilan_otadi(self):
-        r = self.cash_op(make_session_token(0, True))
+        r = self.cash_op(self.manager_token())
         self.assertEqual(r.status_code, 201)
 
     def test_kassir_token_bilan_rad(self):
@@ -151,10 +150,9 @@ class ManagerAuthTest(ApiTestCase):
         r = self.cash_op("qalbaki.token")
         self.assertEqual(r.status_code, 403)
 
-    def test_tokensiz_otish_davri_otadi(self):
-        # Standart: REQUIRE_MANAGER_TOKEN=False -> token yo'q bo'lsa o'tadi
+    def test_tokensiz_har_doim_rad(self):
         r = self.cash_op()
-        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.status_code, 403)
 
     @override_settings(REQUIRE_MANAGER_TOKEN=True)
     def test_qatiy_rejimda_tokensiz_rad(self):

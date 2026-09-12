@@ -78,12 +78,8 @@ def manager_required(view):
     @functools.wraps(view)
     def wrapper(request, *args, **kwargs):
         token = (request.headers.get("X-Session") or "").strip()
-        strict = getattr(settings, "REQUIRE_MANAGER_TOKEN", False)
-        if not token:
-            if strict:
-                return error("Manager huquqi kerak", status=403)
-            return view(request, *args, **kwargs)
-        info = verify_session_token(token)
+        from .session_security import verify
+        info = verify(request)
         if not info or not info["is_manager"]:
             return error("Manager huquqi kerak", status=403)
         return view(request, *args, **kwargs)

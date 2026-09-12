@@ -185,7 +185,7 @@ SYNC_MAX_ATTEMPTS = int(env("SYNC_MAX_ATTEMPTS", "12"))
 # sessiya tokenini MAJBURIY qilish. Barcha kassalar token yuboradigan
 # versiyaga o'tgach `True` qiling — shunda token yo'q so'rov rad etiladi.
 # O'tish davrida `False`: token bo'lmasa o'tkaziladi (eski kassalar buzilmasin).
-REQUIRE_MANAGER_TOKEN = env_bool("REQUIRE_MANAGER_TOKEN", False)
+REQUIRE_MANAGER_TOKEN = True
 
 # Sinxronizatsiya davrlari (daqiqada) — cron shu bo'yicha sozlanadi.
 SYNC_INTERVALS = {

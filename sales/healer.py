@@ -105,11 +105,11 @@ def tick(background: bool = True) -> bool:
     if background:
         threading.Thread(target=_safe_heal, name="healer", daemon=True).start()
     else:
-        _safe_heal()
+        _safe_heal(close_connection=False)
     return True
 
 
-def _safe_heal() -> None:
+def _safe_heal(close_connection: bool = True) -> None:
     if not _lock.acquire(blocking=False):
         return
     try:
@@ -119,7 +119,8 @@ def _safe_heal() -> None:
     finally:
         _lock.release()
         try:
-            connection.close()
+            if close_connection:
+                connection.close()
         except Exception:
             pass
 

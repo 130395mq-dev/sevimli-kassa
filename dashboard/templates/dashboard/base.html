@@ -358,63 +358,44 @@
       word-break: break-all; font-family: "IBM Plex Mono", "Courier New", monospace;
     }
 
-    /* ============================================================
-       SODDA KO'RINISH — Django admin uslubida.
-
-       Bezak ataylab kamaytirilgan: soya yo'q, burchaklar deyarli tekis,
-       rangli urg'ular olib tashlangan, sahifa zichroq. Maqsad — ko'z
-       chalg'imasin, ma'lumot tez o'qilsin.
-
-       Bu blok yuqoridagi qoidalar USTIGA yoziladi (CSS'da keyingisi
-       ustun). Asl chiroyli dizayn o'chirilmagan — qaytarish uchun shu
-       blokni olib tashlash kifoya, boshqa hech narsaga tegmaydi.
-       ============================================================ */
-    :root {
-      --radius: 4px;
-      --shadow: none;
-      --bg: #F6F7F6;
-    }
-    body { font-size: 14px; line-height: 1.5; }
-
-    /* Soya va yumaloqlik yo'q */
-    .tile, .card, table, pre.receipt { box-shadow: none; border-radius: 4px; }
-
-    /* Plita: chap chetidagi rangli chiziq va to'q fon olib tashlandi */
+    /* SEVIMLI workspace: clear hierarchy and comfortable touch targets. */
+    :root { --wine: #18724F; --wine-deep: #103D32; --bg: #F3F5F4;
+      --faint: #657C70; --radius: 16px; --sidebar: 236px;
+      --shadow: 0 4px 20px rgba(16,61,50,.045); }
+    aside.nav { padding: 8px 10px; }
+    aside.nav .brand { padding: 24px 14px 26px; }
+    aside.nav .brand .name { font-size: 20px; letter-spacing: 1.5px; }
+    aside.nav .brand .mark { background: #D94B4B; color: white; border-radius: 12px; }
+    aside.nav a.item { min-height: 46px; margin: 3px 0; border: 0;
+      border-radius: 10px; padding: 11px 14px; }
+    aside.nav a.item.on { background: #E8F4ED; color: #103D32; }
+    aside.nav .group { padding: 24px 14px 8px; }
+    header.top { height: 72px; background: #FFFFFF; }
+    .wrap { max-width: 1600px; padding: 32px 32px 64px; }
+    h1 { font-size: 30px; letter-spacing: -.8px; }
+    .sub { margin-bottom: 26px; }
+    .tiles { gap: 18px; }
+    .tile { padding: 22px; }
+    .tile .value { font-size: 32px; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
     .tile::before { display: none; }
-    .tile { padding: 12px 14px; }
-    .tile .value { font-size: 22px; letter-spacing: 0; }
-    .tile.hero {
-      background: var(--surface); color: var(--ink); border-color: var(--line);
+    .tile.hero { background: #103D32; }
+    .card { padding: 22px; }
+    th { padding: 14px 18px; font-size: 12px; letter-spacing: .4px; }
+    td { padding: 15px 18px; }
+    .badge { border-radius: 20px; padding: 5px 10px; }
+    button, .pager a, .pager span.cur { border-radius: 9px; min-height: 42px; }
+    input, select, textarea { min-height: 42px; border-radius: 9px; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #18724F; outline-offset: 2px; }
+    .chartwrap { border-radius: 16px; padding: 20px 12px 10px; }
+    form.davr .chip { border-radius: 8px; padding: 9px 14px; }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+    @media (max-width: 600px) {
+      header.top { height: auto; min-height: 72px; flex-wrap: wrap; padding: 12px; gap: 10px; }
+      .aloqa { white-space: normal; flex-wrap: wrap; margin-left: 0; }
+      .tiles { grid-template-columns: 1fr; }
+      .wrap { padding: 20px 12px; }
+      h1 { font-size: 24px; }
     }
-    .tile.hero .label { color: var(--faint); }
-    .tile.hero .value { color: var(--ink); }
-    .tile.hero .note  { color: var(--muted); }
-    .tile.gold .value, .tile.good .value, .tile.bad .value { color: var(--ink); }
-
-    /* Jadval — zich va oddiy */
-    th { padding: 8px 12px; }
-    td { padding: 8px 12px; }
-    tr:hover td { background: #F2F5F2; }
-
-    /* Nishon — tekis */
-    .badge { border-radius: 3px; padding: 2px 7px; font-size: 11.5px; }
-
-    /* Tugma va maydonlar — tekis */
-    button, button.small, input, select, textarea,
-    form.inline input, form.inline select,
-    .pager a, .pager span.cur, .pager span.disabled { border-radius: 4px; }
-    button { padding: 8px 16px; font-size: 14px; margin-top: 10px; }
-    input, select, textarea { padding: 7px 10px; font-size: 14px; border-width: 1px; }
-    input:focus, select:focus, textarea:focus { box-shadow: none; }
-
-    /* Sahifa zichroq */
-    .wrap { padding: 18px 22px 40px; }
-    h1 { font-size: 21px; }
-    h2 { margin: 22px 0 9px; }
-    .sub { margin-bottom: 16px; }
-    header.top { height: 52px; }
-    .alert { border-radius: 4px; padding: 10px 14px; font-size: 14px; }
-
     @media (max-width: 900px) {
       :root { --sidebar: 68px; }
       aside.nav .brand .name, aside.nav .brand .sub,
@@ -432,7 +413,7 @@
     <div class="brand">
       <div class="mark">S</div>
       <div>
-        <div class="name">Sevimli Kassa</div>
+        <div class="name">SEVIMLI</div>
         <div class="sub">boshqaruv paneli</div>
       </div>
     </div>

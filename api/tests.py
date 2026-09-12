@@ -50,6 +50,15 @@ class ApiTestCase(TestCase):
             **{**self.auth(), **kw},
         )
 
+    def manager_token(self):
+        from sales.models import Cashier
+        cashier, _ = Cashier.objects.get_or_create(login="test-manager",
+            defaults={"name": "Manager", "is_manager": True})
+        cashier.set_password("test-password")
+        cashier.save()
+        return self.post("/api/v1/login",
+            {"login": cashier.login, "password": "test-password"}).json()["session"]
+
     def open_shift(self):
         return self.post("/api/v1/shift/open",
                          {"cashier": "Nilufar", "opening_cash": 300_000_00})
@@ -450,6 +459,12 @@ class CashTest(ApiTestCase):
     def setUp(self):
         super().setUp()
         self.open_shift()
+        self.cash_token = self.manager_token()
+
+    def post(self, url, payload, **kw):
+        if url == "/api/v1/cash":
+            kw.setdefault("HTTP_X_SESSION", self.cash_token)
+        return super().post(url, payload, **kw)
 
     def test_kirim_yoziladi(self):
         r = self.post("/api/v1/cash",
@@ -717,7 +732,15 @@ class PriceTypeTest(ApiTestCase):
 
     def test_chekda_narx_turi_saqlanadi(self):
         self.open_shift()
-        self.post("/api/v1/sales", self.sale_payload(price_type="Улугржи нархи"))
+        st = self.register.settings
+        st.price_type = "Улугржи нархи"
+        st.save()
+        payload = self.sale_payload(price_type="Улугржи нархи",
+            price_type_id=str(self.ulgurji.ms_id))
+        payload["items"][0].update(price=5200000, total=5200000)
+        payload["payments"] = [{"method":"naqd", "amount":5200000}]
+        response = self.post("/api/v1/sales", payload)
+        self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(Sale.objects.get().price_type, "Улугржи нархи")
 
 
@@ -774,7 +797,7 @@ class CashierLoginTest(ApiTestCase):
         who = ok.json()["cashier"]
         self.assertEqual(who["login"], "chilonzor-1")
         self.assertEqual(who["name"], self.register.name)
-        self.assertTrue(who["is_manager"])
+        self.assertFalse(who["is_manager"])
 
         no = self.post(
             "/api/v1/login", {"login": "chilonzor-1", "password": "000000"}
