@@ -183,22 +183,36 @@ monoblokda shu teriladi.
 
 ## 8. Kassa dasturining yangi versiyasini chiqarish
 
-Ish stolidagi tugmalar (bat fayllar), tartib bilan:
+Kompyuterda **hech narsa yig'ilmaydi** va hech narsa yuklanmaydi. Tizim
+ikki qismga bo'lingan:
+
+| Qism | Kod qayerda | Qanday chiqadi |
+|---|---|---|
+| **Backend** (server + admin panel + baza) | GitHub `sevimli-kassa` | push → Railway o'zi deploy qiladi |
+| **Frontend** (kassa EXE) | GitHub `sevimli-kassa-pos` | push → GitHub o'zi EXE yig'ib Release'ga qo'yadi → server o'zi olib «Versiyalar» ga qo'shadi → kassalar o'zi yangilanadi |
+
+Tartib:
 
 1. Kod o'zgarishlari `SEVIMLI-KASSA-1.8.0\pos\` papkasiga tushadi (Claude
    yozadi), `pos\version.py` dagi raqam oshiriladi.
-2. **`KASSA-YANGI-VERSIYA-CHIQARISH.bat`** — dasturni yig'adi (3–5 daqiqa)
-   va panelga o'zi yuklaydi (alohida oyna ochiladi, «TAYYOR» deydi).
-3. Yuklash o'tmasa — **`KASSA-FAQAT-YUKLA.bat`** (tayyor ZIP'ni yuklaydi).
-   U ZIP kod fayllaridan eski bo'lsa yuklashga yo'l qo'ymaydi — bu himoya,
-   «versiya mos emas» xatosining oldini oladi.
-4. Panel → **Versiyalar**: yangi raqam «JORIY» bo'lishi kerak.
-5. Kassalar 30 daqiqa ichida o'zi yangilanadi; kassir kirgan holida qoladi,
-   smena yopilmaydi.
+2. Ish stolida **`KASSA-GITHUBGA-YUKLASH.bat`** — izoh so'raydi (nima
+   o'zgardi), kodni GitHub'ga yuboradi. Tamom.
+3. GitHub 8–12 daqiqada: testlar → Windows'da EXE → ZIP → Release
+   (`v1.16.0`). Kuzatish: https://github.com/130395mq-dev/sevimli-kassa-pos/actions
+4. Server 10 daqiqada bir GitHub'ga qaraydi, yangi ZIP'ni o'zi olib
+   panel → **Versiyalar** ga qo'shadi («JORIY»). Kassalar 30 daqiqa ichida
+   o'zi yangilanadi; kassir kirgan holida qoladi, smena yopilmaydi.
 
-Fleshkaga o'rnatish uchun — **`FLESHKAGA-TAYYORLASH.bat`**, keyin fleshkadagi
-ZIP'ni monoblokka ko'chirib «Извлечь все» qilib ochish (ZIP ichidagi butun
-papka kerak, yakka .exe emas).
+Ya'ni bosishdan kassagacha ~30–50 daqiqa, odam aralashmaydi. Versiya raqami
+avval chiqarilgan bo'lsa GitHub yangi Release qilmaydi — `version.py`
+raqamini oshirib qayta bosiladi.
+
+Zaxira yo'l (GitHub ishlamasa): `KASSA-YANGI-VERSIYA-CHIQARISH.bat`
+kompyuterda yig'ib yuklaydi; `KASSA-FAQAT-YUKLA.bat` tayyor ZIP'ni yuklaydi.
+
+Fleshkaga o'rnatish uchun — GitHub'dagi Releases bo'limidan
+`SevimliKassa.zip` (yoki **`FLESHKAGA-TAYYORLASH.bat`**), monoblokda
+«Извлечь все» — ZIP ichidagi butun papka kerak, yakka .exe emas.
 
 ## 9. Serverni yangilash
 

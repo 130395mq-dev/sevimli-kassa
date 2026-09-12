@@ -222,6 +222,13 @@ LOGGING = {
 # yuklash ishonchli ishlaydi. Bo'sh bo'lsa — bu yo'l butunlay o'chiq.
 RELEASE_UPLOAD_TOKEN = env("RELEASE_UPLOAD_TOKEN", "")
 
+# Kassa (frontend) kodi turadigan GitHub repo. GitHub Actions u yerda EXE
+# yig'ib Release'ga qo'yadi; hub 10 daqiqada bir qarab, yangi ZIP'ni o'zi
+# olib «Versiyalar» ga qo'shadi (sales/releases.py). Bo'sh — o'chiq.
+KASSA_GITHUB_REPO = env("KASSA_GITHUB_REPO", "130395mq-dev/sevimli-kassa-pos")
+if "test" in sys.argv[1:2]:
+    KASSA_GITHUB_REPO = ""  # testlarda internetga chiqilmaydi
+
 # ------------------------------------------------- MoySklad vaqt zonasi
 #
 # MoySklad hujjat vaqtini O'Z HISOBINING zonasida qabul qiladi. Biz Toshkent

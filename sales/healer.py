@@ -17,7 +17,11 @@ qachon «uxlamaydi». Shuning uchun zaxira ishlar shu yerda, `hello` va
      15 daqiqa muvaffaqiyatsiz bo'lsa — hub tovar va qoldiqni o'zi tortadi
      (15 daqiqada bir martadan ko'p emas).
 
-  3. **Tiqilgan cheklar** — `selftest` o'tganda navbatga qaytariladi
+  3. **Kassa versiyalari** — GitHub Release'da yangi ZIP paydo bo'lsa
+     hub uni o'zi olib, panelning «Versiyalar» ro'yxatiga qo'shadi
+     (sales/releases.py, 10 daqiqada bir).
+
+  4. **Tiqilgan cheklar** — `selftest` o'tganda navbatga qaytariladi
      (sales/selftest.py), bu yerda emas.
 
 Cheklash: bitta jarayonda bir vaqtda bitta davolash; 60 soniyada bir
@@ -145,6 +149,17 @@ def heal(now=None) -> dict:
         except Exception as e:
             logger.warning("Zaxira katalog tortilmadi: %s", e)
             done["catalog_error"] = str(e)[:200]
+
+    # 3. Kassa versiyalari — GitHub Release'dan (10 daqiqada bir).
+    #    Egasi hech narsa yuklamaydi: GitHub yig'adi, hub o'zi olib keladi.
+    try:
+        from . import releases
+
+        rel = releases.check()
+        if rel is not None:
+            done["release"] = rel.version
+    except Exception as e:
+        logger.warning("GitHub versiya tekshiruvi: %s", e)
 
     return done
 

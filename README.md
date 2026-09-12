@@ -30,6 +30,7 @@ yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
 | `sales/sender.py` | Navbatdagi cheklarni yuborish (backoff, stuck) — `sales-sync` va zaxira yo'l uchun bitta kod |
 | `sales/healer.py` | O'z-o'zini davolash: `sales-sync` jim bo'lsa hub cheklarni o'zi yozadi; katalog sinxroni jim bo'lsa o'zi tortadi (`hello`/`aloqa.json` kelganda, 60 s da bir) |
 | `sales/selftest.py` | MoySklad o'z-o'zini tekshirish — kassa yozadigan hamma hujjat turi sinov rejimida (applicable=false, `SINOV-…`, o'chiriladi) |
+| `sales/releases.py` | Kassa versiyalari GitHub Release'dan o'zi olinadi (`KASSA_GITHUB_REPO`, 10 daqiqada bir, `healer` orqali) — egasi hech narsa yuklamaydi |
 | `sales/sessions.py` | Bir login — bir vaqtda bitta kompyuter (`KassaSession`): `login` biriktiradi, `session/resume` parolsiz davom etadi, `logout` bo'shatadi, `hello` tirik tutadi (3 daqiqa jim = bo'sh) |
 | `catalog/` | MoySklad katalogining lokal nusxasi: tovar, shtrix-kodlar, qoldiq, mijoz, narx turlari; delta sinxron (`catalog/sync.py`) |
 | `moysklad/client.py` | MoySklad API klienti — limitlarni hisobga oladi, 429 dan qochadi |
@@ -69,7 +70,8 @@ o'zi qayta o'rnatadi. Health check: `/health/`.
 | `MOYSKLAD_TZ` | MoySklad hisobining vaqt zonasi (standart `Europe/Moscow`) — hujjat vaqti shunga o'giriladi, aks holda Отгрузка kelajakka tushib qoldiq kamaymaydi |
 | `MOYSKLAD_RETAIL_CUSTOMER_ID` | «Розничный покупатель» ID; bo'sh bo'lsa server o'zi topadi/yaratadi |
 | `MOYSKLAD_EXPENSE_ITEM_ID` | Qaytarishda pul chiqimi uchun xarajat moddasi; bo'sh bo'lsa «Возврат» deganini o'zi topadi |
-| `RELEASE_UPLOAD_TOKEN` | Kassa ZIP'ini skript orqali yuklash kaliti (`X-Release-Token`) |
+| `RELEASE_UPLOAD_TOKEN` | Kassa ZIP'ini skript orqali yuklash kaliti (`X-Release-Token`) — zaxira yo'l |
+| `KASSA_GITHUB_REPO` | Kassa kodi repo'si (standart `130395mq-dev/sevimli-kassa-pos`); hub Release'lardan yangi ZIP'ni o'zi oladi |
 | `MARKET_NAME`, `RECEIPT_WIDTH` | Chek sarlavhasi va kengligi (80mm=48, 58mm=32) |
 | `SYNC_MAX_ATTEMPTS` | Chekni necha marta urinib, keyin `stuck` qilish |
 | `MEDIA_ROOT` | Yuklangan versiya fayllari — Railway'da **doimiy disk (Volume)** |
