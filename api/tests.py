@@ -732,7 +732,15 @@ class PriceTypeTest(ApiTestCase):
 
     def test_chekda_narx_turi_saqlanadi(self):
         self.open_shift()
-        self.post("/api/v1/sales", self.sale_payload(price_type="Улугржи нархи"))
+        st = self.register.settings
+        st.price_type = "Улугржи нархи"
+        st.save()
+        payload = self.sale_payload(price_type="Улугржи нархи",
+            price_type_id=str(self.ulgurji.ms_id))
+        payload["items"][0].update(price=5200000, total=5200000)
+        payload["payments"] = [{"method":"naqd", "amount":5200000}]
+        response = self.post("/api/v1/sales", payload)
+        self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(Sale.objects.get().price_type, "Улугржи нархи")
 
 

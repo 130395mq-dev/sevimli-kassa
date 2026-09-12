@@ -1016,7 +1016,7 @@ def create_sale(request):
     else:
         # Older POS versions: match the original timestamp, never today's
         # open shift for a receipt created in an earlier shift.
-        created = parse_datetime(data.get("created_at") or "")
+        created = parse_datetime(data.get("created_at") or "") or timezone.now()
         if created and timezone.is_naive(created):
             created = timezone.make_aware(created)
         candidates = reg.shifts.filter(opened_at__lte=created).order_by("-opened_at") if created else reg.shifts.none()
