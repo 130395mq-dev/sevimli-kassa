@@ -511,6 +511,13 @@ class Sale(models.Model):
         "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="returns"
     )
 
+    # MoySklad tomonida    #: Kechikkan chek: kassada urilgan, lekin serverga asl smenasi
+    #: YOPILGANDAN keyin yetib kelgan (internet yo'q edi / kassa qayta
+    #: o'rnatilgan). Egasining qarori (2026-09): bunday chek asl smenasiga
+    #: yoziladi — panelda «kechikkan» belgisi bilan ko'rinadi, Z-hisobot
+    #: shunga qarab o'zgaradi. Savdo yo'qolmaydi.
+    late = models.BooleanField(default=False, help_text="Asl smena yopilgandan keyin keldi")
+
     # MoySklad tomonida
     sync_status = models.CharField(max_length=8, choices=SYNC_STATUS, default=NEW, db_index=True)
     sync_attempts = models.IntegerField(default=0)
