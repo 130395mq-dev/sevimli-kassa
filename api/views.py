@@ -1063,8 +1063,8 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
     # Smena qatorini bloklaymiz — bir smenaga bir vaqtda kelgan ikki chek
     # (parallel kassa yoki qayta yuborish) bir xil tartib raqamini olmasin.
     # PostgreSQL'da bu row-lock; SQLite testida e'tiborsiz, lekin zararsiz.
-    shift = Shift.objects.select_for_update().get(pk=shift.pk)
-   if shift.status != Shift.OPEN:
+    shift = Shift.objects.select_for_update().get(pk=shift.pk)      
+    if shift.status != Shift.OPEN:
         late = True
 
     kind = data.get("kind") or Sale.SALE
