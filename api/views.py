@@ -1007,7 +1007,7 @@ def create_sale(request):
         )
 
     # Bind every receipt to the shift in which it was actually created.
-    shift_id = data.get("shift_id")
+    late = False; shift_id = data.get("shift_id")
     shift_uuid = data.get("shift_local_uuid")
     if shift_id:
         shift = reg.shifts.filter(pk=shift_id).first()
@@ -1024,9 +1024,9 @@ def create_sale(request):
         if shift and shift.closed_at and created > shift.closed_at:
             shift = None
     if not shift:
-        return error("Chekning asl smenasi topilmadi", status=409)
-    if shift.status != Shift.OPEN:
-        return error("Asl smena yopilgan. Chekni panel orqali tekshiring.", status=409)
+        shift = reg.shifts.filter(status=Shift.OPEN).first(); late = True
+    if not shift:
+        return error("Ochiq smena yo'q", status=409)
 
     items = data.get("items") or []
     if not items:
@@ -1042,7 +1042,7 @@ def create_sale(request):
     manager_ok = bool(minfo and minfo.get("is_manager"))
 
     try:
-        return _save_sale(shift, data, items, payments, local_uuid, manager_ok)
+        return _save_sale(shift, data, items, payments, local_uuid, manager_ok, late=late)
     except ValueError as e:
         return error(str(e))
     except IntegrityError:
@@ -1059,13 +1059,13 @@ def create_sale(request):
 
 
 @transaction.atomic
-def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
+def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=False):
     # Smena qatorini bloklaymiz — bir smenaga bir vaqtda kelgan ikki chek
     # (parallel kassa yoki qayta yuborish) bir xil tartib raqamini olmasin.
     # PostgreSQL'da bu row-lock; SQLite testida e'tiborsiz, lekin zararsiz.
     shift = Shift.objects.select_for_update().get(pk=shift.pk)
-    if shift.status != Shift.OPEN:
-        raise ValueError("Asl smena yopilgan")
+   if shift.status != Shift.OPEN:
+        late = True
 
     kind = data.get("kind") or Sale.SALE
     if kind not in (Sale.SALE, Sale.RETURN):
@@ -1239,7 +1239,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False):
         discount_total=max(0, gross_sum - lines_total),
         points_spent=points_spent,
         points_earned=points_earned,
-        net_total=net_total,
+        net_total=net_total, late=late,
     )
 
     for pos, raw, qty, total in lines:
