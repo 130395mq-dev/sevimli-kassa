@@ -1044,7 +1044,7 @@ def create_sale(request):
     try:
         return _save_sale(shift, data, items, payments, local_uuid, manager_ok, late=late)
     except ValueError as e:
-        return error(str(e))
+        logger.warning("Chek rad etildi (%s): %s", local_uuid, e); return error(str(e))
     except IntegrityError:
         # Bir vaqtda kelgan bir xil local_uuid — birinchisi yozib ulgurdi.
         # Ikkinchisiga o'shaning javobini qaytaramiz (idempotent, xato emas).
@@ -1126,7 +1126,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
                 )
 
         if kind == Sale.SALE:
-            pricing.validate(raw, shift.register, allowed_types, default_type,
+            late or pricing.validate(raw, shift.register, allowed_types, default_type,
                              data.get("price_type_id") or "")
 
         lines_total += total
