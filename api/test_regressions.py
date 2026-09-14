@@ -38,14 +38,20 @@ class ReceiptSafetyTest(ApiTestCase):
         p["shift_id"] = old.pk
         self.post("/api/v1/shift/close", {})
         self.open_shift()
-        self.assertEqual(self.post("/api/v1/sales", p).status_code, 409)
-        self.assertFalse(Sale.objects.exists())
+        self.assertEqual(self.post("/api/v1/sales", p).status_code, 201)
+        sale = Sale.objects.get()
+        self.assertEqual(sale.shift_id, old.pk)
+        self.assertTrue(sale.late)
 
     def test_legacy_receipt_cannot_move_to_new_shift(self):
+        old = Shift.objects.get()
         p = self.sale_payload()
         self.post("/api/v1/shift/close", {})
         self.open_shift()
-        self.assertEqual(self.post("/api/v1/sales", p).status_code, 409)
+        self.assertEqual(self.post("/api/v1/sales", p).status_code, 201)
+        sale = Sale.objects.get()
+        self.assertEqual(sale.shift_id, old.pk)
+        self.assertTrue(sale.late)
 
     def test_foreign_shift_rejected(self):
         other = Register.objects.create(code="other", name="Other", store=self.store)
@@ -53,6 +59,15 @@ class ReceiptSafetyTest(ApiTestCase):
                                   opened_at=timezone.now(), opening_cash=0)
         p = self.sale_payload(shift_id=sh.pk)
         self.assertEqual(self.post("/api/v1/sales", p).status_code, 409)
+        self.assertFalse(Sale.objects.exists())
+
+    def test_unknown_explicit_shift_cannot_fall_back_to_current(self):
+        from uuid import uuid4
+        for binding in ({"shift_id": 999999}, {"shift_local_uuid": str(uuid4())}):
+            with self.subTest(binding=binding):
+                p = self.sale_payload(**binding)
+                self.assertEqual(self.post("/api/v1/sales", p).status_code, 409)
+                self.assertFalse(Sale.objects.exists())
 
     def test_duplicate_uuid_does_not_leak_other_register(self):
         p = self.sale_payload()

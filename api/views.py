@@ -1011,8 +1011,12 @@ def create_sale(request):
     shift_uuid = data.get("shift_local_uuid")
     if shift_id:
         shift = reg.shifts.filter(pk=shift_id).first()
+        if shift is None:
+            return error("Chek smenasi bu kassada topilmadi", status=409)
     elif shift_uuid:
         shift = reg.shifts.filter(local_uuid=shift_uuid).first()
+        if shift is None:
+            return error("Chek smenasi bu kassada topilmadi", status=409)
     else:
         # Older POS versions: match the original timestamp, never today's
         # open shift for a receipt created in an earlier shift.
