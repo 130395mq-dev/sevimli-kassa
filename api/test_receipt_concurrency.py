@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from unittest import skipUnless
 
-from django.db import connection, close_old_connections
+from django.db import connection, connections, close_old_connections
 from django.test import Client, TransactionTestCase
 
 from api.tests import ApiTestCase
@@ -39,7 +39,7 @@ class ReceiptConcurrencyTest(TransactionTestCase):
                 response = Client().post(path, json.dumps(payload), content_type='application/json', **headers)
                 return response.status_code
             finally:
-                close_old_connections()
+                connections.close_all()
         with ThreadPoolExecutor(max_workers=2) as pool:
             return sorted(pool.map(send, payloads))
 
