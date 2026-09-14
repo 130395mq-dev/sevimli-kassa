@@ -71,13 +71,18 @@ def health(request):
 
 @login_required
 def aloqa_json(request):
-    """Panel tepasidagi aloqa chiroqlari — sahifa 15 soniyada bir so'raydi.
+    """Aloqa chiroqlari va navbat — sahifa 15 soniyada bir so'raydi.
 
     Sahifa qayta yuklanmaydi (formalar to'ldirilayotgan bo'lishi mumkin),
-    faqat chiroqlarning rangi va izohi yangilanadi.
+    chiroqlarning rangi, izohi va navbat sonlari yangilanadi.
     """
     healer.tick()
-    return JsonResponse(aloqa.snapshot())
+    snap = aloqa.snapshot()
+    if request.GET.get("queue") == "1":
+        snap["queue"] = savdo.queue_snapshot(request.GET)
+    response = JsonResponse(snap)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @login_required

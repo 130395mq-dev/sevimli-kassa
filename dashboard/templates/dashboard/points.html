@@ -28,10 +28,10 @@
     bilishi kerak bo'lgani.
   {% endcomment %}
   {% for a in alerts %}
-    <div class="alert {{ a.level }}">
+    <div class="alert {{ a.level }}" {% if a.action == 'retry_stuck' %}data-queue-stuck{% endif %}>
       <span>{% if a.level == 'err' %}✕{% else %}!{% endif %}</span>
       <div>
-        <b>{{ a.title }}</b>
+        <b {% if a.action == 'retry_stuck' %}data-queue-stuck-title{% endif %}>{{ a.title }}</b>
         {% if a.text %}{{ a.text }}{% endif %}
         {% if a.fix %}
           <div class="fix"><b>Nima qilish kerak:</b> {{ a.fix }}</div>
@@ -47,19 +47,17 @@
     </div>
   {% endfor %}
 
-  {% if queued %}
-    <div class="alert warn">
+    <div class="alert warn" data-queue-banner {% if not queued %}style="display: none;"{% endif %}>
       <span>⧗</span>
       <div>
-        <b>{{ queued }} ta chek navbatda</b>
+        <b data-queue-title>{{ queued }} ta chek navbatda</b>
         MoySklad'ga yuborilishini kutmoqda. Bu odatiy holat — bir necha
         daqiqada o'zi ketadi.
       </div>
     </div>
-  {% endif %}
 
   {% if not alerts and not queued %}
-    <div class="alert ok">
+    <div class="alert ok" data-queue-empty>
       <span>✓</span>
       <div><b>Hammasi joyida</b> MoySklad ulangan, kassalar joyida, navbat bo'sh.</div>
     </div>
@@ -237,9 +235,8 @@
           {% elif r.link.state == 'warn' %}<span class="badge warn">Kechikmoqda</span>
           {% elif r.link.state == 'bad' %}<span class="badge err">Aloqa yo'q</span>
           {% else %}<span class="badge off">O'chirilgan</span>{% endif %}
-          {% if r.pending %}
-            <span class="badge warn num">navbat {{ r.pending }}</span>
-          {% endif %}
+          <span class="badge warn num" data-queue-register="{{ r.register.pk }}"
+                {% if not r.pending %}style="display: none;"{% endif %}>navbat {{ r.pending }}</span>
         </td>
         <td>
           {% if r.shift %}
@@ -290,6 +287,7 @@
   {% endif %}
 
   {% if stuck %}
+  <div data-queue-stuck>
     <h2>Yozilmagan cheklar</h2>
     <table>
       <tr><th>Chek</th><th>Vaqt</th><th class="right">Summa</th><th>Sabab</th></tr>
@@ -305,6 +303,7 @@
         </tr>
       {% endfor %}
     </table>
+  </div>
   {% endif %}
 
   <h2>MoySklad tekshiruvi</h2>

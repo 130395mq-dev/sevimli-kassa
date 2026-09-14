@@ -456,8 +456,8 @@
 </div>
 
 <script>
-// Aloqa chiroqlari — sahifani qayta yuklamasdan 15 soniyada bir yangilanadi.
-// Server /aloqa.json beradi; bu yerda faqat rang (class) va izoh (title)
+// Aloqa va navbat — sahifani qayta yuklamasdan 15 soniyada bir yangilanadi.
+// Server /aloqa.json beradi; rang (class), izoh (title) va navbat sonlari
 // almashtiriladi. Tepadagi qator ham, jadval ichidagi nuqtalar ham
 // data-aloqa="…" belgisi bilan topiladi.
 (function () {
@@ -473,15 +473,41 @@
     }
   }
   function tick() {
-    fetch("/aloqa.json", { credentials: "same-origin", cache: "no-store" })
+    var banner = document.querySelector("[data-queue-banner]");
+    var url = "/aloqa.json";
+    if (banner) {
+      var params = new URLSearchParams(window.location.search);
+      params.set("queue", "1");
+      url += "?" + params.toString();
+    }
+    fetch(url, { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (snap) {
         if (!snap) return;
         paint("moysklad", snap.moysklad);
         (snap.registers || []).forEach(function (r) { paint("reg-" + r.id, r); });
+        var q = snap.queue;
+        if (!banner || !q || !Number.isInteger(q.queued) || !Number.isInteger(q.stuck)) return;
+        banner.style.display = q.queued ? "" : "none";
+        banner.querySelector("[data-queue-title]").textContent = q.queued + " ta chek navbatda";
+        document.querySelectorAll("[data-queue-register]").forEach(function (el) {
+          var n = (q.registers || {})[el.dataset.queueRegister] || 0;
+          el.textContent = "navbat " + n;
+          el.style.display = n ? "" : "none";
+        });
+        document.querySelectorAll("[data-queue-stuck]").forEach(function (el) {
+          el.style.display = q.stuck ? "" : "none";
+        });
+        document.querySelectorAll("[data-queue-stuck-title]").forEach(function (el) {
+          el.textContent = q.stuck + " ta chek MoySklad'ga yozilmadi";
+        });
+        document.querySelectorAll("[data-queue-empty]").forEach(function (el) {
+          el.style.display = !q.queued && !q.stuck && snap.overall === "ok" ? "" : "none";
+        });
       })
       .catch(function () { /* internet uzilsa — oxirgi rang qoladi */ });
   }
+  tick();
   setInterval(tick, 15000);
 })();
 </script>
