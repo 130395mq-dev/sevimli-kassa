@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.utils import timezone
@@ -63,6 +63,20 @@ class WriteError(Exception):
 
 class SumMismatch(WriteError):
     """MoySklad hisoblagan summa bizniki bilan teng emas — odam ko'rishi kerak."""
+
+
+def position_price(amount: int, quantity: Decimal) -> float:
+    """Keep fractional tiyin: rounding the unit price changes the line total.
+
+    Remap defines price as Float in minor currency units. Use Decimal for
+    division and verify the JSON number still reproduces the receipt line.
+    The returned document total is checked separately, without a tolerance.
+    """
+    price = float(Decimal(amount) / quantity)
+    actual = (Decimal(str(price)) * quantity).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if actual != amount:
+        raise WriteError("Qator narxini aniq yuborib bo'lmadi; summa o'zgartirilmadi")
+    return price
 
 
 def meta(entity_type: str, ms_id) -> dict:
@@ -317,10 +331,7 @@ class SaleWriter:
             positions.append(
                 {
                     "quantity": float(qty),
-                    # Narx tiyinda. MoySklad summani o'zi ko'paytiradi,
-                    # shuning uchun kasrli kilogrammda tiyin farqi
-                    # chiqishi mumkin — `_check_sum` shuni tutadi.
-                    "price": round(amount / float(qty)),
+                    "price": position_price(amount, qty),
                     "assortment": meta("product", item.ms_product_id),
                 }
             )
@@ -534,6 +545,15 @@ class SaleWriter:
             return
 
         expected = sale.net_total
+        if got != expected:
+            # Only an unpaid, previously blocked document matching the old
+            # rounding algorithm may be repaired. No new shipment is created.
+            from .rounding_repair import repair_legacy_rounding
+
+            repaired = repair_legacy_rounding(self.client, sale, demand)
+            if repaired is not None:
+                demand.update(repaired)
+                got = demand.get("sum")
         if got != expected:
             raise SumMismatch(
                 f"MoySklad summani boshqacha hisobladi: {got} tiyin, "
