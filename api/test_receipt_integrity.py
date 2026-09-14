@@ -143,13 +143,11 @@ class ReceiptIntegrityTest(ApiTestCase):
         found = self.client.get('/api/v1/sales/returnable', {'q': str(original.pk)}, **self.auth()).json()
         self.assertIn(original.pk, [s['id'] for s in found['sales']])
 
-    def test_receipt_number_matches_moysklad_document_and_retries(self):
+    def test_receipt_number_comes_from_moysklad_and_retries(self):
         from unittest.mock import patch
-        from shared.identity import receipt_number
         from sales.writer import SaleWriter
         from sales.test_writer import FakeClient
         payload = self.sale_payload()
-        payload['receipt_number'] = receipt_number(payload['local_uuid'])
         response = self.post('/api/v1/sales', payload)
         self.assertEqual(response.status_code, 201, response.content)
         sale = Sale.objects.get(pk=response.json()['id'])
@@ -159,12 +157,21 @@ class ReceiptIntegrityTest(ApiTestCase):
             writer.send(sale)
             writer.send(sale)
         self.assertEqual(len(client.posted('demand')), 1)
-        self.assertEqual(client.posted('demand')[0]['name'], payload['receipt_number'])
-        self.assertEqual(self.post('/api/v1/sales', payload).json()['receipt_number'], payload['receipt_number'])
+        self.assertNotIn('name', client.posted('demand')[0])
+        sale.refresh_from_db()
+        self.assertEqual(sale.receipt_number, 'ОТ-0001')
 
-    def test_mismatched_receipt_number_is_rejected(self):
+    def test_client_cannot_choose_moysklad_receipt_number(self):
         response = self.post('/api/v1/sales', self.sale_payload(receipt_number='SK-FORGED'))
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNone(Sale.objects.get(pk=response.json()['id']).receipt_number)
+
+    def test_create_response_uses_immediate_moysklad_number(self):
+        from unittest.mock import patch
+        with patch('api.views._push_sale_now', return_value='ОТ-0208'):
+            response = self.post('/api/v1/sales', self.sale_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['receipt_number'], 'ОТ-0208')
 
     def test_local_queue_telemetry_is_distinct_from_server_queue(self):
         response = self.client.get('/api/v1/hello', {'local_pending': 1, 'local_stuck': 1,
