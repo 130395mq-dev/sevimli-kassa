@@ -27,9 +27,16 @@ class ReceiptSafetyTest(ApiTestCase):
         r = self.post("/api/v1/sales", p)
         self.assertEqual(r.status_code, 201, r.content)
 
-    def test_tampered_quote_is_rejected(self):
+    def test_stale_quote_with_current_central_price_is_accepted(self):
         p = self.sale_payload()
         p["items"][0]["price_quote"] = pricing.quote(self.product, self.register) + "broken"
+        self.assertEqual(self.post("/api/v1/sales", p).status_code, 201)
+
+    def test_stale_quote_cannot_authorize_forged_price(self):
+        p = self.sale_payload()
+        p["items"][0].update(price=100, total=100,
+                             price_quote="old-or-tampered-signature")
+        p["payments"] = [{"method": "naqd", "amount": 100}]
         self.assertEqual(self.post("/api/v1/sales", p).status_code, 400)
 
     def test_receipt_cannot_move_to_new_shift(self):

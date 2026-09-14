@@ -30,7 +30,11 @@ def validate(raw, register, allowed_types, default_type, selected_type):
                 raise ValueError()
             prices, base = data["prices"], data["base"]
         except (signing.BadSignature, ValueError, KeyError, TypeError):
-            raise ValueError("Narx tasdig'i noto'g'ri")
+            # Eski server/release bergan imzo yaroqsiz bo'lishi mumkin.
+            # Bunda klient narxiga ishonmaymiz: yuqorida bazadan olingan
+            # HOZIRGI markaziy narx bilan tekshirishda davom etamiz. Narx
+            # o'zgartirilgan bo'lsa pastdagi expected solishtiruvi rad etadi.
+            prices, base = product.prices or {}, int(product.sale_price)
     expected = int(prices.get(selected) or base)
     if int(raw.get("price") or 0) != expected:
         raise ValueError("Narx markazdagi katalogga mos emas. Katalogni yangilang.")
