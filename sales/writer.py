@@ -338,11 +338,6 @@ class SaleWriter:
 
         payload = {
             "syncId": str(sale.local_uuid),
-            # Nomni o'zimiz qo'ymaymiz — MoySklad avtomatik NOYOB raqam
-            # beradi (03411, 03412...). Ilgari "{smena}-{chek}" qo'yardik,
-            # lekin u takrorlanib 412 «name uniqueness» xatosini berardi
-            # (smena raqami kassalarда qayta-qayta 1 bo'ladi). syncId baribir
-            # dublikatни oldini oladi.
             "moment": ms_moment(sale.created_at),
             "applicable": True,
             "organization": meta("organization", organization_id),
@@ -353,6 +348,8 @@ class SaleWriter:
             "store": meta("store", warehouse_id),
         }
 
+        if getattr(sale, "receipt_number", None):
+            payload["name"] = sale.receipt_number
         return payload
 
     def _agent(self, sale: Sale) -> dict:

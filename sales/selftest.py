@@ -106,10 +106,13 @@ def _fake_sale(register: Register, product: Product, methods: list[PaymentMethod
         _Obj(local_uuid=uuid.uuid4(), method=m, amount=AMOUNT_PER_METHOD, ms_payment_id=None)
         for m in methods
     ]
+    from shared.identity import receipt_number
+    local_uuid = uuid.uuid4()
     return _Obj(
         kind=kind,
         number=0,
-        local_uuid=uuid.uuid4(),
+        local_uuid=local_uuid,
+        receipt_number=receipt_number(local_uuid),
         created_at=timezone.now(),
         points_spent=0,
         points_earned=0,

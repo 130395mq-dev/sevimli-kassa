@@ -27,11 +27,12 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -53,9 +54,11 @@ from sales.models import (
     Shift,
 )
 from sales import healer, sessions
+from sales.returns import allocations, validate_return, reversed_points
 from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
+from shared.identity import receipt_number
 
 from . import pricing, session_security
 
@@ -415,6 +418,16 @@ def _price_types_for(reg, st) -> tuple[list[dict], str]:
 @register_required
 def hello(request):
     reg = request.register
+    if "local_pending" in request.GET:
+        try:
+            pending = int(request.GET["local_pending"])
+            stuck = int(request.GET.get("local_stuck", 0))
+            if not 0 <= stuck <= pending <= 10000000:
+                raise ValueError()
+        except (ValueError, TypeError):
+            return error("Mahalliy navbat ko'rsatkichi noto'g'ri")
+        Register.objects.filter(pk=reg.pk).update(local_pending=pending, local_stuck=stuck,
+            local_queue_error=request.GET.get("local_error", "")[:512], local_queue_at=timezone.now())
     shift = reg.shifts.filter(status=Shift.OPEN).first()
     st = reg.settings
 
@@ -425,6 +438,11 @@ def hello(request):
     # bir marta, fon oqimida — bu so'rovni kutdirmaydi.
     healer.tick()
 
+    ms_link = dict(moysklad_health())
+    ms_pending = Sale.objects.filter(shift__register=reg).exclude(sync_status=Sale.SENT).count()
+    ms_link["pending"] = ms_pending
+    if ms_pending and ms_link.get("state") == "ok":
+        ms_link.update(state="warn", text=f"MoySklad'ga kutilmoqda: {ms_pending} ta chek")
     return JsonResponse(
         {
             "register": {"code": reg.code, "name": reg.name},
@@ -453,7 +471,7 @@ def hello(request):
             # Aloqa chiroqlari: server ↔ MoySklad holati. Kassa buni
             # pastki qatorda dumaloq belgi qilib ko'rsatadi (kassa
             # MoySklad'ga o'zi ulanmaydi — serverdan so'raydi).
-            "links": {"moysklad": moysklad_health()},
+            "links": {"moysklad": ms_link},
             # «Bir login — bir kompyuter»: sessiya shu kompyuterdami.
             # mine=False bo'lsa kassa kirish ekraniga qaytadi (boshqa
             # kompyuter o'sha login bilan kirib olgan).
@@ -497,24 +515,41 @@ def returnable_sales(request):
         Sale.objects.filter(shift__register=reg, kind=Sale.SALE)
         .select_related("shift", "customer")
         .prefetch_related("items", "payments__method")
-        .order_by("-created_at")[:40]
+        .order_by("-created_at", "-pk")
     )
-
-    # Har chek qatoridan qancha allaqachon qaytarilgan
-    returned = {}
-    origins = [s.pk for s in sales]
-    for ret in Sale.objects.filter(kind=Sale.RETURN, origin_id__in=origins).prefetch_related("items"):
-        for item in ret.items.all():
-            key = (ret.origin_id, item.ms_product_id or item.name)
-            returned[key] = returned.get(key, 0) + float(item.quantity)
+    query = request.GET.get("q", "").strip().lstrip("#")
+    if query:
+        match = Q(customer__name__icontains=query) | Q(receipt_number__icontains=query)
+        if query.isdigit():
+            match |= Q(pk=int(query)) | Q(number=int(query))
+        try:
+            match |= Q(local_uuid=uuid.UUID(query))
+        except ValueError:
+            pass
+        sales = sales.filter(match)
+    try:
+        offset = max(0, int(request.GET.get("offset", 0)))
+    except ValueError:
+        return error("Sahifa raqami noto'g'ri")
+    sales = list(sales[offset:offset + 41])
+    more = len(sales) > 40
+    sales = sales[:40]
 
     rows = []
     for s in sales:
+        try:
+            allocated = allocations(s)
+            return_error = ""
+        except ValueError as exc:
+            allocated = {}
+            return_error = str(exc)
         pays = list(s.payments.all())
         # Asosiy to'lov turi — belgi uchun (naqd/karta)
         is_cash = any(p.method.is_cash for p in pays)
         rows.append({
             "id": s.pk,
+            "receipt_number": s.receipt_number,
+            "return_error": return_error,
             "number": s.number,
             "created_at": s.created_at.isoformat(),
             "net_total": s.net_total,
@@ -532,22 +567,23 @@ def returnable_sales(request):
             ],
             "items": [
                 {
+                    "origin_item_id": it.pk,
+                    "refund_total": allocated[it.pk]["cash"] if allocated else 0,
+                    "returned_total": allocated[it.pk]["returned_cash"] if allocated else 0,
                     "product_id": it.product_id,
                     "ms_product_id": str(it.ms_product_id) if it.ms_product_id else "",
                     "name": it.name,
                     "barcode": it.barcode,
                     "price": it.price,
                     "sold_qty": str(it.quantity),
-                    "returned_qty": returned.get(
-                        (s.pk, it.ms_product_id or it.name), 0
-                    ),
+                    "returned_qty": float(allocated[it.pk]["quantity"]) if allocated else float(it.quantity),
                     "is_weight": it.product.is_weight if it.product_id else False,
                 }
                 for it in s.items.all()
             ],
         })
 
-    return JsonResponse({"sales": rows})
+    return JsonResponse({"sales": rows, "next_offset": offset + 40 if more else None})
 
 
 # ---------------------------------------------------------------- katalog
@@ -959,23 +995,34 @@ def shift_report(request):
 @manager_required
 def cash_operation(request):
     data = body(request)
-    shift = request.register.shifts.filter(status=Shift.OPEN).first()
-    if not shift:
-        return error("Ochiq smena yo'q", status=409)
-
     kind = data.get("kind")
     if kind not in (CashOperation.IN, CashOperation.OUT):
         return error("kind: 'in' yoki 'out' bo'lishi kerak")
-
-    amount = int(data.get("amount") or 0)
+    try:
+        amount = int(data.get("amount") or 0)
+        key = uuid.UUID(str(data["local_uuid"])) if data.get("local_uuid") else None
+    except (ValueError, TypeError, AttributeError):
+        return error("Summa yoki operatsiya identifikatori noto'g'ri")
     if amount <= 0:
         return error("Summa musbat bo'lishi kerak")
-
-    op = CashOperation.objects.create(
-        shift=shift, kind=kind, amount=amount,
-        comment=(data.get("comment") or "")[:256],
-    )
-    return JsonResponse({"id": op.pk}, status=201)
+    comment = str(data.get("comment") or "")[:256]
+    # Serialize retries for the register, including a retry after shift close.
+    with transaction.atomic():
+        Register.objects.select_for_update().get(pk=request.register.pk)
+        existing = CashOperation.objects.filter(local_uuid=key).select_related("shift").first() if key else None
+        if existing:
+            if (existing.shift.register_id != request.register.pk or
+                    (existing.kind, existing.amount, existing.comment) != (kind, amount, comment)):
+                return error("Bu operatsiya identifikatori boshqa amal uchun ishlatilgan", status=409)
+            return JsonResponse({"id": existing.pk, "duplicate": True})
+        shift = request.register.shifts.select_for_update().filter(status=Shift.OPEN).first()
+        if not shift:
+            return error("Ochiq smena yo'q", status=409)
+        if data.get("shift_id") and str(data["shift_id"]) != str(shift.pk):
+            return error("Pul amali boshqa smenaga tegishli", status=409)
+        op = CashOperation.objects.create(shift=shift, local_uuid=key, kind=kind,
+                                         amount=amount, comment=comment)
+    return JsonResponse({"id": op.pk, "duplicate": False}, status=201)
 
 
 # ------------------------------------------------------------------- chek
@@ -1003,7 +1050,7 @@ def create_sale(request):
         if existing.shift.register_id != reg.pk:
             return error("Chek boshqa kassaga tegishli", status=409)
         return JsonResponse(
-            {"id": existing.pk, "number": existing.number, "duplicate": True}
+            {"id": existing.pk, "number": existing.number, "receipt_number": existing.receipt_number, "duplicate": True}
         )
 
     # Bind every receipt to the shift in which it was actually created.
@@ -1032,13 +1079,18 @@ def create_sale(request):
     if not shift:
         return error("Ochiq smena yo'q", status=409)
 
+    if data.get("receipt_number"):
+        try:
+            if data["receipt_number"] != receipt_number(local_uuid):
+                return error("Chek raqami identifikatorga mos emas")
+        except (ValueError, TypeError, AttributeError):
+            return error("Chek identifikatori noto'g'ri")
+
     items = data.get("items") or []
     if not items:
         return error("Chek bo'sh")
 
     payments = data.get("payments") or []
-    if not payments:
-        return error("To'lov ko'rsatilmagan")
 
     # Menejer huquqi (chegirma chegarasini oshirishga ruxsat) — imzolangan
     # X-Session tokeni bilan. Mijozning «men managerman» so'ziga ISHONMAYMIZ.
@@ -1057,7 +1109,7 @@ def create_sale(request):
             if existing.shift.register_id != reg.pk:
                 return error("Chek boshqa kassaga tegishli", status=409)
             return JsonResponse(
-                {"id": existing.pk, "number": existing.number, "duplicate": True}
+                {"id": existing.pk, "number": existing.number, "receipt_number": existing.receipt_number, "duplicate": True}
             )
         raise
 
@@ -1101,6 +1153,8 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
             raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
         if not qty.is_finite() or qty <= 0:
             raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
+        if qty > Decimal("99999999999.999") or qty != qty.quantize(Decimal("0.001")):
+            raise ValueError("Miqdor juda katta yoki 3 tadan ko'p kasr xonasi bor")
 
         price = int(raw.get("price") or 0)
         total = int(raw.get("total") or 0)
@@ -1130,7 +1184,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
                 )
 
         if kind == Sale.SALE:
-            late or pricing.validate(raw, shift.register, allowed_types, default_type,
+            pricing.validate(raw, shift.register, allowed_types, default_type,
                              data.get("price_type_id") or "")
 
         lines_total += total
@@ -1147,14 +1201,19 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         oid = data.get("origin_id")
         if oid:
             origin = (
-                Sale.objects.select_related("customer")
+                Sale.objects.select_for_update(of=("self",)).select_related("customer", "shift")
                 .filter(pk=oid, kind=Sale.SALE, shift__register=shift.register)
                 .first()
             )
             if not origin:
                 raise ValueError("Qaytariladigan asl chek topilmadi")
-            if not customer_id and origin.customer_id:
-                customer_id = origin.customer_id
+            if origin.shift.status == Shift.CLOSED and not rs.allow_returns_closed_shift:
+                raise ValueError("Yopilgan smenadan qaytarishga ruxsat yo'q")
+            if customer_id and str(customer_id) != str(origin.customer_id):
+                raise ValueError("Qaytarish mijozi asl chek mijoziga mos emas")
+            customer_id = origin.customer_id
+        elif not rs.allow_returns_no_reason:
+            raise ValueError("Asl cheksiz qaytarishga ruxsat yo'q")
 
     customer = None
     if customer_id:
@@ -1235,6 +1294,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         kind=kind,
         number=last + 1,
         local_uuid=local_uuid,
+        receipt_number=data.get("receipt_number") or None,
         customer=customer,
         origin=origin,
         created_at=created_at,
@@ -1253,6 +1313,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         SaleItem.objects.create(
             sale=sale,
             position=pos,
+            origin_item=raw.get("_origin_item"),
             product=product,
             ms_product_id=raw.get("ms_product_id") or (product.ms_id if product else None),
             name=(raw.get("name") or "")[:512],
@@ -1307,6 +1368,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         {
             "id": sale.pk,
             "number": sale.number,
+            "receipt_number": sale.receipt_number,
             "duplicate": False,
             "points_earned": points_earned,
             "points_spent": points_spent,
@@ -1338,6 +1400,7 @@ def _check_return_against_origin(origin, lines, refund_total):
         # Asl cheksiz qaytarish — MVP'da ruxsat (offline yoki eski chek),
         # lekin summa manfiy emasligi baribir yuqorida tekshirilgan.
         return
+    validate_return(origin, lines)
     already = (
         Sale.objects.filter(origin=origin, kind=Sale.RETURN)
         .aggregate(s=Sum("net_total"))["s"] or 0
@@ -1358,25 +1421,12 @@ def _reverse_return_bonus(origin, sale, customer, refund_net):
     qaytarishda ham jami asl chek balларidan oshmaydi (kümülатив klamp).
     """
     balance = customer.bonus_points
-    if origin.net_total <= 0 or (not origin.points_earned and not origin.points_spent):
+    if not origin.points_earned and not origin.points_spent:
         return balance
-
-    # Shu asl chek bo'yicha jami qaytarilgan summa (bu qaytarish bilan)
-    prior = (
-        Sale.objects.filter(origin=origin, kind=Sale.RETURN)
-        .exclude(pk=sale.pk)
-        .aggregate(s=Sum("net_total"))["s"] or 0
-    )
-    frac_now = min(Decimal(1), Decimal(prior + refund_net) / Decimal(origin.net_total))
-    frac_prior = min(Decimal(1), Decimal(prior) / Decimal(origin.net_total))
-
-    def _slice(total_points):
-        cum_now = int((Decimal(total_points) * frac_now).to_integral_value(ROUND_HALF_UP))
-        cum_prior = int((Decimal(total_points) * frac_prior).to_integral_value(ROUND_HALF_UP))
-        return cum_now - cum_prior
-
-    earn_back = _slice(origin.points_earned)   # berilganni qaytarib olamiz (-)
-    spend_back = _slice(origin.points_spent)    # sarflaganini qaytaramiz (+)
+    now = reversed_points(origin)
+    prior = reversed_points(origin, exclude_sale=sale)
+    earn_back = now["earned"] - prior["earned"]
+    spend_back = now["spent"] - prior["spent"]
 
     if earn_back > 0:
         balance -= earn_back

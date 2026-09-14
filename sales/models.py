@@ -154,6 +154,10 @@ class Register(models.Model):
         max_length=64, unique=True, db_index=True, default=new_api_token
     )
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    local_pending = models.PositiveIntegerField(null=True, blank=True)
+    local_stuck = models.PositiveIntegerField(null=True, blank=True)
+    local_queue_error = models.CharField(max_length=512, blank=True)
+    local_queue_at = models.DateTimeField(null=True, blank=True)
 
     # ---- MoySklad bog'lanishi. Kassa sozlamasi birinchi, savdo nuqtasi
     # zaxira: eski kassalar (ombor tanlanmagan) ishlab ketaveradi.
@@ -453,6 +457,7 @@ class CashOperation(models.Model):
     KIND = [(IN, "Kiritildi"), (OUT, "Chiqarildi")]
 
     shift = models.ForeignKey(Shift, on_delete=models.CASCADE, related_name="cash_ops")
+    local_uuid = models.UUIDField(null=True, blank=True, unique=True, editable=False)
     kind = models.CharField(max_length=4, choices=KIND)
     amount = models.BigIntegerField(help_text="Musbat son, tiyinda")
     comment = models.CharField(max_length=256, blank=True)
@@ -486,6 +491,7 @@ class Sale(models.Model):
     shift = models.ForeignKey(Shift, on_delete=models.PROTECT, related_name="sales")
     kind = models.CharField(max_length=8, choices=KIND, default=SALE)
     number = models.IntegerField(help_text="Smena ichidagi chek raqami")
+    receipt_number = models.CharField(max_length=40, null=True, blank=True, unique=True, editable=False)
 
     # Idempotentlik kaliti. MoySklad'ga `syncId` sifatida boradi.
     # Shu tufayli bir chek ikki marta yozilib qolmaydi: takroriy so'rov
@@ -560,6 +566,7 @@ class SaleItem(models.Model):
 
     sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name="items")
     position = models.IntegerField(default=0)
+    origin_item = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="return_items")
 
     # Havola qulaylik uchun; tovar o'chirilsa ham chek buzilmaydi
     product = models.ForeignKey(
