@@ -719,6 +719,9 @@ def catalog_refresh(request):
         try:
             products = sync.sync_products()
             customers = sync.sync_customers()
+            # Qoldiq ham — kirim (приёмка) bo'lganda kassir «Yangilash»
+            # bosib darhol yangi qoldiqni olsin, cron'ni kutmasin.
+            stock = sync.sync_stock()
         except MoySkladError as exc:
             logger.warning("Kassa yangilanishi: MoySklad xatosi: %s", exc)
             return JsonResponse({"ran": False, "reason": "error", "error": str(exc)[:200]})
@@ -726,10 +729,10 @@ def catalog_refresh(request):
         _refresh_lock.release()
 
     logger.info(
-        "Kassa %s yangilanish so'radi: %s tovar, %s mijoz",
-        request.register.code, products, customers,
+        "Kassa %s yangilanish so'radi: %s tovar, %s mijoz, %s qoldiq",
+        request.register.code, products, customers, stock,
     )
-    return JsonResponse({"ran": True, "products": products, "customers": customers})
+    return JsonResponse({"ran": True, "products": products, "customers": customers, "stock": stock})
 
 
 @require_GET

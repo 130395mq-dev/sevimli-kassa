@@ -333,26 +333,61 @@ class CatalogSync:
         """
         Qoldiq — `report/stock/bystore`. Bu hisobot, sushchnost emas,
         shuning uchun unga webhook yo'q va uni doim so'rab turamiz.
+
+        MUHIM — kassa qoldiqni qanday oladi: kassa `catalog?since=` bilan
+        faqat `Product.synced_at` o'zgargan tovarlarni tortadi. Kirim
+        (приёмка) bo'lganda FAQAT qoldiq o'zgaradi, tovarning o'zi emas —
+        `synced_at` yangilanmasa kassa yangi qoldiqni HECH QACHON olmaydi
+        va «omborda yo'q» deb turaveradi (2026-09-14 da aynan shu bo'ldi).
+        Shuning uchun qoldig'i O'ZGARGAN tovarning `synced_at` i ham
+        yangilanadi — keyingi delta'da kassa uni oladi.
+
+        Samaradorlik: mavjud qoldiq bir marta o'qiladi va faqat o'zgargani
+        yoziladi (22k tovar × omborlar har safar qayta yozilmaydi).
         """
+        # ms_id → pk (bitta so'rov) — har qator uchun Product qidirmaymiz
+        products = {str(ms): pk for pk, ms in Product.objects.values_list("pk", "ms_id")}
+        # (product_pk, store) → hozirgi qoldiq (bitta so'rov)
+        current = {
+            (pid, str(sid)): qty
+            for pid, sid, qty in Stock.objects.values_list("product_id", "store_ms_id", "quantity")
+        }
+
         count = 0
+        changed: set[int] = set()
         for row in self.client.iter_list("report/stock/bystore"):
-            product_id = _ms_id(row.get("meta"))
-            if not product_id:
+            product_ms = _ms_id(row.get("meta"))
+            if not product_ms:
                 continue
-            product = Product.objects.filter(ms_id=product_id).first()
-            if not product:
+            pk = products.get(str(product_ms))
+            if pk is None:
                 continue
 
             for store_row in row.get("stockByStore") or []:
                 store_id = _ms_id(store_row.get("meta"))
                 if not store_id:
                     continue
-                Stock.objects.update_or_create(
-                    product=product,
-                    store_ms_id=store_id,
-                    defaults={"quantity": Decimal(str(store_row.get("stock") or 0))},
-                )
+                qty = Decimal(str(store_row.get("stock") or 0))
                 count += 1
+                key = (pk, str(store_id))
+                old = current.get(key)
+                if old is not None and old == qty:
+                    continue  # o'zgarmagan — yozmaymiz
+                Stock.objects.update_or_create(
+                    product_id=pk,
+                    store_ms_id=store_id,
+                    defaults={"quantity": qty},
+                )
+                current[key] = qty
+                changed.add(pk)
+
+        if changed:
+            # Kassa delta'si shu tovarlarni olsin (yangi qoldiq bilan)
+            now = dj_timezone.now()
+            for i in range(0, len(changed), 500):
+                chunk = list(changed)[i:i + 500]
+                Product.objects.filter(pk__in=chunk).update(synced_at=now)
+            logger.info("Qoldiq o'zgargan tovarlar: %s ta (kassa delta'ga tushadi)", len(changed))
         return count
 
     # -------------------------------------------------------------- mijozlar

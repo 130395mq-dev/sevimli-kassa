@@ -131,3 +131,68 @@ class WarehouseTest(TestCase):
         wh = Warehouse.objects.get(ms_id="00000000-0000-0000-0000-00000000cccc")
         self.assertEqual(wh.name, "Yangi ombor")
         self.assertEqual(wh.path_name, "Filiallar")
+
+
+class StockDeltaTest(TestCase):
+    """Kirim (приёмка) bo'lganda kassa yangi qoldiqni OLISHI kerak.
+
+    Kassa `catalog?since=` bilan faqat `Product.synced_at` o'zgargan
+    tovarlarni tortadi. Qoldiq alohida jadvalda — u o'zgarganda tovarning
+    `synced_at` i ham yangilanmasa kassa «omborda yo'q» deb turaveradi
+    (2026-09-14 da aynan shu bo'ldi).
+    """
+
+    STORE = "00000000-0000-0000-0000-0000000000b2"
+    P1 = "00000000-0000-0000-0000-000000000101"
+    P2 = "00000000-0000-0000-0000-000000000102"
+
+    def _client(self, stock1, stock2):
+        from unittest.mock import MagicMock
+        base = "https://api.moysklad.ru/api/remap/1.2/entity"
+        client = MagicMock()
+        client.iter_list.return_value = iter([
+            {"meta": {"href": f"{base}/product/{self.P1}"},
+             "stockByStore": [{"meta": {"href": f"{base}/store/{self.STORE}"}, "stock": stock1}]},
+            {"meta": {"href": f"{base}/product/{self.P2}"},
+             "stockByStore": [{"meta": {"href": f"{base}/store/{self.STORE}"}, "stock": stock2}]},
+        ])
+        return client
+
+    def setUp(self):
+        from catalog.models import Product
+        self.p1 = Product.objects.create(ms_id=self.P1, name="Non", sale_price=100)
+        self.p2 = Product.objects.create(ms_id=self.P2, name="Sut", sale_price=200)
+
+    def test_qoldiq_ozgargan_tovar_delta_ga_tushadi(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from catalog.models import Product, Stock
+        from catalog.sync import CatalogSync
+
+        # Birinchi sync: ikkalasi 0 (omborda yo'q)
+        CatalogSync(self._client(0, 0)).sync_stock()
+        self.assertEqual(Stock.objects.get(product=self.p1).quantity, 0)
+
+        # Kassa oxirgi marta shu vaqtda tortgan
+        since = timezone.now()
+        # synced_at ni ataylab eskiga suramiz (kassa allaqachon olgan)
+        old = since - timedelta(minutes=30)
+        Product.objects.update(synced_at=old)
+
+        # KIRIM: Non 25 ta bo'ldi, Sut o'zgarmadi
+        CatalogSync(self._client(25, 0)).sync_stock()
+
+        self.assertEqual(Stock.objects.get(product=self.p1).quantity, 25)
+        # Non — synced_at yangilandi (kassa delta'ga tushadi)
+        self.assertGreaterEqual(Product.objects.get(pk=self.p1.pk).synced_at, since)
+        # Sut — o'zgarmagan, delta'ga tushmaydi (bekorga yuborilmaydi)
+        self.assertEqual(Product.objects.get(pk=self.p2.pk).synced_at, old)
+
+    def test_ozgarmagan_qoldiq_qayta_yozilmaydi(self):
+        from catalog.models import Stock
+        from catalog.sync import CatalogSync
+
+        CatalogSync(self._client(5, 7)).sync_stock()
+        before = Stock.objects.get(product=self.p1).updated_at
+        CatalogSync(self._client(5, 7)).sync_stock()  # hech narsa o'zgarmadi
+        self.assertEqual(Stock.objects.get(product=self.p1).updated_at, before)
