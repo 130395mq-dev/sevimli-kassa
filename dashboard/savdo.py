@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -111,6 +111,22 @@ def _totals(qs) -> dict:
         "returns": (ret["total"] or 0) / 100,
         "returns_n": ret["n"] or 0,
     }
+
+
+def queue_snapshot(params) -> dict:
+    """Jonli navbat sonlari; kassa belgilari tanlangan davrga mos keladi."""
+    start, end, _ = parse_range(params)
+    a, b = _bounds(start, end)
+    pending = Sale.objects.filter(sync_status__in=[Sale.NEW, Sale.FAILED, Sale.STUCK])
+    counts = pending.aggregate(
+        queued=Count("pk", filter=Q(sync_status__in=[Sale.NEW, Sale.FAILED])),
+        stuck=Count("pk", filter=Q(sync_status=Sale.STUCK)),
+    )
+    rows = (pending.filter(created_at__gte=a, created_at__lt=b)
+            .values("shift__register_id")
+            .annotate(n=Count("pk")).order_by())
+    counts["registers"] = {str(r["shift__register_id"]): r["n"] for r in rows}
+    return counts
 
 
 def build(params, now=None) -> dict:
