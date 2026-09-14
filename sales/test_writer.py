@@ -56,6 +56,9 @@ class FakeClient:
             "syncId": payload.get("syncId"),
         }
         if path in ("entity/demand", "entity/salesreturn"):
+            prefix = "ОТ" if path == "entity/demand" else "ВТ"
+            count = sum(1 for posted_path, _ in self.posts if posted_path == path)
+            doc["name"] = f"{prefix}-{count:04d}"
             doc["sum"] = (
                 self.sum_override
                 if self.sum_override is not None

@@ -157,15 +157,14 @@ class SaleWriter:
 
     # ------------------------------------------------------------ asosiy
 
-    def send(self, sale: Sale) -> None:
+    def send(self, sale: Sale) -> dict:
         """Chekni to'liq yozadi: Отгрузка + to'lovlar + ball.
 
         Xato bo'lsa `WriteError` ko'taradi. Yozilgan qismlar bazada
         belgilanadi, shuning uchun keyingi urinish ularni takrorlamaydi.
         """
         if sale.kind == Sale.RETURN:
-            self._send_return(sale)
-            return
+            return self._send_return(sale)
 
         demand = self._write_demand(sale)
         self._check_sum(sale, demand)
@@ -179,8 +178,9 @@ class SaleWriter:
         # `bonustransaction` yozardik; u har doim rad etilib, butun savdoni
         # STUCK qilardi. Endi ballni FAQAT o'zimiz (SEVIMLI BONUS,
         # server bazasi) yuritamiz. Bu chaqiruv ataylab olib tashlandi.
+        return demand
 
-    def _send_return(self, sale: Sale) -> None:
+    def _send_return(self, sale: Sale) -> dict:
         """Qaytarishni yozadi: Возврат (salesreturn) + pulni qaytarish.
 
         Savdo teskarisiga: Отгрузка o'rniga Возврат, kirim o'rniga chiqim.
@@ -201,6 +201,7 @@ class SaleWriter:
 
         for payment in sale.payments.select_related("method"):
             self._write_refund(sale, payment, salesreturn)
+        return salesreturn
 
     def _write_salesreturn(self, sale: Sale) -> dict:
         if sale.ms_demand_id:
@@ -216,7 +217,9 @@ class SaleWriter:
         # ms_demand_id maydonini qayta ishlatamiz — u shunchaki «shu chekning
         # MoySklad'dagi hujjati». Qaytarish uchun salesreturn ID'sini saqlaydi.
         sale.ms_demand_id = doc["id"]
-        sale.save(update_fields=["ms_demand_id"])
+        if doc.get("name"):
+            sale.receipt_number = str(doc["name"])
+        sale.save(update_fields=["ms_demand_id", "receipt_number"])
         return doc
 
     def _salesreturn_payload(self, sale: Sale) -> dict:
@@ -290,7 +293,12 @@ class SaleWriter:
             return doc
 
         sale.ms_demand_id = doc["id"]
-        sale.save(update_fields=["ms_demand_id"])
+        # MoySklad o'zining umumiy hujjatlar ketma-ketligidan haqiqiy
+        # raqamni beradi (masalan, ОТ-0208). Kassa chekida aynan shu raqam
+        # ko'rsatiladi; alohida SK-* raqam yasamaymiz.
+        if doc.get("name"):
+            sale.receipt_number = str(doc["name"])
+        sale.save(update_fields=["ms_demand_id", "receipt_number"])
         return doc
 
     def _demand_payload(self, sale: Sale) -> dict:
@@ -348,8 +356,6 @@ class SaleWriter:
             "store": meta("store", warehouse_id),
         }
 
-        if getattr(sale, "receipt_number", None):
-            payload["name"] = sale.receipt_number
         return payload
 
     def _agent(self, sale: Sale) -> dict:

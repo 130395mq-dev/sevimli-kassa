@@ -58,7 +58,6 @@ from sales.returns import allocations, validate_return, reversed_points
 from sales.aloqa import moysklad_health
 from sales.services import build_receipt, close_shift, ShiftError
 from shared.receipt import render
-from shared.identity import receipt_number
 
 from . import pricing, session_security
 
@@ -73,18 +72,18 @@ from .auth import (
 logger = logging.getLogger("api")
 
 
-def _push_sale_now(sale_id: int) -> None:
-    """Savdoni MoySklad'ga DARHOL yozadi (fon oqimida, so'rovni kutdirmay).
+def _push_sale_now(sale_id: int) -> str | None:
+    """Savdoni MoySklad'ga darhol yozib, uning haqiqiy hujjat raqamini oladi.
 
-    Shu tufayli chek MoySklad'da 5 daqiqalik cron'ni kutmasdan, 1-2
-    soniyada paydo bo'ladi. Xato bo'lsa — jimgina qoldiriladi va
-    `sync_sales` cron'i keyin qayta urinadi (backoff bilan). syncId
-    tufayli ikki marta yozilmaydi.
+    Oddiy onlayn holatda kassa shu natijani kutadi, chunki qog'oz chekda
+    MoySklad bergan ОТ-* raqam chiqishi kerak. Xato bo'lsa savdo server
+    navbatida qoladi va `sync_sales` cron'i keyin qayta urinadi. syncId
+    takroriy hujjat yaratilishiga yo'l qo'ymaydi.
     """
     from django.conf import settings as s
 
     if not getattr(s, "MOYSKLAD_TOKEN", ""):
-        return
+        return None
 
     from django.db import connection
     from django.utils import timezone as tz
@@ -99,7 +98,7 @@ def _push_sale_now(sale_id: int) -> None:
             .first()
         )
         if not sale or sale.sync_status == Sale.SENT:
-            return
+            return sale.receipt_number if sale else None
         SaleWriter(MoySkladClient(token=s.MOYSKLAD_TOKEN)).send(sale)
         sale.sync_status = Sale.SENT
         sale.synced_at = tz.now()
@@ -108,8 +107,11 @@ def _push_sale_now(sale_id: int) -> None:
         sale.save(update_fields=[
             "sync_status", "synced_at", "sync_error", "next_attempt_at"
         ])
+        sale.refresh_from_db(fields=["receipt_number"])
+        return sale.receipt_number
     except Exception as e:  # cron baribir qayta urinadi
         logger.info("Darhol yozilmadi (cron qayta urinadi): %s", e)
+        return None
     finally:
         connection.close()
 
@@ -1049,8 +1051,9 @@ def create_sale(request):
     if existing:
         if existing.shift.register_id != reg.pk:
             return error("Chek boshqa kassaga tegishli", status=409)
+        official = existing.receipt_number or _push_sale_now(existing.pk)
         return JsonResponse(
-            {"id": existing.pk, "number": existing.number, "receipt_number": existing.receipt_number, "duplicate": True}
+            {"id": existing.pk, "number": existing.number, "receipt_number": official, "duplicate": True}
         )
 
     # Bind every receipt to the shift in which it was actually created.
@@ -1079,13 +1082,6 @@ def create_sale(request):
     if not shift:
         return error("Ochiq smena yo'q", status=409)
 
-    if data.get("receipt_number"):
-        try:
-            if data["receipt_number"] != receipt_number(local_uuid):
-                return error("Chek raqami identifikatorga mos emas")
-        except (ValueError, TypeError, AttributeError):
-            return error("Chek identifikatori noto'g'ri")
-
     items = data.get("items") or []
     if not items:
         return error("Chek bo'sh")
@@ -1098,7 +1094,14 @@ def create_sale(request):
     manager_ok = bool(minfo and minfo.get("is_manager"))
 
     try:
-        return _save_sale(shift, data, items, payments, local_uuid, manager_ok, late=late)
+        response = _save_sale(shift, data, items, payments, local_uuid, manager_ok, late=late)
+        # Oddiy onlayn savdoda MoySklad hujjatini shu so'rovning o'zida
+        # yaratamiz. Shunda javobda uning haqiqiy ОТ-* raqami keladi va
+        # kassa qog'oz chekni aynan o'sha raqam bilan chiqaradi. MoySklad
+        # vaqtincha ishlamasa savdo bazada/navbatda qoladi, cron keyin yuboradi.
+        payload = json.loads(response.content)
+        payload["receipt_number"] = _push_sale_now(payload["id"])
+        return JsonResponse(payload, status=201)
     except ValueError as e:
         logger.warning("Chek rad etildi (%s): %s", local_uuid, e); return error(str(e))
     except IntegrityError:
@@ -1108,8 +1111,9 @@ def create_sale(request):
         if existing:
             if existing.shift.register_id != reg.pk:
                 return error("Chek boshqa kassaga tegishli", status=409)
+            official = existing.receipt_number or _push_sale_now(existing.pk)
             return JsonResponse(
-                {"id": existing.pk, "number": existing.number, "receipt_number": existing.receipt_number, "duplicate": True}
+                {"id": existing.pk, "number": existing.number, "receipt_number": official, "duplicate": True}
             )
         raise
 
@@ -1294,7 +1298,9 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         kind=kind,
         number=last + 1,
         local_uuid=local_uuid,
-        receipt_number=data.get("receipt_number") or None,
+        # Raqamni klient yasamaydi. MoySklad Отгрузка/Возврат yaratilganda
+        # bergan ОТ-*/... tartib raqami writer tomonidan yoziladi.
+        receipt_number=None,
         customer=customer,
         origin=origin,
         created_at=created_at,
@@ -1354,15 +1360,6 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         if new_balance != customer.bonus_points:
             customer.bonus_points = new_balance
             customer.save(update_fields=["bonus_points"])
-
-    # Chek saqlandi. Tranzaksiya tasdiqlangach — darhol MoySklad'ga
-    # yozamiz (fon oqimida). So'rov kutmaydi; cron zaxira bo'lib qoladi.
-    sale_id = sale.pk
-    transaction.on_commit(
-        lambda: threading.Thread(
-            target=_push_sale_now, args=(sale_id,), daemon=True
-        ).start()
-    )
 
     return JsonResponse(
         {
