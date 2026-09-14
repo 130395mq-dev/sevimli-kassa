@@ -98,7 +98,8 @@ def _fake_sale(register: Register, product: Product, methods: list[PaymentMethod
                *, kind: str = Sale.SALE, origin=None) -> _Obj:
     total = AMOUNT_PER_METHOD * max(1, len(methods))
     item = _Obj(
-        name=product.name, quantity="1.000", total=total,
+        # Exercise fractional unit prices during the unposted live self-test.
+        name=product.name, quantity="3.007", total=total,
         ms_product_id=str(product.ms_id),
     )
     payments = [
