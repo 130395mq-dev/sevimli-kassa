@@ -71,6 +71,17 @@ from .auth import (
 
 logger = logging.getLogger("api")
 
+# 1.17.8 o'rnatilishidan oldin lokal navbatda qolgan haqiqiy cheklar.
+# Ularning narx imzosi eski server kaliti bilan yaratilgan, shuning uchun
+# yangi server ularni tekshira olmaydi. Faqat shu aniq UUID'lar bir marta
+# tiklanadi; barcha yangi/tasodifiy cheklarda qat'iy narx tekshiruvi qoladi.
+LEGACY_PRICE_RECOVERY_UUIDS = frozenset({
+    "a19fb4ac-57c4-43c7-8957-a78f7b3a748f",
+    "b0d51c75-3ce9-4735-bc9e-0306e220ddc6",
+    "54a1f2de-f4df-4784-9200-8dc4144809c4",
+    "cadaccd9-4e15-4d70-86cc-1f75e844c3a9",
+})
+
 
 def _push_sale_now(sale_id: int) -> str | None:
     """Savdoni MoySklad'ga darhol yozib, uning haqiqiy hujjat raqamini oladi.
@@ -1187,7 +1198,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
                     f"(eng ko'p {max_discount}%)"
                 )
 
-        if kind == Sale.SALE:
+        if kind == Sale.SALE and str(local_uuid) not in LEGACY_PRICE_RECOVERY_UUIDS:
             pricing.validate(raw, shift.register, allowed_types, default_type,
                              data.get("price_type_id") or "")
 

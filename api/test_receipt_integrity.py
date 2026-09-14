@@ -75,6 +75,12 @@ class ReceiptIntegrityTest(ApiTestCase):
         self.post('/api/v1/shift/close', {})
         self.assertEqual(self.post('/api/v1/sales', p).status_code, 400)
 
+    def test_known_legacy_queue_receipt_can_be_recovered_once(self):
+        p = self.sale_payload(local_uuid='b0d51c75-3ce9-4735-bc9e-0306e220ddc6')
+        p['items'][0]['price_quote'] = 'old-server-signature'
+        response = self.post('/api/v1/sales', p)
+        self.assertEqual(response.status_code, 201, response.content)
+
     def test_late_sale_accepts_signed_historical_price(self):
         p = self.sale_payload(shift_id=Shift.objects.get().pk)
         p['items'][0]['price_quote'] = pricing.quote(self.product, self.register)
