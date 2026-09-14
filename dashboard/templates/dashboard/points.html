@@ -59,9 +59,22 @@
   {% if not alerts and not queued %}
     <div class="alert ok" data-queue-empty>
       <span>✓</span>
-      <div><b>Hammasi joyida</b> MoySklad ulangan, kassalar joyida, navbat bo'sh.</div>
+      <div><b>Server navbati bo'sh</b> MoySklad uchun serverda kutilayotgan chek yo'q.</div>
     </div>
   {% endif %}
+
+  <h2>Kassalardagi yuborish holati</h2>
+  <div class="sub">Kompyuterdagi navbat va MoySklad navbati alohida hisoblanadi. Aloqa uzilganda oxirgi ma'lumot ko'rsatiladi.</div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Kassa</th><th>Versiya</th><th>Serverga kutilmoqda</th><th>Tiqilgan</th><th>Oxirgi ma'lumot</th><th>Sabab</th></tr></thead>
+    <tbody>{% for k in board.kassas %}<tr>
+      <td>{{ k.register.name }}</td><td>{{ k.register.app_version|default:"—" }}</td>
+      <td>{{ k.register.local_pending|default_if_none:"Noma'lum" }}</td>
+      <td>{{ k.register.local_stuck|default_if_none:"—" }}</td>
+      <td>{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
+      <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
+    </tr>{% empty %}<tr><td colspan="6">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>
+  </table></div>
 
   {# ---------------------------------------------------- sana filtri #}
   <form method="get" class="davr" id="davr">
