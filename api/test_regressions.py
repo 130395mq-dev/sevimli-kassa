@@ -150,6 +150,15 @@ class PushSaleNowSingleWriterTest(ApiTestCase):
     qilmasdan birinchisining natijasini kutadi. Cron ham band qilingan
     chekka 60 soniya tegmaydi."""
 
+    def setUp(self):
+        super().setUp()
+        # _push_sale_now oxirida connection.close() qiladi (gunicorn uchun
+        # to'g'ri). Test tranzaksiyasi ichida bu ulanishni uzib qo'yadi
+        # (Postgres: «the connection is closed») — testda o'chiramiz.
+        from unittest.mock import patch
+        p = patch("django.db.connection.close", lambda: None)
+        p.start(); self.addCleanup(p.stop)
+
     def _new_sale(self):
         self.open_shift()
         from unittest.mock import patch
