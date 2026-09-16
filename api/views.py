@@ -83,14 +83,28 @@ LEGACY_PRICE_RECOVERY_UUIDS = frozenset({
 })
 
 
-def _push_sale_now(sale_id: int) -> str | None:
+def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
     """Savdoni MoySklad'ga darhol yozib, uning haqiqiy hujjat raqamini oladi.
 
     Oddiy onlayn holatda kassa shu natijani kutadi, chunki qog'oz chekda
     MoySklad bergan ОТ-* raqam chiqishi kerak. Xato bo'lsa savdo server
     navbatida qoladi va `sync_sales` cron'i keyin qayta urinadi. syncId
     takroriy hujjat yaratilishiga yo'l qo'ymaydi.
+
+    BIR VAQTDA IKKI YOZUVCHI BO'LMASIN (2026-09-16): kassa bitta chekni
+    ikki marta ketma-ket yuborishi mumkin (darhol yuborish + fon navbati),
+    bundan tashqari `sync_sales` sikli ham shu chekni olishi mumkin. Ilgari
+    ikkalasi ham MoySklad'ga POST qilar, ikkinchisi 412 (syncId takror)
+    olib, keyin hujjatni qidirib topardi — natija to'g'ri, lekin ikki
+    barobar so'rov va kutish. Endi chek avval «band qilinadi»
+    (next_attempt_at = hozir+60s, atomar UPDATE): kim birinchi band
+    qilsa, o'sha yozadi; qolganlar kutib, tayyor raqamni oladi. Band
+    qilingan chekni cron ham 60 soniya tegmaydi. Yozuv xato bo'lsa
+    60 soniyadan keyin cron qayta urinadi.
     """
+    import time
+    from datetime import timedelta
+
     from django.conf import settings as s
 
     if not getattr(s, "MOYSKLAD_TOKEN", ""):
@@ -102,14 +116,38 @@ def _push_sale_now(sale_id: int) -> str | None:
     from moysklad.client import MoySkladClient
     from sales.writer import SaleWriter
 
+    def _wait_ready() -> str | None:
+        deadline = time.monotonic() + wait
+        while True:
+            sale = Sale.objects.filter(pk=sale_id).only(
+                "sync_status", "receipt_number").first()
+            if not sale:
+                return None
+            if sale.sync_status == Sale.SENT:
+                return sale.receipt_number
+            if sale.sync_status in (Sale.FAILED, Sale.STUCK) or time.monotonic() >= deadline:
+                return sale.receipt_number
+            time.sleep(0.25)
+
     try:
+        now = tz.now()
+        claimed = (
+            Sale.objects.filter(pk=sale_id, sync_status__in=[Sale.NEW, Sale.FAILED])
+            .filter(Q(next_attempt_at__isnull=True) | Q(next_attempt_at__lte=now))
+            .update(next_attempt_at=now + timedelta(seconds=60))
+        )
+        if not claimed:
+            # Yo allaqachon SENT, yo boshqa so'rov/cron hozir yozyapti —
+            # ikkinchi marta POST qilmaymiz, natijasini kutamiz.
+            return _wait_ready()
+
         sale = (
             Sale.objects.select_related("shift__register__store", "customer")
             .filter(pk=sale_id)
             .first()
         )
-        if not sale or sale.sync_status == Sale.SENT:
-            return sale.receipt_number if sale else None
+        if not sale:
+            return None
         SaleWriter(MoySkladClient(token=s.MOYSKLAD_TOKEN)).send(sale)
         sale.sync_status = Sale.SENT
         sale.synced_at = tz.now()
@@ -120,7 +158,7 @@ def _push_sale_now(sale_id: int) -> str | None:
         ])
         sale.refresh_from_db(fields=["receipt_number"])
         return sale.receipt_number
-    except Exception as e:  # cron baribir qayta urinadi
+    except Exception as e:  # cron baribir qayta urinadi (60 s dan keyin)
         logger.info("Darhol yozilmadi (cron qayta urinadi): %s", e)
         return None
     finally:
