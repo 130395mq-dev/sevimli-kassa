@@ -504,3 +504,72 @@ class ReturnTest(TestCase):
         writer.send(ret)
         self.assertTrue(any(e == "cashout" for e, _ in writer.payloads))
         self.assertFalse(client.posts)
+
+
+@override_settings(MOYSKLAD_RETAIL_CUSTOMER_ID=RETAIL_CUSTOMER)
+class DuplicateReceiptNumberTest(TestCase):
+    """MoySklad bir xil raqamni ikki chekka bersa (2026-09-16: OT-1162) —
+    navbat TO'XTAMASLIGI kerak. Hujjat MoySklad'da bor: chek SENT bo'ladi,
+    faqat raqam bo'sh qoladi."""
+
+    def setUp(self):
+        self.store = RetailStore.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000de", name="Namuna",
+            organization_ms_id="00000000-0000-0000-0000-0000000000a1",
+            store_ms_id="00000000-0000-0000-0000-0000000000b2",
+        )
+        self.register = Register.objects.create(code="k1", name="Kassa-1", store=self.store)
+        self.shift = Shift.objects.create(
+            register=self.register, number=7, cashier="Test", opened_at=timezone.now())
+        self.cash = PaymentMethod.objects.create(code="naqd", name="Naqd", is_cash=True, sort=1)
+
+    def _make(self, number, total):
+        sale = Sale.objects.create(
+            shift=self.shift, number=number, created_at=timezone.now(),
+            gross_total=total, net_total=total)
+        SaleItem.objects.create(sale=sale, position=1, name="T", quantity=Decimal("1"),
+                                price=total, total=total,
+                                ms_product_id="00000000-0000-0000-0000-000000000101")
+        Payment.objects.create(sale=sale, method=self.cash, amount=total)
+        return sale
+
+    def test_takror_raqam_siklni_toxtatmaydi(self):
+        from sales import sender
+
+        class SameNameClient(FakeClient):
+            def post(self, path, payload):
+                doc = super().post(path, payload)
+                if path == "entity/demand":
+                    doc["id"] = f"aaaaaaaa-0000-0000-0000-{len(self.posts):012d}"
+                    doc["name"] = "OT-1162"      # MoySklad ikkalasiga ham shu raqam
+                return doc
+
+        a = self._make(1, 3_000_00)
+        b = self._make(2, 2_000_00)
+        result = sender.send_due(writer=SaleWriter(SameNameClient()))
+        a.refresh_from_db(); b.refresh_from_db()
+
+        self.assertEqual(result["sent"], 2)                 # sikl yiqilmadi
+        self.assertEqual(a.sync_status, Sale.SENT)
+        self.assertEqual(b.sync_status, Sale.SENT)          # ikkinchisi ham SENT
+        self.assertEqual(a.receipt_number, "OT-1162")
+        self.assertIsNone(b.receipt_number)                 # raqam bo'sh, lekin yozilgan
+        self.assertIsNotNone(b.ms_demand_id)
+
+    def test_kutilmagan_xato_bitta_chekni_belgilaydi(self):
+        from sales import sender
+
+        class Boom(FakeClient):
+            def post(self, path, payload):
+                if path == "entity/demand" and payload["positions"][0]["price"] == 2_000_00:
+                    raise RuntimeError("kutilmagan")
+                return super().post(path, payload)
+
+        a = self._make(1, 3_000_00)
+        b = self._make(2, 2_000_00)
+        result = sender.send_due(writer=SaleWriter(Boom()))
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(a.sync_status, Sale.SENT)
+        self.assertEqual(b.sync_status, Sale.FAILED)        # qayta uriniladi, sikl davom etdi
