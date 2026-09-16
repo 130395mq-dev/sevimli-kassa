@@ -96,6 +96,13 @@ def send_one(writer: SaleWriter, sale: Sale) -> tuple[str, str]:
     except WriteError as e:
         mark_failed(sale, str(e))
         return "failed", str(e)
+    except Exception as e:  # noqa: BLE001
+        # Kutilmagan xato (baza, kod) — BITTA chek belgilanadi, sikl
+        # to'xtamaydi. Aks holda bitta chek butun navbatni to'sib qo'yardi
+        # (2026-09-16: receipt_number unique to'qnashuvi shunday qildi).
+        logger.exception("Chek #%s: kutilmagan xato", sale.pk)
+        mark_failed(sale, f"Kutilmagan xato: {e}")
+        return "failed", str(e)
     mark_sent(sale)
     return "sent", ""
 
