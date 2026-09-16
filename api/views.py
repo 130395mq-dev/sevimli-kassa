@@ -530,6 +530,13 @@ def returnable_sales(request):
         .prefetch_related("items", "payments__method")
         .order_by("-created_at", "-pk")
     )
+    # FAQAT ochiq smena cheklari (egasining talabi, 2026-09-16). Yopiq
+    # smena chekini qaytarishga ruxsat bo'lmasa (panel sozlamasi, standart
+    # o'chiq) — uni ro'yxatda ham KO'RSATMAYMIZ. Aks holda kassir eski
+    # chekni tanlab pulni beradi, server esa keyin rad etadi: pul berilgan,
+    # qaytarish yozilmagan, smena yopilganda kassada pul yetishmaydi.
+    if not reg.settings.allow_returns_closed_shift:
+        sales = sales.filter(shift__status=Shift.OPEN)
     query = request.GET.get("q", "").strip().lstrip("#")
     if query:
         match = Q(customer__name__icontains=query) | Q(receipt_number__icontains=query)
