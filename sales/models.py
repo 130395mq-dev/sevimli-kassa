@@ -491,7 +491,10 @@ class Sale(models.Model):
     shift = models.ForeignKey(Shift, on_delete=models.PROTECT, related_name="sales")
     kind = models.CharField(max_length=8, choices=KIND, default=SALE)
     number = models.IntegerField(help_text="Smena ichidagi chek raqami")
-    receipt_number = models.CharField(max_length=40, null=True, blank=True, unique=True, editable=False)
+    #: MoySklad bergan hujjat raqami («1163»). Savdo va qaytarish ALOHIDA
+    #: raqamlanadi (Отгрузка/Возврат hisoblagichlari boshqa-boshqa), shuning
+    #: uchun unique (kind, receipt_number) — Meta.constraints'da.
+    receipt_number = models.CharField(max_length=40, null=True, blank=True, editable=False)
 
     # Idempotentlik kaliti. MoySklad'ga `syncId` sifatida boradi.
     # Shu tufayli bir chek ikki marta yozilib qolmaydi: takroriy so'rov
@@ -535,6 +538,11 @@ class Sale(models.Model):
     class Meta:
         ordering = ["-created_at"]
         unique_together = [("shift", "kind", "number")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "receipt_number"], name="sale_kind_receipt_number_uniq"
+            ),
+        ]
         indexes = [
             models.Index(fields=["sync_status", "next_attempt_at"]),
             models.Index(fields=["-created_at"]),
