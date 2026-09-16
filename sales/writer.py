@@ -204,15 +204,20 @@ class SaleWriter:
         return salesreturn
 
     def _save_doc_ref(self, sale: Sale, doc: dict) -> None:
-        """MoySklad hujjat ID'si va u bergan raqamni («ОТ-0208») saqlaydi.
+        """MoySklad hujjat ID'si va u bergan raqamni («1163») saqlaydi.
 
-        MUHIM (2026-09-16): `receipt_number` bazada unique. MoySklad raqamni
-        takrorlab bersa (masalan raqamlash qayta boshlangan), ikkinchi chekni
-        saqlashda IntegrityError chiqib BUTUN yuborish sikli yiqilardi va
-        navbat to'xtab qolardi (chek MoySklad'da bor edi, bizda «navbatda»
-        bo'lib turardi). Endi: hujjat baribir yozilgan — ms_demand_id
-        saqlanadi, raqam bo'sh qoladi, ogohlantirish log'ga tushadi, sikl
-        davom etadi. Kassa bu chekni raqamsiz ko'rsatadi.
+        MUHIM (2026-09-16): `receipt_number` bazada unique (savdo va
+        qaytarish ALOHIDA: Отгрузка 12 va Возврат 12 bir-biriga xalaqit
+        bermaydi). MoySklad bir xil turdagi ikki hujjatga bir xil raqam
+        bersa (raqamlash qayta boshlangan, qo'lda o'zgartirilgan), ilgari
+        IntegrityError butun yuborish siklini yiqitib navbatni to'xtatardi.
+        Endi (egasining talabi: «chek navbatda turib qolmasin, keyingi
+        raqamni olib ketsin»):
+          1) bazada bo'sh turgan KEYINGI raqam topiladi (1162 band → 1163),
+          2) MoySklad'dagi hujjat shu raqamga qayta nomlanadi (PUT name),
+          3) chek shu raqam bilan saqlanadi.
+        Qayta nomlab bo'lmasa — hujjat baribir yozilgan: ms_demand_id
+        saqlanadi, raqam bo'sh qoladi, sikl davom etadi.
         """
         from django.db import IntegrityError, transaction
 
@@ -227,11 +232,54 @@ class SaleWriter:
             except IntegrityError:
                 logger.warning(
                     "MoySklad raqami takrorlangan: %s allaqachon boshqa chekda "
-                    "(chek #%s, syncId=%s) — raqamsiz saqlanadi",
+                    "(chek #%s, syncId=%s) — keyingi raqam beriladi",
                     name, sale.pk, sale.local_uuid,
                 )
-                sale.receipt_number = None
+            renamed = self._rename_to_next_number(sale, doc, name)
+            if renamed:
+                sale.receipt_number = renamed
+                try:
+                    with transaction.atomic():
+                        sale.save(update_fields=["ms_demand_id", "receipt_number"])
+                    return
+                except IntegrityError:  # bir vaqtda ikki chek — juda kam
+                    logger.warning("Keyingi raqam ham band: %s (chek #%s)", renamed, sale.pk)
+            sale.receipt_number = None
         sale.save(update_fields=["ms_demand_id", "receipt_number"])
+
+    def _rename_to_next_number(self, sale: Sale, doc: dict, name: str) -> str | None:
+        """Band raqam o'rniga bazada bo'sh turgan keyingi raqamni topib,
+        MoySklad'dagi hujjatni shunga qayta nomlaydi. Prefiks va nol
+        to'ldirish saqlanadi («ОТ-0208» → «ОТ-0209», «1162» → «1163»).
+        Muvaffaqiyatda yangi nomni, aks holda None qaytaradi."""
+        import re
+
+        m = re.search(r"(\d+)$", name)
+        if not m:
+            return None
+        prefix, digits = name[: m.start()], m.group(1)
+        n = int(digits)
+        candidate = None
+        for _ in range(1000):
+            n += 1
+            cand = f"{prefix}{str(n).zfill(len(digits))}"
+            if not Sale.objects.filter(kind=sale.kind, receipt_number=cand).exists():
+                candidate = cand
+                break
+        if candidate is None:
+            return None
+        entity = "salesreturn" if sale.kind == Sale.RETURN else "demand"
+        try:
+            self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
+        except MoySkladError as e:
+            logger.warning(
+                "MoySklad hujjatini qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
+                name, candidate, sale.pk, e,
+            )
+            return None
+        logger.info("Chek #%s: MoySklad raqami %s → %s", sale.pk, name, candidate)
+        doc["name"] = candidate
+        return candidate
 
     def _write_salesreturn(self, sale: Sale) -> dict:
         if sale.ms_demand_id:

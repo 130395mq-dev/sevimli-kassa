@@ -35,6 +35,7 @@ class FakeClient:
     def __init__(self, *, existing=None, sum_override=None, expense_items=None):
         self.posts: list[tuple[str, dict]] = []
         self.gets: list[tuple[str, dict]] = []
+        self.puts: list[tuple[str, dict]] = []
         self.existing = existing or {}  # syncId → hujjat
         self.sum_override = sum_override
         self.expense_items = (
@@ -67,6 +68,10 @@ class FakeClient:
                 )
             )
         return doc
+
+    def put(self, path, payload):
+        self.puts.append((path, payload))
+        return {"id": path.rsplit("/", 1)[-1], **payload}
 
     def posted(self, entity):
         return [p for path, p in self.posts if path == f"entity/{entity}"]
@@ -509,8 +514,9 @@ class ReturnTest(TestCase):
 @override_settings(MOYSKLAD_RETAIL_CUSTOMER_ID=RETAIL_CUSTOMER)
 class DuplicateReceiptNumberTest(TestCase):
     """MoySklad bir xil raqamni ikki chekka bersa (2026-09-16: OT-1162) —
-    navbat TO'XTAMASLIGI kerak. Hujjat MoySklad'da bor: chek SENT bo'ladi,
-    faqat raqam bo'sh qoladi."""
+    navbat TO'XTAMASLIGI kerak. Ikkinchi chek KEYINGI bo'sh raqamni oladi
+    (MoySklad'dagi hujjat ham qayta nomlanadi); qayta nomlab bo'lmasa —
+    raqam bo'sh qoladi, lekin chek SENT."""
 
     def setUp(self):
         self.store = RetailStore.objects.create(
@@ -533,28 +539,75 @@ class DuplicateReceiptNumberTest(TestCase):
         Payment.objects.create(sale=sale, method=self.cash, amount=total)
         return sale
 
-    def test_takror_raqam_siklni_toxtatmaydi(self):
+    class _SameNameClient(FakeClient):
+        def post(self, path, payload):
+            doc = super().post(path, payload)
+            if path == "entity/demand":
+                doc["id"] = f"aaaaaaaa-0000-0000-0000-{len(self.posts):012d}"
+                doc["name"] = "1162"      # MoySklad ikkalasiga ham shu raqam
+            return doc
+
+    def test_takror_raqam_keyingi_raqamni_oladi(self):
         from sales import sender
 
-        class SameNameClient(FakeClient):
-            def post(self, path, payload):
-                doc = super().post(path, payload)
-                if path == "entity/demand":
-                    doc["id"] = f"aaaaaaaa-0000-0000-0000-{len(self.posts):012d}"
-                    doc["name"] = "OT-1162"      # MoySklad ikkalasiga ham shu raqam
-                return doc
-
+        client = self._SameNameClient()
         a = self._make(1, 3_000_00)
         b = self._make(2, 2_000_00)
-        result = sender.send_due(writer=SaleWriter(SameNameClient()))
+        result = sender.send_due(writer=SaleWriter(client))
         a.refresh_from_db(); b.refresh_from_db()
 
         self.assertEqual(result["sent"], 2)                 # sikl yiqilmadi
         self.assertEqual(a.sync_status, Sale.SENT)
         self.assertEqual(b.sync_status, Sale.SENT)          # ikkinchisi ham SENT
-        self.assertEqual(a.receipt_number, "OT-1162")
+        self.assertEqual(a.receipt_number, "1162")
+        self.assertEqual(b.receipt_number, "1163")          # keyingi raqam
+        self.assertIsNotNone(b.ms_demand_id)
+        # MoySklad'dagi hujjat ham shu raqamga qayta nomlandi
+        self.assertEqual(
+            client.puts, [(f"entity/demand/{b.ms_demand_id}", {"name": "1163"})])
+
+    def test_prefiks_va_nol_saqlanadi(self):
+        from sales import sender
+
+        class Client(self._SameNameClient):
+            def post(self, path, payload):
+                doc = super().post(path, payload)
+                if path == "entity/demand":
+                    doc["name"] = "ОТ-0208"
+                return doc
+
+        client = Client()
+        self._make(1, 3_000_00); b = self._make(2, 2_000_00)
+        sender.send_due(writer=SaleWriter(client))
+        b.refresh_from_db()
+        self.assertEqual(b.receipt_number, "ОТ-0209")
+
+    def test_qayta_nomlab_bolmasa_raqamsiz_lekin_sent(self):
+        from moysklad.client import MoySkladError
+        from sales import sender
+
+        class NoRename(self._SameNameClient):
+            def put(self, path, payload):
+                raise MoySkladError(403, message="taqiqlangan")
+
+        a = self._make(1, 3_000_00)
+        b = self._make(2, 2_000_00)
+        result = sender.send_due(writer=SaleWriter(NoRename()))
+        a.refresh_from_db(); b.refresh_from_db()
+        self.assertEqual(result["sent"], 2)
+        self.assertEqual(b.sync_status, Sale.SENT)
+        self.assertEqual(a.receipt_number, "1162")
         self.assertIsNone(b.receipt_number)                 # raqam bo'sh, lekin yozilgan
         self.assertIsNotNone(b.ms_demand_id)
+
+    def test_savdo_va_qaytarish_bir_xil_raqam_boladi(self):
+        """Отгрузка №12 va Возврат №12 — alohida hisoblagichlar, to'qnashmaydi."""
+        a = self._make(1, 3_000_00)
+        a.receipt_number = "12"; a.save(update_fields=["receipt_number"])
+        r = Sale.objects.create(
+            shift=self.shift, kind=Sale.RETURN, number=1, created_at=timezone.now(),
+            gross_total=1_000_00, net_total=1_000_00, receipt_number="12")
+        self.assertEqual(r.receipt_number, a.receipt_number)
 
     def test_kutilmagan_xato_bitta_chekni_belgilaydi(self):
         from sales import sender
