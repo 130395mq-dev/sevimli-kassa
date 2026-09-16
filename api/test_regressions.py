@@ -141,3 +141,88 @@ class ReturnableOnlyOpenShiftTest(ApiTestCase):
         self.post("/api/v1/shift/close", {})
         self.open_shift()
         self.assertIn(old_sale.pk, self._returnable_ids())
+
+
+class PushSaleNowSingleWriterTest(ApiTestCase):
+    """Bitta chekni bir vaqtda ikki so'rov MoySklad'ga yozmasin (2026-09-16).
+
+    Kassa chekni ikki marta ketma-ket yuborganda ikkinchi so'rov POST
+    qilmasdan birinchisining natijasini kutadi. Cron ham band qilingan
+    chekka 60 soniya tegmaydi."""
+
+    def setUp(self):
+        super().setUp()
+        # _push_sale_now oxirida connection.close() qiladi (gunicorn uchun
+        # to'g'ri). Test tranzaksiyasi ichida bu ulanishni uzib qo'yadi
+        # (Postgres: «the connection is closed») — testda o'chiramiz.
+        from unittest.mock import patch
+        p = patch("django.db.connection.close", lambda: None)
+        p.start(); self.addCleanup(p.stop)
+
+    def _new_sale(self):
+        self.open_shift()
+        from unittest.mock import patch
+        with patch("api.views._push_sale_now", return_value=None):
+            r = self.post("/api/v1/sales", self.sale_payload())
+        self.assertEqual(r.status_code, 201, r.content)
+        return Sale.objects.get(pk=r.json()["id"])
+
+    def test_yozadi_va_raqamni_qaytaradi(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+        from api.views import _push_sale_now
+
+        sale = self._new_sale()
+        calls = []
+
+        def fake_send(self_, s):
+            calls.append(s.pk)
+            Sale.objects.filter(pk=s.pk).update(receipt_number="1163")
+            return {}
+
+        with override_settings(MOYSKLAD_TOKEN="t"), \
+                patch("sales.writer.SaleWriter.send", fake_send), \
+                patch("moysklad.client.MoySkladClient.__init__", return_value=None):
+            self.assertEqual(_push_sale_now(sale.pk, wait=0), "1163")
+        sale.refresh_from_db()
+        self.assertEqual(calls, [sale.pk])
+        self.assertEqual(sale.sync_status, Sale.SENT)
+        self.assertIsNone(sale.next_attempt_at)
+
+    def test_band_qilingan_chek_ikkinchi_marta_yozilmaydi(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+        from api.views import _push_sale_now
+
+        sale = self._new_sale()
+        # Boshqa so'rov hozir yozyapti: band (next_attempt_at kelajakda)
+        Sale.objects.filter(pk=sale.pk).update(
+            next_attempt_at=timezone.now() + timedelta(seconds=60))
+        with override_settings(MOYSKLAD_TOKEN="t"), \
+                patch("sales.writer.SaleWriter.send") as send:
+            self.assertIsNone(_push_sale_now(sale.pk, wait=0))
+            send.assert_not_called()
+
+        # Birinchisi tugagan bo'lsa — POST qilmasdan tayyor raqam qaytadi
+        Sale.objects.filter(pk=sale.pk).update(
+            sync_status=Sale.SENT, receipt_number="1164", next_attempt_at=None)
+        with override_settings(MOYSKLAD_TOKEN="t"), \
+                patch("sales.writer.SaleWriter.send") as send:
+            self.assertEqual(_push_sale_now(sale.pk, wait=0), "1164")
+            send.assert_not_called()
+
+    def test_xato_bolsa_cron_60s_dan_keyin_oladi(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+        from api.views import _push_sale_now
+        from sales.sender import due_exists
+
+        sale = self._new_sale()
+        with override_settings(MOYSKLAD_TOKEN="t"), \
+                patch("sales.writer.SaleWriter.send", side_effect=RuntimeError("MoySklad yo'q")), \
+                patch("moysklad.client.MoySkladClient.__init__", return_value=None):
+            self.assertIsNone(_push_sale_now(sale.pk, wait=0))
+        sale.refresh_from_db()
+        self.assertEqual(sale.sync_status, Sale.NEW)          # yo'qolmadi
+        self.assertFalse(due_exists())                         # hozir cron tegmaydi
+        self.assertTrue(due_exists(timezone.now() + timedelta(seconds=61)))  # keyin oladi
