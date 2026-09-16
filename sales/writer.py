@@ -203,6 +203,36 @@ class SaleWriter:
             self._write_refund(sale, payment, salesreturn)
         return salesreturn
 
+    def _save_doc_ref(self, sale: Sale, doc: dict) -> None:
+        """MoySklad hujjat ID'si va u bergan raqamni («ОТ-0208») saqlaydi.
+
+        MUHIM (2026-09-16): `receipt_number` bazada unique. MoySklad raqamni
+        takrorlab bersa (masalan raqamlash qayta boshlangan), ikkinchi chekni
+        saqlashda IntegrityError chiqib BUTUN yuborish sikli yiqilardi va
+        navbat to'xtab qolardi (chek MoySklad'da bor edi, bizda «navbatda»
+        bo'lib turardi). Endi: hujjat baribir yozilgan — ms_demand_id
+        saqlanadi, raqam bo'sh qoladi, ogohlantirish log'ga tushadi, sikl
+        davom etadi. Kassa bu chekni raqamsiz ko'rsatadi.
+        """
+        from django.db import IntegrityError, transaction
+
+        sale.ms_demand_id = doc["id"]
+        name = str(doc.get("name") or "").strip()[:40]
+        if name:
+            sale.receipt_number = name
+            try:
+                with transaction.atomic():
+                    sale.save(update_fields=["ms_demand_id", "receipt_number"])
+                return
+            except IntegrityError:
+                logger.warning(
+                    "MoySklad raqami takrorlangan: %s allaqachon boshqa chekda "
+                    "(chek #%s, syncId=%s) — raqamsiz saqlanadi",
+                    name, sale.pk, sale.local_uuid,
+                )
+                sale.receipt_number = None
+        sale.save(update_fields=["ms_demand_id", "receipt_number"])
+
     def _write_salesreturn(self, sale: Sale) -> dict:
         if sale.ms_demand_id:
             return self._fetch("salesreturn", sale.local_uuid) or {
@@ -216,10 +246,7 @@ class SaleWriter:
 
         # ms_demand_id maydonini qayta ishlatamiz — u shunchaki «shu chekning
         # MoySklad'dagi hujjati». Qaytarish uchun salesreturn ID'sini saqlaydi.
-        sale.ms_demand_id = doc["id"]
-        if doc.get("name"):
-            sale.receipt_number = str(doc["name"])
-        sale.save(update_fields=["ms_demand_id", "receipt_number"])
+        self._save_doc_ref(sale, doc)
         return doc
 
     def _salesreturn_payload(self, sale: Sale) -> dict:
@@ -292,13 +319,10 @@ class SaleWriter:
         if self.dry_run:
             return doc
 
-        sale.ms_demand_id = doc["id"]
         # MoySklad o'zining umumiy hujjatlar ketma-ketligidan haqiqiy
         # raqamni beradi (masalan, ОТ-0208). Kassa chekida aynan shu raqam
         # ko'rsatiladi; alohida SK-* raqam yasamaymiz.
-        if doc.get("name"):
-            sale.receipt_number = str(doc["name"])
-        sale.save(update_fields=["ms_demand_id", "receipt_number"])
+        self._save_doc_ref(sale, doc)
         return doc
 
     def _demand_payload(self, sale: Sale) -> dict:
