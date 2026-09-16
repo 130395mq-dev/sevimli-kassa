@@ -103,3 +103,41 @@ class ManagerBoundaryTest(ApiTestCase):
         self.register.save()
         self.assertEqual(self.post("/api/v1/session/resume", {"cashier_id":0},
             HTTP_X_DEVICE="untrusted").status_code, 401)
+
+
+class ReturnableOnlyOpenShiftTest(ApiTestCase):
+    """Qaytarish ro'yxatida FAQAT ochiq smena cheklari (egasining talabi)."""
+
+    def _returnable_ids(self):
+        r = self.client.get("/api/v1/sales/returnable",
+                            HTTP_AUTHORIZATION="Bearer " + self.register.api_token)
+        self.assertEqual(r.status_code, 200, r.content)
+        return [s["id"] for s in r.json()["sales"]]
+
+    def test_yopiq_smena_cheki_royxatda_korinmaydi(self):
+        self.open_shift()
+        r = self.post("/api/v1/sales", self.sale_payload())
+        self.assertEqual(r.status_code, 201, r.content)
+        old_sale = Sale.objects.get()
+        self.assertIn(old_sale.pk, self._returnable_ids())   # ochiq smena — ko'rinadi
+
+        self.post("/api/v1/shift/close", {})
+        self.open_shift()
+        r = self.post("/api/v1/sales", self.sale_payload())
+        self.assertEqual(r.status_code, 201, r.content)
+        new_sale = Sale.objects.exclude(pk=old_sale.pk).get()
+
+        ids = self._returnable_ids()
+        self.assertIn(new_sale.pk, ids)       # hozirgi smena — ko'rinadi
+        self.assertNotIn(old_sale.pk, ids)    # yopiq smena — KO'RINMAYDI
+
+    def test_sozlama_yoqilsa_yopiq_smena_ham_korinadi(self):
+        st = self.register.settings
+        st.allow_returns_closed_shift = True
+        st.save()
+        self.open_shift()
+        self.post("/api/v1/sales", self.sale_payload())
+        old_sale = Sale.objects.get()
+        self.post("/api/v1/shift/close", {})
+        self.open_shift()
+        self.assertIn(old_sale.pk, self._returnable_ids())
