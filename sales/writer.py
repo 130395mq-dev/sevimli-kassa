@@ -56,6 +56,29 @@ from .models import Payment, Sale
 
 logger = logging.getLogger(__name__)
 
+#: Sinov (selftest) hujjatlarining eski nom prefiksi. MoySklad shu nomni
+#: «davom ettirib» haqiqiy chekka berishi mumkin — shunday nomlar oddiy
+#: raqamga almashtiriladi (healer ham, writer ham).
+TEST_NAME_PREFIX = "SINOV"
+
+
+def _is_test_name(name: str) -> bool:
+    return str(name or "").strip().upper().startswith(TEST_NAME_PREFIX)
+
+
+def _last_plain_number(kind: str) -> int | None:
+    """Shu turdagi cheklar ichida eng katta raqamli nom (faqat raqamdan
+    iborat). Uzunroq satr = kattaroq raqam, teng uzunlikda alifbo tartibi."""
+    from django.db.models.functions import Length
+
+    row = (
+        Sale.objects.filter(kind=kind, receipt_number__regex=r"^[0-9]+$")
+        .order_by(Length("receipt_number").desc(), "-receipt_number")
+        .values_list("receipt_number", flat=True)
+        .first()
+    )
+    return int(row) if row else None
+
 
 class WriteError(Exception):
     """Chekni yozib bo'lmadi. Xabar panelda ko'rinadi."""
@@ -143,6 +166,7 @@ class SaleWriter:
         dry_run: bool = False,
         applicable: bool | None = None,
         name_prefix: str = "",
+        description_prefix: str = "",
     ):
         self.client = client
         self.dry_run = dry_run
@@ -154,6 +178,12 @@ class SaleWriter:
         # ikkalasi ham None/bo'sh — hech narsa o'zgarmaydi.
         self.applicable = applicable
         self.name_prefix = name_prefix
+        # Sinov hujjatlarini NOM bilan emas, IZOH (description) bilan
+        # belgilaymiz (2026-09-17): MoySklad keyingi hujjat raqamini «oxirgi
+        # hujjat nomi + 1» deb hisoblaydi — «SINOV-490acbcb» dan keyingi
+        # haqiqiy chek «SINOV-490acbcb1» bo'lib qolgan edi. Nomsiz sinov
+        # hujjatini MoySklad o'zi raqamlaydi, u darhol o'chiriladi.
+        self.description_prefix = description_prefix
 
     # ------------------------------------------------------------ asosiy
 
@@ -223,6 +253,12 @@ class SaleWriter:
 
         sale.ms_demand_id = doc["id"]
         name = str(doc.get("name") or "").strip()[:40]
+        if name and not self.name_prefix and _is_test_name(name):
+            # MoySklad haqiqiy chekka sinov nomini «davom ettirib» berdi
+            # (SINOV-…1). Darhol oddiy raqamga o'tkazamiz.
+            fixed = self.rename_to_plain_number(sale, doc, name)
+            if fixed:
+                name = fixed
         if name:
             sale.receipt_number = name
             try:
@@ -246,6 +282,36 @@ class SaleWriter:
                     logger.warning("Keyingi raqam ham band: %s (chek #%s)", renamed, sale.pk)
             sale.receipt_number = None
         sale.save(update_fields=["ms_demand_id", "receipt_number"])
+
+    def rename_to_plain_number(self, sale: Sale, doc: dict, name: str) -> str | None:
+        """Chekka oddiy (raqamli) nom beradi: bazadagi shu turdagi eng katta
+        raqam + 1 (1174 → 1175). MoySklad'dagi hujjat PUT bilan qayta
+        nomlanadi. Raqamli chek umuman bo'lmasa — None (nom o'zgarmaydi)."""
+        last = _last_plain_number(sale.kind)
+        if last is None:
+            return None
+        n = last
+        candidate = None
+        for _ in range(1000):
+            n += 1
+            cand = str(n)
+            if not Sale.objects.filter(kind=sale.kind, receipt_number=cand).exists():
+                candidate = cand
+                break
+        if candidate is None:
+            return None
+        entity = "salesreturn" if sale.kind == Sale.RETURN else "demand"
+        try:
+            self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
+        except MoySkladError as e:
+            logger.warning(
+                "Sinov nomli chekni qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
+                name, candidate, sale.pk, e,
+            )
+            return None
+        logger.warning("Chek #%s: MoySklad sinov nomini berdi (%s) → %s", sale.pk, name, candidate)
+        doc["name"] = candidate
+        return candidate
 
     def _rename_to_next_number(self, sale: Sale, doc: dict, name: str) -> str | None:
         """Band raqam o'rniga bazada bo'sh turgan keyingi raqamni topib,
@@ -647,6 +713,11 @@ class SaleWriter:
             payload["applicable"] = self.applicable
         if self.name_prefix:
             payload["name"] = f"{self.name_prefix}{str(sync_id)[:8]}"
+        if self.description_prefix:
+            payload["description"] = (
+                f"{self.description_prefix} · {payload['description']}"
+                if payload.get("description") else self.description_prefix
+            )
 
         if self.dry_run:
             self.payloads.append((entity, payload))
