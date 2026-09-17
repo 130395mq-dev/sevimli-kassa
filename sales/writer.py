@@ -66,6 +66,17 @@ def _is_test_name(name: str) -> bool:
     return str(name or "").strip().upper().startswith(TEST_NAME_PREFIX)
 
 
+def _is_name_taken(e: MoySkladError) -> bool:
+    """MoySklad 412, kod 3006, parametr 'name' — «нарушено ограничение
+    уникальности параметра 'name'»: bu nom shu hujjat turida allaqachon bor."""
+    if e.status != 412:
+        return False
+    for err in getattr(e, "errors", None) or []:
+        if err.get("code") == 3006 and err.get("parameter") == "name":
+            return True
+    return "'name'" in str(e)
+
+
 def _last_plain_number(kind: str) -> int | None:
     """Shu turdagi cheklar ichida eng katta raqamli nom (faqat raqamdan
     iborat). Uzunroq satr = kattaroq raqam, teng uzunlikda alifbo tartibi."""
@@ -290,28 +301,31 @@ class SaleWriter:
         last = _last_plain_number(sale.kind)
         if last is None:
             return None
-        n = last
-        candidate = None
-        for _ in range(1000):
-            n += 1
-            cand = str(n)
-            if not Sale.objects.filter(kind=sale.kind, receipt_number=cand).exists():
-                candidate = cand
-                break
-        if candidate is None:
-            return None
         entity = "salesreturn" if sale.kind == Sale.RETURN else "demand"
-        try:
-            self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
-        except MoySkladError as e:
-            logger.warning(
-                "Sinov nomli chekni qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
-                name, candidate, sale.pk, e,
-            )
-            return None
-        logger.warning("Chek #%s: MoySklad sinov nomini berdi (%s) → %s", sale.pk, name, candidate)
-        doc["name"] = candidate
-        return candidate
+        n = last
+        # MoySklad'da nom har hujjat turi ichida UNIQUE (412, kod 3006):
+        # bizning bazada yo'q raqam MoySklad'da band bo'lishi mumkin
+        # (eski hujjatlar) — unda keyingisini sinaymiz.
+        for _ in range(60):
+            n += 1
+            candidate = str(n)
+            if Sale.objects.filter(kind=sale.kind, receipt_number=candidate).exists():
+                continue
+            try:
+                self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
+            except MoySkladError as e:
+                if _is_name_taken(e):
+                    continue
+                logger.warning(
+                    "Sinov nomli chekni qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
+                    name, candidate, sale.pk, e,
+                )
+                return None
+            logger.warning("Chek #%s: MoySklad sinov nomini berdi (%s) → %s", sale.pk, name, candidate)
+            doc["name"] = candidate
+            return candidate
+        logger.warning("Chek #%s: bo'sh raqam topilmadi (%s dan keyin 60 ta band)", sale.pk, last)
+        return None
 
     def _rename_to_next_number(self, sale: Sale, doc: dict, name: str) -> str | None:
         """Band raqam o'rniga bazada bo'sh turgan keyingi raqamni topib,
@@ -325,27 +339,26 @@ class SaleWriter:
             return None
         prefix, digits = name[: m.start()], m.group(1)
         n = int(digits)
-        candidate = None
-        for _ in range(1000):
-            n += 1
-            cand = f"{prefix}{str(n).zfill(len(digits))}"
-            if not Sale.objects.filter(kind=sale.kind, receipt_number=cand).exists():
-                candidate = cand
-                break
-        if candidate is None:
-            return None
         entity = "salesreturn" if sale.kind == Sale.RETURN else "demand"
-        try:
-            self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
-        except MoySkladError as e:
-            logger.warning(
-                "MoySklad hujjatini qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
-                name, candidate, sale.pk, e,
-            )
-            return None
-        logger.info("Chek #%s: MoySklad raqami %s → %s", sale.pk, name, candidate)
-        doc["name"] = candidate
-        return candidate
+        for _ in range(60):
+            n += 1
+            candidate = f"{prefix}{str(n).zfill(len(digits))}"
+            if Sale.objects.filter(kind=sale.kind, receipt_number=candidate).exists():
+                continue
+            try:
+                self.client.put(f"entity/{entity}/{doc['id']}", {"name": candidate})
+            except MoySkladError as e:
+                if _is_name_taken(e):      # MoySklad'da band — keyingisi
+                    continue
+                logger.warning(
+                    "MoySklad hujjatini qayta nomlab bo'lmadi (%s → %s, chek #%s): %s",
+                    name, candidate, sale.pk, e,
+                )
+                return None
+            logger.info("Chek #%s: MoySklad raqami %s → %s", sale.pk, name, candidate)
+            doc["name"] = candidate
+            return candidate
+        return None
 
     def _write_salesreturn(self, sale: Sale) -> dict:
         if sale.ms_demand_id:
