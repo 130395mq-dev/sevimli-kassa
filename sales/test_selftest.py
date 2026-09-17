@@ -114,13 +114,15 @@ class SelfTestRunTest(SelfTestBase):
         self.assertEqual(kinds.count("cashout"), 1)
         self.assertEqual(kinds.count("paymentout"), 1)
 
-    def test_sinov_hujjatlari_provedyon_qilinmaydi_va_nomi_sinov(self):
-        """SAVDOGA TA'SIR YO'Q: applicable=false — qoldiq va pulga tegmaydi."""
+    def test_sinov_hujjatlari_provedyon_qilinmaydi_va_izohi_sinov(self):
+        """SAVDOGA TA'SIR YO'Q: applicable=false — qoldiq va pulga tegmaydi.
+        Nom BERILMAYDI (MoySklad raqamlashiga ta'sir qilmasin), belgi izohda."""
         ms = FakeMoySklad()
         SelfTest(ms).run()
         for entity, payload in ms.created:
             self.assertIs(payload.get("applicable"), False, entity)
-            self.assertTrue(payload.get("name", "").startswith("SINOV-"), entity)
+            self.assertNotIn("name", payload, entity)
+            self.assertIn("SINOV", payload.get("description", ""), entity)
 
     def test_hujjatlar_ochiriladi(self):
         ms = FakeMoySklad()
