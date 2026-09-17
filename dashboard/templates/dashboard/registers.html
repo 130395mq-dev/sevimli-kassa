@@ -50,14 +50,44 @@
     </span>
   </form>
 
-  <h2>Ro'yxat</h2>
-  <table>
+  <h2>Ro'yxat <span class="sec" style="font-weight:400; letter-spacing:0; text-transform:none;">— ustun nomini bosib tartiblang</span></h2>
+  <style>
+    /* Kassalar ro'yxati: ixcham va tartiblanadigan (egasining so'rovi, 2026-09-17) */
+    table.kassalar { font-size: 13.5px; }
+    table.kassalar th { cursor: pointer; user-select: none; white-space: nowrap; }
+    table.kassalar th:hover { color: var(--ink); }
+    table.kassalar th .arr { display: inline-block; width: 12px; margin-left: 3px; opacity: .35; font-size: 10px; }
+    table.kassalar th.asc .arr, table.kassalar th.desc .arr { opacity: 1; color: var(--ok); }
+    table.kassalar th.noSort { cursor: default; }
+    table.kassalar td { padding: 9px 12px; vertical-align: middle; }
+    table.kassalar td .sec { font-size: 12px; }
+    table.kassalar .badge { font-size: 11.5px; padding: 3px 9px; }
+    table.kassalar code.token { font-size: 12px; }
+    table.kassalar td.actions { white-space: nowrap; }
+    table.kassalar td.actions form.inline, table.kassalar td.actions a.badge { margin-left: 6px; vertical-align: middle; }
+    table.kassalar td.actions input { width: 96px; padding: 5px 8px; font-size: 12.5px; }
+    table.kassalar td.actions button.small { padding: 5px 10px; font-size: 12.5px; }
+    table.kassalar td.who form.inline { display: inline-block; margin: 0 0 0 6px; }
+    table.kassalar td.who button.small { padding: 3px 8px; font-size: 12px; }
+  </style>
+  <table class="kassalar" id="kassalar">
+    <thead>
     <tr>
-      <th>Ombor (sklad)</th><th>Kassa</th><th>Login</th><th>Parol</th>
-      <th>Versiya</th><th>Oxirgi aloqa</th><th>Kim kirgan</th><th></th>
+      <th data-key="wh">Ombor (sklad)<span class="arr">↕</span></th>
+      <th data-key="name">Kassa<span class="arr">↕</span></th>
+      <th data-key="login">Login<span class="arr">↕</span></th>
+      <th class="noSort">Parol</th>
+      <th data-key="ver">Versiya<span class="arr">↕</span></th>
+      <th data-key="seen">Oxirgi aloqa<span class="arr">↕</span></th>
+      <th data-key="who">Kim kirgan<span class="arr">↕</span></th>
+      <th class="noSort"></th>
     </tr>
+    </thead>
+    <tbody>
     {% for r in rows %}
-      <tr>
+      <tr data-wh="{{ r.wh_name|default:'' }}" data-name="{{ r.name }}" data-login="{{ r.login|default:'' }}"
+          data-ver="{{ r.app_version|default:'' }}" data-seen="{{ r.last_seen_at|date:'c' }}"
+          data-who="{% if r.session %}{{ r.session.cashier_name|default:r.name }}{% endif %}">
         <td>{% if r.wh_name %}<b>{{ r.wh_name }}</b>
             {% else %}<span class="badge err">ombor tanlanmagan</span>{% endif %}</td>
         <td class="tight">
@@ -70,8 +100,8 @@
           <span class="sec">yangilaganda ko'rinadi</span>
         </td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
-        <td class="num">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
-        <td class="tight">
+        <td class="num tight">{{ r.last_seen_at|date:"d.m H:i"|default:"—" }}</td>
+        <td class="tight who">
           {% if r.session %}
             <b>{{ r.session.cashier_name|default:r.name }}</b>
             <span class="sec">· {{ r.session.device_name|default:"kompyuter" }} · {{ r.session.started_at|date:"H:i" }} dan</span>
@@ -127,7 +157,71 @@
     {% empty %}
       <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
+    </tbody>
   </table>
+  <script>
+  (function () {
+    // Ustun sarlavhasi bosilganda tartiblash. «Tabiiy» tartib: kassa2 < kassa10,
+    // 1.17.9 < 1.17.13; sana ISO bo'yicha; bo'sh qiymat doim oxirida.
+    // Tanlov brauzerda eslab qolinadi (localStorage).
+    var table = document.getElementById('kassalar');
+    if (!table) return;
+    var tbody = table.tBodies[0];
+    var KEY = 'kassalar_sort';
+    function chunks(s) {
+      return String(s || '').toLowerCase().match(/(\d+|\D+)/g) || [];
+    }
+    function natural(a, b) {
+      if (!a && !b) return 0;
+      if (!a) return 1;            // bo'sh — oxirida
+      if (!b) return -1;
+      var x = chunks(a), y = chunks(b), n = Math.max(x.length, y.length);
+      for (var i = 0; i < n; i++) {
+        var p = x[i], q = y[i];
+        if (p === undefined) return -1;
+        if (q === undefined) return 1;
+        var pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+        if (pn && qn) { var d = parseInt(p, 10) - parseInt(q, 10); if (d) return d; }
+        else if (p !== q) return p < q ? -1 : 1;
+      }
+      return 0;
+    }
+    function apply(key, dir) {
+      var rows = Array.prototype.slice.call(tbody.rows).filter(function (r) { return r.dataset.name !== undefined; });
+      rows.sort(function (r1, r2) {
+        var a = r1.dataset[key] || '', b = r2.dataset[key] || '';
+        var c = (key === 'seen') ? (a === b ? 0 : (!a ? 1 : (!b ? -1 : (a < b ? -1 : 1)))) : natural(a, b);
+        if (!a || !b) return c;   // bo'shlar yo'nalishdan qat'i nazar oxirida
+        return dir === 'desc' ? -c : c;
+      });
+      rows.forEach(function (r) { tbody.appendChild(r); });
+      Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+        th.classList.remove('asc', 'desc');
+        var arr = th.querySelector('.arr');
+        if (arr) arr.textContent = '↕';
+        if (th.dataset.key === key) {
+          th.classList.add(dir);
+          if (arr) arr.textContent = dir === 'asc' ? '↑' : '↓';
+        }
+      });
+    }
+    var state = null;
+    try { state = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) {}
+    if (state && state.key) apply(state.key, state.dir);
+    Array.prototype.forEach.call(table.tHead.rows[0].cells, function (th) {
+      if (!th.dataset.key) return;
+      th.addEventListener('click', function () {
+        var key = th.dataset.key;
+        // Sana uchun birinchi bosishda yangisi tepada (kamayish)
+        var first = key === 'seen' ? 'desc' : 'asc';
+        var dir = (state && state.key === key) ? (state.dir === 'asc' ? 'desc' : 'asc') : first;
+        state = { key: key, dir: dir };
+        try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+        apply(key, dir);
+      });
+    });
+  })();
+  </script>
 
   {% if show_archived %}
     <p class="sec" style="margin-top: 10px;">
