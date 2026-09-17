@@ -16,8 +16,11 @@ SAVDOGA TA'SIR QILMASLIK KAFOLATI (do'kon egasining talabi):
   1. Sinov hujjatlari «проведён» QILINMAYDI (applicable=false). MoySklad
      bunday hujjatni qoldiqqa ham, kassadagi pulga ham, hisobotlarga ham
      qo'shmaydi — o'chmay qolsa ham zarar yo'q.
-  2. Nomi «SINOV-…» — ro'yxatda darrov tanilyadi va MoySklad'ning avtomatik
-     raqamlarini (03411, 03412…) sarflamaydi.
+  2. Izohi «SINOV — server sinovi» — ro'yxatda darrov tanilyadi. Nom
+     BERILMAYDI: MoySklad keyingi raqamni «oxirgi hujjat nomi + 1» deb
+     hisoblaydi, nomli sinovdan keyin haqiqiy chek «SINOV-…1» bo'lib
+     qolgan edi (2026-09-17). Endi MoySklad o'zi raqamlaydi; hujjat
+     o'chgach eng ko'pi bilan bitta raqam bo'sh qoladi.
   3. Yozilgan zahoti o'chiriladi. O'chmay qolgani `leftovers` da eslab
      qolinadi va keyingi sinovda yana o'chiriladi; panelda ko'rinib turadi.
   4. Sinov faqat navbat bo'sh paytda ishlaydi (sync_sales sikli shunday
@@ -47,7 +50,9 @@ from .writer import SaleWriter, WriteError
 
 logger = logging.getLogger(__name__)
 
-NAME_PREFIX = "SINOV-"
+NAME_PREFIX = "SINOV-"   # eski nomlar (endi nom berilmaydi, qarang: DESCRIPTION)
+#: Sinov hujjatining izohi — MoySklad'da shu so'z bilan qidirib topiladi
+DESCRIPTION = "SINOV — server sinovi, o'zi o'chiradi"
 #: Har to'lov turiga sinov summasi — 10 so'm (tiyinda)
 AMOUNT_PER_METHOD = 10_00
 #: Bazada nechta oxirgi sinov saqlanadi
@@ -137,7 +142,10 @@ class SelfTest:
         self.trigger = trigger
         self.steps: list[dict] = []
         self.leftovers: list[dict] = []
-        self.writer = SaleWriter(client, applicable=False, name_prefix=NAME_PREFIX)
+        # Nom BERILMAYDI (MoySklad o'zi raqamlaydi, hujjat darhol o'chadi):
+        # nomli sinov hujjatidan keyin MoySklad haqiqiy chekka «SINOV-…1»
+        # bergan edi (2026-09-17). Belgi — izohda.
+        self.writer = SaleWriter(client, applicable=False, description_prefix=DESCRIPTION)
 
     # -- bosqich yozuvi
     def _ok(self, name: str, detail: str = "") -> None:
@@ -347,7 +355,7 @@ class SelfTest:
             self.leftovers.extend(still)
             self._fail(
                 "Eski sinov hujjatlari",
-                f"{len(still)} ta hali o'chmadi — MoySklad'da «SINOV-» deb qidirib, "
+                f"{len(still)} ta hali o'chmadi — MoySklad'da izohi «SINOV» bo'lganlarni qidirib, "
                 "qo'lda o'chirish mumkin",
             )
         else:
