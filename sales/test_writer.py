@@ -626,3 +626,86 @@ class DuplicateReceiptNumberTest(TestCase):
         self.assertEqual(result["failed"], 1)
         self.assertEqual(a.sync_status, Sale.SENT)
         self.assertEqual(b.sync_status, Sale.FAILED)        # qayta uriniladi, sikl davom etdi
+
+
+@override_settings(MOYSKLAD_RETAIL_CUSTOMER_ID=RETAIL_CUSTOMER)
+class TestNameOnRealSaleTest(TestCase):
+    """MoySklad sinov hujjati nomini «davom ettirib» haqiqiy chekka
+    «SINOV-490acbcb1» bergan edi (2026-09-17). Bunday nom darhol oddiy
+    raqamga (eng katta raqam + 1) almashtiriladi — MoySklad'da ham."""
+
+    def setUp(self):
+        self.store = RetailStore.objects.create(
+            ms_id="00000000-0000-0000-0000-0000000000df", name="Namuna",
+            organization_ms_id="00000000-0000-0000-0000-0000000000a1",
+            store_ms_id="00000000-0000-0000-0000-0000000000b2",
+        )
+        self.register = Register.objects.create(code="k9", name="Kassa-9", store=self.store)
+        self.shift = Shift.objects.create(
+            register=self.register, number=3, cashier="Test", opened_at=timezone.now())
+        self.cash = PaymentMethod.objects.create(code="naqd", name="Naqd", is_cash=True, sort=1)
+
+    def _make(self, number, total, receipt_number=None, kind=Sale.SALE):
+        sale = Sale.objects.create(
+            shift=self.shift, kind=kind, number=number, created_at=timezone.now(),
+            gross_total=total, net_total=total, receipt_number=receipt_number,
+            # raqami bor chek — allaqachon yozilgan, navbatga tushmaydi
+            sync_status=Sale.SENT if receipt_number else Sale.NEW)
+        SaleItem.objects.create(sale=sale, position=1, name="T", quantity=Decimal("1"),
+                                price=total, total=total,
+                                ms_product_id="00000000-0000-0000-0000-000000000101")
+        Payment.objects.create(sale=sale, method=self.cash, amount=total)
+        return sale
+
+    def test_sinov_nomi_oddiy_raqamga_almashadi(self):
+        from sales import sender
+
+        class SinovNameClient(FakeClient):
+            def post(self, path, payload):
+                doc = super().post(path, payload)
+                if path == "entity/demand":
+                    doc["id"] = "aaaaaaaa-0000-0000-0000-000000000009"
+                    doc["name"] = "SINOV-490acbcb1"
+                return doc
+
+        self._make(1, 1_000_00, receipt_number="1174")          # eski chek
+        self._make(2, 1_000_00, receipt_number="999")           # qisqaroq, kichik
+        b = self._make(3, 2_000_00)
+        client = SinovNameClient()
+        sender.send_due(writer=SaleWriter(client))
+        b.refresh_from_db()
+        self.assertEqual(b.sync_status, Sale.SENT)
+        self.assertEqual(b.receipt_number, "1175")
+        self.assertEqual(client.puts, [("entity/demand/aaaaaaaa-0000-0000-0000-000000000009", {"name": "1175"})])
+
+    def test_raqamli_chek_yoq_bolsa_nom_qoladi(self):
+        from sales import sender
+
+        class SinovNameClient(FakeClient):
+            def post(self, path, payload):
+                doc = super().post(path, payload)
+                if path == "entity/demand":
+                    doc["name"] = "SINOV-490acbcb1"
+                return doc
+
+        b = self._make(1, 2_000_00)
+        client = SinovNameClient()
+        sender.send_due(writer=SaleWriter(client))
+        b.refresh_from_db()
+        self.assertEqual(b.receipt_number, "SINOV-490acbcb1")
+        self.assertEqual(client.puts, [])
+
+    def test_healer_eski_sinov_nomlarini_tuzatadi(self):
+        from sales.healer import fix_test_names
+
+        self._make(1, 1_000_00, receipt_number="1180")
+        bad = self._make(2, 1_000_00, receipt_number="SINOV-490acbcb1")
+        bad.ms_demand_id = "aaaaaaaa-0000-0000-0000-000000000011"
+        bad.sync_status = Sale.SENT
+        bad.save()
+        client = FakeClient()
+        self.assertEqual(fix_test_names(client), 1)
+        bad.refresh_from_db()
+        self.assertEqual(bad.receipt_number, "1181")
+        self.assertEqual(client.puts, [("entity/demand/aaaaaaaa-0000-0000-0000-000000000011", {"name": "1181"})])
+        self.assertEqual(fix_test_names(client), 0)              # qayta tegmaydi
