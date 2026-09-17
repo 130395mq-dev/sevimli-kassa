@@ -42,6 +42,7 @@ from django.utils import timezone
 from catalog.models import SyncState
 
 from . import sender
+from .models import Sale
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,14 @@ def heal(now=None) -> dict:
             logger.warning("Zaxira katalog tortilmadi: %s", e)
             done["catalog_error"] = str(e)[:200]
 
+    # 3a. Sinov nomli cheklar (MoySklad «SINOV-…1» bergan) — oddiy raqamga
+    try:
+        fixed = fix_test_names()
+        if fixed:
+            done["renamed"] = fixed
+    except Exception as e:
+        logger.warning("Sinov nomli cheklarni tuzatish: %s", e)
+
     # 3. Kassa versiyalari — GitHub Release'dan (10 daqiqada bir).
     #    Egasi hech narsa yuklamaydi: GitHub yig'adi, hub o'zi olib keladi.
     try:
@@ -163,6 +172,33 @@ def heal(now=None) -> dict:
         logger.warning("GitHub versiya tekshiruvi: %s", e)
 
     return done
+
+
+def fix_test_names(client=None, limit: int = 20) -> int:
+    """Bazada nomi «SINOV…» bo'lib qolgan haqiqiy cheklarni oddiy raqamga
+    o'tkazadi (MoySklad'da ham, bazada ham). Qaytaradi: nechta tuzatildi."""
+    from .writer import SaleWriter, TEST_NAME_PREFIX
+
+    sales = list(
+        Sale.objects.filter(receipt_number__istartswith=TEST_NAME_PREFIX,
+                            ms_demand_id__isnull=False)
+        .order_by("created_at")[:limit]
+    )
+    if not sales:
+        return 0
+    if client is None:
+        from moysklad.client import MoySkladClient
+        client = MoySkladClient(token=settings.MOYSKLAD_TOKEN)
+    writer = SaleWriter(client)
+    n = 0
+    for sale in sales:
+        doc = {"id": str(sale.ms_demand_id), "name": sale.receipt_number}
+        new = writer.rename_to_plain_number(sale, doc, sale.receipt_number)
+        if new:
+            sale.receipt_number = new
+            sale.save(update_fields=["receipt_number"])
+            n += 1
+    return n
 
 
 def _pull_catalog() -> dict:
