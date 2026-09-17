@@ -709,3 +709,30 @@ class TestNameOnRealSaleTest(TestCase):
         self.assertEqual(bad.receipt_number, "1181")
         self.assertEqual(client.puts, [("entity/demand/aaaaaaaa-0000-0000-0000-000000000011", {"name": "1181"})])
         self.assertEqual(fix_test_names(client), 0)              # qayta tegmaydi
+
+    def test_moyskladda_band_raqam_otkazib_yuboriladi(self):
+        """MoySklad'da nom unique: 1175 band bo'lsa (412, kod 3006) — 1176."""
+        from moysklad.client import MoySkladError
+        from sales import sender
+
+        class Client(FakeClient):
+            def post(self, path, payload):
+                doc = super().post(path, payload)
+                if path == "entity/demand":
+                    doc["id"] = "aaaaaaaa-0000-0000-0000-000000000021"
+                    doc["name"] = "SINOV-7567d353"
+                return doc
+
+            def put(self, path, payload):
+                if payload.get("name") == "1175":
+                    raise MoySkladError(412, errors=[{"code": 3006, "parameter": "name",
+                        "error": "нарушено ограничение уникальности параметра 'name'"}])
+                return super().put(path, payload)
+
+        self._make(1, 1_000_00, receipt_number="1174")
+        b = self._make(2, 2_000_00)
+        client = Client()
+        sender.send_due(writer=SaleWriter(client))
+        b.refresh_from_db()
+        self.assertEqual(b.receipt_number, "1176")
+        self.assertEqual(client.puts, [("entity/demand/aaaaaaaa-0000-0000-0000-000000000021", {"name": "1176"})])
