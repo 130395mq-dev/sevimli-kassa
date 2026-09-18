@@ -678,9 +678,17 @@ def catalog(request):
     # Tovarning BARCHA shtrix-kodlari (dona, blok, quti, MoySklad o'zi
     # yaratgani…). Kassa 1.15.0+ «barcodes» ro'yxatini oladi — qaysi kodi
     # skanerlansa ham topadi. «barcode» (bittasi) eski kassalar uchun qoladi.
+    # Upakovka kodlari («packs») ALOHIDA: ichida nechta dona borligi bilan.
+    # Ular «barcodes» ga qo'shilmaydi — eski kassa upakovkani 1 dona deb
+    # sotib yubormasin. Kassa 1.17.14+ «packs» ni o'qiydi.
     codes: dict[int, str] = {}
     all_codes: dict[int, list[str]] = {}
+    packs: dict[int, list[dict]] = {}
     for b in Barcode.objects.filter(product__in=rows).order_by("pk"):
+        if b.pack_quantity and b.pack_quantity != 1:
+            packs.setdefault(b.product_id, []).append(
+                {"barcode": b.value, "quantity": float(b.pack_quantity)})
+            continue
         codes.setdefault(b.product_id, b.value)
         all_codes.setdefault(b.product_id, []).append(b.value)
     stock = {
@@ -704,6 +712,7 @@ def catalog(request):
                     "tracked": p.tracked,
                     "barcode": codes.get(p.pk, ""),
                     "barcodes": all_codes.get(p.pk, []),
+                    "packs": packs.get(p.pk, []),
                     "stock": float(stock.get(p.pk, 0)),
                     "prices": p.prices or {},
                     "price_quote": pricing.quote(p, request.register),

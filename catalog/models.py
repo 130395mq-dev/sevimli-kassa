@@ -142,6 +142,9 @@ class Barcode(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="barcodes")
     value = models.CharField(max_length=128, db_index=True)
     kind = models.CharField(max_length=16, blank=True, help_text="ean13, code128, ...")
+    #: Upakovka (MoySklad «Упаковка») kodi bo'lsa — ichida nechta dona.
+    #: Oddiy kod uchun 1. Kassa upakovka kodini skanerlasa shuncha dona qo'shadi.
+    pack_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=1)
 
     class Meta:
         verbose_name = "Shtrix-kod"

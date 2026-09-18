@@ -196,3 +196,51 @@ class StockDeltaTest(TestCase):
         before = Stock.objects.get(product=self.p1).updated_at
         CatalogSync(self._client(5, 7)).sync_stock()  # hech narsa o'zgarmadi
         self.assertEqual(Stock.objects.get(product=self.p1).updated_at, before)
+
+
+class PackBarcodeTest(TestCase):
+    """MoySklad «Упаковка» kodi: kassa uni skanerlasa shuncha dona qo'shsin
+    (2026-09-18, egasining talabi — 6 talik upakovka)."""
+
+    def setUp(self):
+        from catalog.models import Product
+        self.p = Product.objects.create(
+            ms_id="00000000-0000-0000-0000-000000000201", name="Sut 1L", sale_price=12_000_00)
+
+    def _sync(self, barcodes, packs):
+        from catalog.sync import CatalogSync
+        CatalogSync._sync_barcodes(self.p, barcodes, packs)
+
+    def test_upakovka_kodi_miqdori_bilan_saqlanadi(self):
+        from decimal import Decimal
+        self._sync([{"ean13": "4780001000017"}],
+                   [{"quantity": 6.0, "barcodes": [{"ean13": "14780001000014"}]}])
+        rows = {b.value: b.pack_quantity for b in self.p.barcodes.all()}
+        self.assertEqual(rows["4780001000017"], Decimal("1"))
+        self.assertEqual(rows["14780001000014"], Decimal("6"))
+
+    def test_ozgarmagan_bolsa_qayta_yozilmaydi(self):
+        self._sync([{"ean13": "4780001000017"}],
+                   [{"quantity": 6, "barcodes": [{"ean13": "14780001000014"}]}])
+        ids = set(self.p.barcodes.values_list("pk", flat=True))
+        self._sync([{"ean13": "4780001000017"}],
+                   [{"quantity": 6, "barcodes": [{"ean13": "14780001000014"}]}])
+        self.assertEqual(ids, set(self.p.barcodes.values_list("pk", flat=True)))
+        # miqdor o'zgarsa — yangilanadi
+        self._sync([{"ean13": "4780001000017"}],
+                   [{"quantity": 12, "barcodes": [{"ean13": "14780001000014"}]}])
+        self.assertEqual(self.p.barcodes.get(value="14780001000014").pack_quantity, 12)
+
+    def test_upakovka_kodi_oddiy_royxatga_tushmaydi(self):
+        """Kassa API: upakovka kodi «barcodes» da EMAS (eski kassa 1 dona deb
+        sotmasin), «packs» da miqdori bilan."""
+        from django.test import Client
+        from sales.models import Register
+        self._sync([{"ean13": "4780001000017"}],
+                   [{"quantity": 6, "barcodes": [{"ean13": "14780001000014"}]}])
+        reg = Register.objects.create(code="k1", name="Kassa-1")
+        r = Client().get("/api/v1/catalog", HTTP_AUTHORIZATION="Bearer " + reg.api_token)
+        self.assertEqual(r.status_code, 200, r.content)
+        row = next(x for x in r.json()["products"] if x["id"] == self.p.pk)
+        self.assertEqual(row["barcodes"], ["4780001000017"])
+        self.assertEqual(row["packs"], [{"barcode": "14780001000014", "quantity": 6.0}])

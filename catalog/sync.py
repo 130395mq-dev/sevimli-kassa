@@ -231,7 +231,7 @@ class CatalogSync:
                     "updated": _parse_ms_datetime(row.get("updated")),
                 },
             )
-            self._sync_barcodes(product, row.get("barcodes") or [])
+            self._sync_barcodes(product, row.get("barcodes") or [], row.get("packs") or [])
             count += 1
 
         return count
@@ -304,23 +304,43 @@ class CatalogSync:
         return value(prices[0])
 
     @staticmethod
-    def _sync_barcodes(product: Product, barcodes: list[dict]) -> None:
-        """Shtrix-kodlarni qayta yozadi — eskilarini o'chirib, yangisini qo'yadi."""
-        values = []
+    def _sync_barcodes(product: Product, barcodes: list[dict], packs: list[dict] | None = None) -> None:
+        """Shtrix-kodlarni qayta yozadi — eskilarini o'chirib, yangisini qo'yadi.
+
+        `packs` — MoySklad «Упаковка» ro'yxati: har birida `quantity` (ichida
+        nechta dona) va o'z `barcodes` i. Upakovka kodi `pack_quantity` bilan
+        saqlanadi (2026-09-18, egasining talabi: kassa 6 talik upakovka
+        kodini o'qisin).
+        """
+        from decimal import Decimal, InvalidOperation
+
+        values: list[tuple[str, str, Decimal]] = []
         for item in barcodes:
             for kind, value in item.items():
                 if value:
-                    values.append((str(value), kind))
+                    values.append((str(value), kind, Decimal(1)))
+        for pack in packs or []:
+            try:
+                qty = Decimal(str(pack.get("quantity") or 0))
+            except (InvalidOperation, ValueError):
+                continue
+            if qty <= 0:
+                continue
+            for item in pack.get("barcodes") or []:
+                for kind, value in item.items():
+                    if value:
+                        values.append((str(value), kind, qty))
 
-        existing = set(product.barcodes.values_list("value", flat=True))
-        incoming = {v for v, _ in values}
+        existing = {(v, Decimal(q)) for v, q in product.barcodes.values_list("value", "pack_quantity")}
+        incoming = {(v, q) for v, _, q in values}
 
         if existing == incoming:
             return
 
         product.barcodes.all().delete()
         Barcode.objects.bulk_create(
-            [Barcode(product=product, value=value, kind=kind) for value, kind in values],
+            [Barcode(product=product, value=value, kind=kind, pack_quantity=qty)
+             for value, kind, qty in values],
             ignore_conflicts=True,
         )
 
