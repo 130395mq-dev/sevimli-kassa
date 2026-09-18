@@ -212,26 +212,42 @@ class CatalogSync:
                 if digits and len(digits) <= 9:
                     plu_val = int(digits)
 
-            product, _ = Product.objects.update_or_create(
-                ms_id=row["id"],
-                defaults={
-                    "kind": kind,
-                    "name": row.get("name", ""),
-                    "code": code,
-                    "plu": plu_val,
-                    "article": row.get("article", "") or "",
-                    "folder": folder,
-                    "sale_price": self._retail_price(row, preferred),
-                    "prices": self._all_prices(row),
-                    "uom_name": uom_name,
-                    "is_weight": is_weight,
-                    "vat": row.get("vat"),
-                    "tracked": bool(row.get("trackingType")),
-                    "archived": row.get("archived", False),
-                    "updated": _parse_ms_datetime(row.get("updated")),
-                },
-            )
-            self._sync_barcodes(product, row.get("barcodes") or [], row.get("packs") or [])
+            defaults = {
+                "kind": kind,
+                "name": row.get("name", ""),
+                "code": code,
+                "plu": plu_val,
+                "article": row.get("article", "") or "",
+                "folder": folder,
+                "sale_price": self._retail_price(row, preferred),
+                "prices": self._all_prices(row),
+                "uom_name": uom_name,
+                "is_weight": is_weight,
+                "vat": row.get("vat"),
+                "tracked": bool(row.get("trackingType")),
+                "archived": row.get("archived", False),
+                "updated": _parse_ms_datetime(row.get("updated")),
+            }
+            # Tovar O'ZGARMAGAN bo'lsa qayta saqlamaymiz (2026-09-18): saqlash
+            # `synced_at` ni yangilaydi va 22 ming tovar TO'LIQ sync'da hamma
+            # kassaga qayta tushardi. Endi to'liq sync ham kassaga faqat
+            # haqiqatan o'zgargan tovarlarni yetkazadi.
+            product = Product.objects.filter(ms_id=row["id"]).first()
+            if product is None:
+                product = Product.objects.create(ms_id=row["id"], **defaults)
+                changed = True
+            else:
+                changed = any(getattr(product, k) != v for k, v in defaults.items())
+                if changed:
+                    for k, v in defaults.items():
+                        setattr(product, k, v)
+                    product.save()
+            codes_changed = self._sync_barcodes(
+                product, row.get("barcodes") or [], row.get("packs") or [])
+            if codes_changed and not changed:
+                # Faqat kodlari (masalan upakovka) o'zgargan — kassa delta'ga
+                # tushishi uchun synced_at yangilanadi.
+                Product.objects.filter(pk=product.pk).update(synced_at=dj_timezone.now())
             count += 1
 
         return count
@@ -304,8 +320,9 @@ class CatalogSync:
         return value(prices[0])
 
     @staticmethod
-    def _sync_barcodes(product: Product, barcodes: list[dict], packs: list[dict] | None = None) -> None:
+    def _sync_barcodes(product: Product, barcodes: list[dict], packs: list[dict] | None = None) -> bool:
         """Shtrix-kodlarni qayta yozadi — eskilarini o'chirib, yangisini qo'yadi.
+        Qaytaradi: kodlar o'zgardimi.
 
         `packs` — MoySklad «Упаковка» ro'yxati: har birida `quantity` (ichida
         nechta dona) va o'z `barcodes` i. Upakovka kodi `pack_quantity` bilan
@@ -335,7 +352,7 @@ class CatalogSync:
         incoming = {(v, q) for v, _, q in values}
 
         if existing == incoming:
-            return
+            return False
 
         product.barcodes.all().delete()
         Barcode.objects.bulk_create(
@@ -343,6 +360,7 @@ class CatalogSync:
              for value, kind, qty in values],
             ignore_conflicts=True,
         )
+        return True
 
     # ------------------------------------------------------------- qoldiqlar
 

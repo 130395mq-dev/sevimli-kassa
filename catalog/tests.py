@@ -244,3 +244,51 @@ class PackBarcodeTest(TestCase):
         row = next(x for x in r.json()["products"] if x["id"] == self.p.pk)
         self.assertEqual(row["barcodes"], ["4780001000017"])
         self.assertEqual(row["packs"], [{"barcode": "14780001000014", "quantity": 6.0}])
+
+
+class ProductSyncOnlyChangedTest(TestCase):
+    """To'liq sync o'zgarmagan tovarni qayta saqlamaydi (synced_at
+    o'zgarmaydi — kassaga qayta tushmaydi); upakovka kodi qo'shilsa —
+    synced_at yangilanadi (kassa delta'ga tushadi)."""
+
+    P = "00000000-0000-0000-0000-000000000301"
+
+    def _row(self, packs=None):
+        return {
+            "id": self.P, "meta": {"type": "product"}, "name": "Sut 1L", "code": "S77",
+            "salePrices": [{"value": 12_000_00, "priceType": {"id": "pt1", "name": "Чакана нарх"}}],
+            "barcodes": [{"ean13": "4780001000017"}],
+            "packs": packs or [],
+            "updated": "2026-09-18 10:00:00.000",
+        }
+
+    def _sync(self, row):
+        from unittest.mock import MagicMock
+        from catalog.sync import CatalogSync
+        client = MagicMock()
+        client.iter_list.return_value = iter([row])
+        CatalogSync(client).sync_products(full=True)
+
+    def test_ozgarmagan_tovar_qayta_saqlanmaydi(self):
+        from catalog.models import Product
+        self._sync(self._row())
+        p = Product.objects.get(ms_id=self.P)
+        before = p.synced_at
+        self._sync(self._row())
+        self.assertEqual(Product.objects.get(ms_id=self.P).synced_at, before)
+
+    def test_upakovka_qoshilsa_synced_at_yangilanadi(self):
+        from catalog.models import Product
+        self._sync(self._row())
+        before = Product.objects.get(ms_id=self.P).synced_at
+        self._sync(self._row(packs=[{"quantity": 6, "barcodes": [{"ean13": "14780001000014"}]}]))
+        p = Product.objects.get(ms_id=self.P)
+        self.assertGreater(p.synced_at, before)
+        self.assertEqual(p.barcodes.get(value="14780001000014").pack_quantity, 6)
+
+    def test_narx_ozgarsa_saqlanadi(self):
+        from catalog.models import Product
+        self._sync(self._row())
+        row = self._row(); row["salePrices"][0]["value"] = 13_000_00
+        self._sync(row)
+        self.assertEqual(Product.objects.get(ms_id=self.P).sale_price, 13_000_00)
