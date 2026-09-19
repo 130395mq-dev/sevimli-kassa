@@ -173,7 +173,7 @@ class ShiftReceiptTest(TestCase):
         self.assertEqual(r.cash_diff, 0)
 
         text = render(r)
-        self.assertIn("BUGUNGI SAVDO", text)
+        self.assertIn("SHU SMENA SAVDOSI", text)
         self.assertIn("0 so'm", text)
 
     def test_chek_kengligi(self):
