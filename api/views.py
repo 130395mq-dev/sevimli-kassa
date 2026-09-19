@@ -28,6 +28,7 @@ import json
 import logging
 import threading
 import uuid
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
@@ -1127,6 +1128,9 @@ def create_sale(request):
     # Bind every receipt to the shift in which it was actually created.
     late = False; shift_id = data.get("shift_id")
     shift_uuid = data.get("shift_local_uuid")
+    created = parse_datetime(data.get("created_at") or "") or timezone.now()
+    if created and timezone.is_naive(created):
+        created = timezone.make_aware(created)
     if shift_id:
         shift = reg.shifts.filter(pk=shift_id).first()
         if shift is None:
@@ -1138,13 +1142,19 @@ def create_sale(request):
     else:
         # Older POS versions: match the original timestamp, never today's
         # open shift for a receipt created in an earlier shift.
-        created = parse_datetime(data.get("created_at") or "") or timezone.now()
-        if created and timezone.is_naive(created):
-            created = timezone.make_aware(created)
         candidates = reg.shifts.filter(opened_at__lte=created).order_by("-opened_at") if created else reg.shifts.none()
         shift = candidates.first()
         if shift and shift.closed_at and created > shift.closed_at:
             shift = None
+    # A receipt MADE after its shift was already closed does not belong to
+    # that shift. This happens when a second terminal shares one register
+    # login: terminal B closes the register's shift and opens its own, while
+    # terminal A keeps the old shift id and goes on selling. Those sales are
+    # today's trade and must land in the shift that is open now — otherwise
+    # the closing Z-report is short by exactly that amount (real case:
+    # 18.09.2026, kasssa2 — 125 receipts / 9 288 008 so'm).
+    if shift is not None:
+        shift = _shift_for_created_at(reg, shift, created)
     if not shift:
         shift = reg.shifts.filter(status=Shift.OPEN).first(); late = True
     if not shift:
@@ -1184,6 +1194,33 @@ def create_sale(request):
                 {"id": existing.pk, "number": existing.number, "receipt_number": official, "duplicate": True}
             )
         raise
+
+
+#: Kassa va server soati biroz farq qilishi mumkin. Smena yopilishidan
+#: shuncha vaqt ichida yaratilgan chek hali o'sha smenaniki hisoblanadi.
+SHIFT_CLOCK_GRACE = timedelta(minutes=5)
+
+
+def _shift_for_created_at(reg, shift, created):
+    """Yopilgan smenadan KEYIN yaratilgan chekni hozirgi ochiq smenaga beradi.
+
+    Kechikkan chek (smena davomida urilgan, keyin yuborilgan) o'z smenasida
+    qoladi — bu ataylab shunday. Bu yerda faqat yaratilish vaqti smena
+    yopilgandan keyin bo'lgan cheklar ko'chiriladi.
+    """
+    if not shift.closed_at or not created:
+        return shift
+    if created <= shift.closed_at + SHIFT_CLOCK_GRACE:
+        return shift
+    open_shift = reg.shifts.filter(status=Shift.OPEN).first()
+    if not open_shift or open_shift.pk == shift.pk:
+        return shift
+    logger.warning(
+        "Chek yopilgan smenadan keyin yaratilgan (smena #%s %s da yopilgan, "
+        "chek %s da) — ochiq smena #%s ga yozildi",
+        shift.number, shift.closed_at, created, open_shift.number,
+    )
+    return open_shift
 
 
 @transaction.atomic
