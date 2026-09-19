@@ -132,18 +132,23 @@ class ShiftReceiptTest(TestCase):
         # 30 000 + 800 000 + 20 000 - 700 000
         self.assertEqual(r.expected_cash, 150_000_00)
 
-    def test_kam_sanalgan_pul_chekda_korinadi(self):
+    def test_chekda_topshiriladigan_pul_korinadi(self):
+        """Kassir pulni sanamaydi — xaltaga solib beradi, egasi sanaydi.
+
+        Shuning uchun chekda «kassir sanadi» ham, «FARQ» ham chiqmaydi:
+        faqat kassadan olinadigan raqam. Razmen kassada qoladi.
+        """
         self.add_sale(1, gross=100_000_00, pays=[(self.cash, 100_000_00)])
         r = close_shift(self.shift, counted_cash=125_000_00)
 
-        # 30 000 + 100 000 = 130 000, sanalgani 125 000
+        # 30 000 razmen + 100 000 naqd savdo = 130 000
         self.assertEqual(r.expected_cash, 130_000_00)
-        self.assertEqual(r.cash_diff, -5_000_00)
+        self.assertEqual(r.to_hand_over, 100_000_00)
 
         text = render(r)
-        self.assertIn("FARQ", text)
-        self.assertIn("-5 000", text)
-        self.assertIn("<<<", text)
+        self.assertIn("TOPSHIRILADIGAN PUL", text)
+        self.assertNotIn("FARQ", text)
+        self.assertNotIn("Kassir sanadi", text)
 
     def test_smena_yopiladi_va_ikki_marta_yopilmaydi(self):
         self.add_sale(1, gross=100_000_00, pays=[(self.cash, 100_000_00)])

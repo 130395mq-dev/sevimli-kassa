@@ -72,16 +72,24 @@ def main() -> int:
     ok &= check("expected_cash", r.expected_cash, 62_600_000)
     ok &= check("cash_diff", r.cash_diff, 0)
 
-    # Kassir kam sanasa — farq manfiy chiqishi va chekda ko'rinishi kerak
+    # Kassir pulni sanamaydi — xaltaga solib beradi, egasi chekka qarab
+    # sanaydi. Chekda «kassir sanadi» ham, «farq» ham chiqmaydi.
+    ok &= check("kassir sanadi yo'q", "Kassir sanadi" in render(r), False)
+    ok &= check("farq yo'q", "FARQ" in render(r), False)
+
+    # 626 000 - 300 000 razmen (razmen kassada qoladi)
+    ok &= check("topshiriladigan", r.to_hand_over, 32_600_000)
+    ok &= check("chekda", "TOPSHIRILADIGAN PUL" in render(r), True)
+    ok &= check("summa chekda", "326 000" in render(r), True)
+
+    # Sanalgan bo'lsa ham chek o'zgarmaydi (maydon bazada qoladi)
     short = sample(counted_cash=62_100_000)
     ok &= check("kam sanaldi", short.cash_diff, -500_000)
-    ok &= check("farq chekda", "FARQ" in render(short), True)
-    ok &= check("belgi qo'yildi", "<<<" in render(short), True)
+    ok &= check("farq bosilmaydi", "FARQ" in render(short), False)
 
-    # Kassir sanamasa — chek baribir chiqishi kerak
     unc = sample(counted_cash=None)
     ok &= check("sanalmadi", unc.cash_diff, None)
-    ok &= check("sanalmadi yozildi", "sanalmadi" in render(unc), True)
+    ok &= check("sanalmadi chekda yo'q", "sanalmadi" in render(unc), False)
 
     # To'lovlar mos kelmasa — chek buni yashirmasligi kerak
     bad = sample(payments=[PaymentLine("Naqd", 1, is_cash=True)])
