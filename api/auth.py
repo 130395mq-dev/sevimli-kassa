@@ -8,6 +8,13 @@ almashtiriladi, qolganlari ishlayveradi.
 Tokenlar solishtirishda `secrets.compare_digest` ishlatiladi: oddiy `==`
 solishtirish vaqti belgiga qarab o'zgaradi va shu orqali tokenni bitta-bitta
 topib olish mumkin.
+
+BITTA KASSA — BITTA KOMPYUTER. Token birinchi kelgan kompyuterga
+biriktiriladi (`X-Device` sarlavhasi). Shu tokenni ikkinchi kompyuterga
+ko'chirib ishlatib bo'lmaydi: server 401 qaytaradi va o'sha kassa ilovasi
+login-parol so'raydi (`connect` biriktirishni yangi kompyuterga o'tkazadi).
+Sarlavha yubormaydigan eski ilovalar (1.15 va undan oldingi) uchun
+tekshiruv qilinmaydi — ular fleetda qolmagan, lekin qulflanmasin.
 """
 
 from __future__ import annotations
@@ -108,6 +115,60 @@ def get_register(request) -> Register | None:
     return None
 
 
+DEVICE_HEADER = "X-Device"
+
+
+def device_of(request) -> tuple[str, str]:
+    """So'rovdagi kompyuter belgisi va nomi (bo'lmasa — bo'sh satrlar)."""
+    device = (request.headers.get(DEVICE_HEADER) or "").strip()[:64]
+    name = (request.headers.get("X-Device-Name") or "").strip()[:128]
+    return device, name
+
+
+def bind_device(register: Register, device: str, device_name: str = "") -> None:
+    """Kassani shu kompyuterga biriktiradi (login-parol kiritilganda)."""
+    if not device:
+        return
+    Register.objects.filter(pk=register.pk).update(
+        device=device, device_name=device_name, device_bound_at=timezone.now()
+    )
+    register.device = device
+    register.device_name = device_name
+
+
+def _device_guard(register: Register, request):
+    """Bitta kassa — bitta kompyuter.
+
+    Birinchi kelgan kompyuter biriktiriladi. Keyin boshqasi shu token
+    bilan kelsa 401 — kassa ilovasi login-parol so'raydi, parol bilan
+    kirilsa biriktirish o'sha kompyuterga o'tadi.
+    """
+    device, device_name = device_of(request)
+    if not device:
+        return None                      # eski ilova — tekshirmaymiz
+    if not register.device:
+        # Bo'sh bo'lsagina egallaymiz — bir vaqtda kelgan ikki so'rovdan
+        # faqat bittasi yutadi, ikkinchisi quyida rad etiladi.
+        claimed = Register.objects.filter(pk=register.pk, device="").update(
+            device=device, device_name=device_name, device_bound_at=timezone.now()
+        )
+        if claimed:
+            register.device = device
+            register.device_name = device_name
+            return None
+        register.refresh_from_db(fields=["device", "device_name"])
+    if register.device == device:
+        if device_name and device_name != register.device_name:
+            Register.objects.filter(pk=register.pk).update(device_name=device_name)
+        return None
+    where = f" («{register.device_name}»)" if register.device_name else ""
+    return error(
+        f"Bu kassa boshqa kompyuterga biriktirilgan{where}. "
+        "Shu kompyuterda ishlatish uchun kassa login va parolini kiriting.",
+        status=401,
+    )
+
+
 def register_required(view):
     """Kassa tokenisiz kirishni to'xtatadi."""
 
@@ -118,6 +179,10 @@ def register_required(view):
             return error("Kassa tokeni noto'g'ri yoki yo'q", status=401)
 
         request.register = register
+
+        denied = _device_guard(register, request)
+        if denied is not None:
+            return denied
 
         # Oxirgi ko'rinish vaqti — panelda «kassa tirikmi» ni ko'rsatadi.
         # Har so'rovda yozish ortiqcha, daqiqada bir marta yetadi.
