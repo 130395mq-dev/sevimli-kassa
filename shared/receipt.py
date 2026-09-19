@@ -254,7 +254,7 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
     # --- ITOG: chekdagi eng muhim qator
     add(_line("=", w))
     add("")
-    add(_center("BUGUNGI SAVDO", w))
+    add(_center("SHU SMENA SAVDOSI", w))
     add(_center(sum_str(r.net_total) + " so'm", w))
     add("")
     add(_line("=", w))

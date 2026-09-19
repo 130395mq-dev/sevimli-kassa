@@ -226,3 +226,68 @@ class PushSaleNowSingleWriterTest(ApiTestCase):
         self.assertEqual(sale.sync_status, Sale.NEW)          # yo'qolmadi
         self.assertFalse(due_exists())                         # hozir cron tegmaydi
         self.assertTrue(due_exists(timezone.now() + timedelta(seconds=61)))  # keyin oladi
+
+
+class ReceiptAfterShiftClosedTest(ApiTestCase):
+    """Yopilgan smenadan KEYIN urilgan chek o'sha smenaga tushmasligi kerak.
+
+    Haqiqiy holat (18.09.2026, kasssa2): bitta login ikkita kompyuterda
+    ishlagan. Ikkinchi kompyuter smenani yopib o'zinikini ochgan, birinchisi
+    esa eski smena id si bilan sotishda davom etgan — 125 ta chek,
+    9 288 008 so'm yopilgan smenaga tushib, kechki smena cheki shuncha kam
+    ko'rsatgan.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.open_shift()
+        self.old = Shift.objects.get()
+
+    def _close_old(self, hours_ago=3):
+        self.old.opened_at = timezone.now() - timedelta(hours=hours_ago + 5)
+        self.old.closed_at = timezone.now() - timedelta(hours=hours_ago)
+        self.old.status = Shift.CLOSED
+        self.old.save(update_fields=["opened_at", "closed_at", "status"])
+
+    def _post(self, hours_ago):
+        payload = self.sale_payload(
+            shift_id=self.old.pk,
+            created_at=(timezone.now() - timedelta(hours=hours_ago)).isoformat(),
+        )
+        response = self.post("/api/v1/sales", payload)
+        self.assertEqual(response.status_code, 201, response.content)
+        return Sale.objects.get()
+
+    def test_sale_made_after_close_lands_in_the_open_shift(self):
+        self._close_old(hours_ago=3)
+        self.open_shift()
+        new = Shift.objects.get(status=Shift.OPEN)
+        sale = self._post(hours_ago=1)
+        self.assertEqual(sale.shift_id, new.pk)
+        self.assertFalse(sale.late)
+
+    def test_receipt_made_during_the_shift_still_belongs_to_it(self):
+        self._close_old(hours_ago=3)
+        self.open_shift()
+        sale = self._post(hours_ago=4)
+        self.assertEqual(sale.shift_id, self.old.pk)
+        self.assertTrue(sale.late)
+
+    def test_without_an_open_shift_the_receipt_is_not_lost(self):
+        self._close_old(hours_ago=3)
+        sale = self._post(hours_ago=1)
+        self.assertEqual(sale.shift_id, self.old.pk)
+        self.assertTrue(sale.late)
+
+    def test_clock_skew_does_not_move_a_receipt(self):
+        """Kassa soati bir-ikki daqiqaga oldinda bo'lsa ham ko'chirilmaydi."""
+        self.old.closed_at = timezone.now()
+        self.old.status = Shift.CLOSED
+        self.old.save(update_fields=["closed_at", "status"])
+        self.open_shift()
+        payload = self.sale_payload(
+            shift_id=self.old.pk,
+            created_at=(timezone.now() + timedelta(minutes=2)).isoformat(),
+        )
+        self.assertEqual(self.post("/api/v1/sales", payload).status_code, 201)
+        self.assertEqual(Sale.objects.get().shift_id, self.old.pk)

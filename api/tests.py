@@ -181,7 +181,7 @@ class ShiftTest(ApiTestCase):
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertIn("SMENA YOPILDI", data["receipt_text"])
-        self.assertIn("BUGUNGI SAVDO", data["receipt_text"])
+        self.assertIn("SHU SMENA SAVDOSI", data["receipt_text"])
         self.assertEqual(data["net_total"], 3_000_00)
         self.assertEqual(data["cash_total"], 3_000_00)
         self.assertEqual(data["expected_cash"], 303_000_00)
