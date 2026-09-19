@@ -127,6 +127,15 @@ class ShiftReceipt:
         return self.counted_cash - self.expected_cash
 
     @property
+    def to_hand_over(self) -> int:
+        """Smena oxirida kassadan OLINADIGAN pul.
+
+        Razmen kassada qoladi (ertangi kun uchun), qolgani xaltaga
+        tushadi. Egasi xaltani shu raqam bilan sanaydi.
+        """
+        return self.expected_cash - self.opening_cash
+
+    @property
     def is_balanced(self) -> bool:
         """To'lovlar yig'indisi sof savdoga tengmi. Teng bo'lmasa — xato bor."""
         return self.payments_total == self.net_total
@@ -234,13 +243,11 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
         add(_pair("Qaytarishlar", "-" + sum_str(r.returns_cash), w))
     add(_line("-", w))
     add(_pair("BO'LISHI KERAK", sum_str(r.expected_cash), w))
-    if r.counted_cash is not None:
-        add(_pair("Kassir sanadi", sum_str(r.counted_cash), w))
-        diff = r.cash_diff or 0
-        mark = "" if diff == 0 else "  <<<"
-        add(_pair("FARQ", ("+" if diff > 0 else "") + sum_str(diff) + mark, w))
-    else:
-        add(_pair("Kassir sanadi", "— sanalmadi", w))
+    # Kassir pulni sanamaydi — xaltaga solib beradi, egasi chekka qarab
+    # sanaydi. Shuning uchun chekda «kassir sanadi»/«farq» emas, aynan
+    # xaltaga tushadigan raqam ko'rsatiladi. Razmen kassada qoladi.
+    add(_pair("Razmen kassada qoladi", "-" + sum_str(r.opening_cash), w))
+    add(_pair("TOPSHIRILADIGAN PUL", sum_str(r.to_hand_over), w))
 
     # --- ball
     if r.points_earned or r.points_spent or r.paid_by_points:
