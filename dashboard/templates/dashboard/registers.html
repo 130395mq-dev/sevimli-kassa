@@ -112,6 +112,18 @@
               <button type="submit" class="small ghost" title="Kompyuter buzilgan/o'chgan bo'lsa — loginni darhol bo'shatish">Bo'shatish</button>
             </form>
           {% else %}<span class="sec">—</span>{% endif %}
+          {% if r.device %}
+            <div class="sec" style="margin-top:4px;">
+              Kompyuter: {{ r.device_name|default:"nomsiz" }}
+              <form method="post" class="inline"
+                    onsubmit="return confirm('«{{ r.name }}» kompyuterdan bo\'shatilsinmi?\n\nShundan keyin bu kassani istalgan kompyuterda ochish mumkin — birinchi ulangani o\'ziga biriktiradi.');">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="unbind">
+                <input type="hidden" name="id" value="{{ r.pk }}">
+                <button type="submit" class="small ghost" title="Kassa boshqa monoblokka ko'chirilsa yoki kompyuter buzilsa">Kompyuterni bo'shatish</button>
+              </form>
+            </div>
+          {% endif %}
         </td>
         <td class="actions">
           <a href="{% url 'dashboard:register-edit' r.pk %}" class="badge ok" style="padding:6px 12px;">Sozlash</a>

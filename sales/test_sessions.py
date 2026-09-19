@@ -6,6 +6,13 @@ o'sha login bilan kira olmaydi (409, tushunarli xabar); «Chiqish» yoki
 3 daqiqa jimlik loginni bo'shatadi; parolsiz davom etish (resume) ham
 shu qoidaga bo'ysunadi; hello sessiyani tirik tutadi va tokenni uzaytiradi;
 panelda kim kirgani ko'rinadi va «Bo'shatish» ishlaydi.
+
+2026-09-19 dan beri ustida yana bir qatlam bor: kassa TOKENI birinchi
+ulangan kompyuterga biriktiriladi (`Register.device`). Shuning uchun
+ikkinchi kompyuter bu testlarda avval 401 oladi — sessiya qatlamiga
+yetib ham bormaydi. Sessiya qatlamini sinash uchun testlar `unbind()`
+bilan biriktirishni bo'shatadi (panelda «Kompyuterni bo'shatish» shuni
+qiladi).
 """
 
 from __future__ import annotations
@@ -53,6 +60,11 @@ class SessionBase(TestCase):
     def login(self, pc, login="kassa1", password="1111"):
         return self.call("/api/v1/login", {"login": login, "password": password}, pc)
 
+    def unbind(self):
+        """Panelda «Kompyuterni bo'shatish» bosilgandek — kassa endi
+        istalgan kompyuterda ochiladi."""
+        Register.objects.filter(pk=self.reg.pk).update(device="", device_name="")
+
 
 class LoginExclusiveTest(SessionBase):
     def test_kirish_loginni_kompyuterga_biriktiradi(self):
@@ -64,14 +76,23 @@ class LoginExclusiveTest(SessionBase):
         self.assertEqual(row.cashier_id, 0)
 
     def test_ikkinchi_kompyuter_kira_olmaydi(self):
+        """Kassa PC1 ga biriktirilgan — PC2 eshikdan ham o'tmaydi."""
         self.login(PC1)
+        r = self.login(PC2)
+        self.assertEqual(r.status_code, 401)
+        self.assertIn("biriktirilgan", r.json()["error"])
+        self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-1111")
+
+    def test_boshatilgan_kassada_login_band_bolsa_409(self):
+        """Biriktirish bo'shatilgan bo'lsa ham login bandligi tekshiriladi."""
+        self.login(PC1)
+        self.unbind()
         r = self.login(PC2)
         self.assertEqual(r.status_code, 409)
         msg = r.json()["error"]
         self.assertIn("Kassa-1 · KASSA-PC", msg)
         self.assertIn("«Chiqish»", msg)
         self.assertEqual(r.json()["holder"], "Kassa-1 · KASSA-PC")
-        # Egasi o'zgarmadi
         self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-1111")
 
     def test_osha_kompyuter_qayta_kira_oladi(self):
@@ -84,17 +105,22 @@ class LoginExclusiveTest(SessionBase):
         r = self.call("/api/v1/logout", {}, PC1)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["released"], 1)
+        self.unbind()     # kassa boshqa monoblokka ko'chirildi
         self.assertEqual(self.login(PC2).status_code, 200)
         self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-2222")
 
     def test_boshqa_kompyuter_chiqish_bosa_olmaydi(self):
         """PC2 «logout» yuborsa PC1 sessiyasi o'chmaydi."""
         self.login(PC1)
+        self.assertEqual(self.call("/api/v1/logout", {}, PC2).status_code, 401)
+        self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-1111")
+        self.unbind()
         self.assertEqual(self.call("/api/v1/logout", {}, PC2).json()["released"], 0)
-        self.assertEqual(self.login(PC2).status_code, 409)
+        self.assertEqual(KassaSession.objects.get(login="kassa1").device, "dev-1111")
 
     def test_jim_qolgan_kompyuter_bloklamaydi(self):
         self.login(PC1)
+        self.unbind()
         KassaSession.objects.filter(login="kassa1").update(
             seen_at=timezone.now() - timedelta(seconds=KassaSession.ALIVE_SECONDS + 5)
         )
@@ -118,6 +144,7 @@ class LoginExclusiveTest(SessionBase):
         self.assertEqual(self.login(PC1, "nilufar", "2222").status_code, 200)
         row = KassaSession.objects.get(login="nilufar")
         self.assertEqual((row.cashier_id, row.cashier_name), (c.pk, "Nilufar"))
+        self.unbind()
         r = self.login(PC2, "nilufar", "2222")
         self.assertEqual(r.status_code, 409)
         self.assertIn("(Nilufar)", r.json()["error"])
@@ -180,17 +207,17 @@ class HelloSessionTest(SessionBase):
 
     def test_boshqa_kompyuter_olib_qoysa_mine_false(self):
         token = self.login(PC1).json()["session"]
-        # PC1 jim qoldi, PC2 kirdi
+        # PC1 jim qoldi, kassa bo'shatilib PC2 ga o'tdi
         KassaSession.objects.filter(login="kassa1").update(
             seen_at=timezone.now() - timedelta(seconds=KassaSession.ALIVE_SECONDS + 5)
         )
+        self.unbind()
         self.login(PC2)
+        # Endi kassa PC2 niki — PC1 umuman kira olmaydi (401), shuning
+        # uchun «mine: false» ekranini ko'rishga ham ulgurmaydi.
         r = self.call("/api/v1/hello", headers=PC1, session=token)
-        ls = r.json()["login_session"]
-        self.assertFalse(ls["mine"])
-        self.assertEqual(ls["holder"], "Kassa-1 · OMBOR-PC")
-        self.assertIn("OMBOR-PC", ls["message"])
-        self.assertNotIn("session", ls)
+        self.assertEqual(r.status_code, 401)
+        self.assertIn("OMBOR-PC", r.json()["error"])
 
     def test_eski_ilova_hello_mine_none(self):
         r = self.call("/api/v1/hello")
@@ -216,6 +243,12 @@ class PanelSessionTest(SessionBase):
         r = self.web.post("/kassalar/", {"action": "release", "id": self.reg.pk})
         self.assertEqual(r.status_code, 302)
         self.assertEqual(KassaSession.objects.count(), 0)
+        # Login bo'shadi, lekin kassa hali PC1 ga biriktirilgan
+        self.assertEqual(self.login(PC2).status_code, 401)
+        r = self.web.post("/kassalar/", {"action": "unbind", "id": self.reg.pk})
+        self.assertEqual(r.status_code, 302)
+        self.reg.refresh_from_db()
+        self.assertEqual(self.reg.device, "")
         self.assertEqual(self.login(PC2).status_code, 200)
 
     def test_jim_qolgan_sessiya_korinmaydi(self):
@@ -224,7 +257,11 @@ class PanelSessionTest(SessionBase):
             seen_at=timezone.now() - timedelta(seconds=KassaSession.ALIVE_SECONDS + 5)
         )
         html = unescape(self.web.get("/kassalar/").content.decode())
-        self.assertNotIn("KASSA-PC", html)
+        # Kompyuter nomi sahifada baribir bor — kassa o'sha kompyuterga
+        # BIRIKTIRILGAN («Kompyuter: KASSA-PC»). Bu yerda tekshirilayotgani
+        # boshqa narsa: jim qolgan sessiya «kim kirgan» ustunida
+        # ko'rsatilmasligi kerak («· KASSA-PC · 08:00 dan» qatori).
+        self.assertNotIn("\u00b7 KASSA-PC \u00b7", html)
 
 
 class SessionsModuleTest(SessionBase):

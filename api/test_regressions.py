@@ -1,4 +1,5 @@
 """Regression scenarios for money, shift ownership and session boundaries."""
+import json
 from datetime import timedelta
 from django.utils import timezone
 from django.test import RequestFactory
@@ -291,3 +292,81 @@ class ReceiptAfterShiftClosedTest(ApiTestCase):
         )
         self.assertEqual(self.post("/api/v1/sales", payload).status_code, 201)
         self.assertEqual(Sale.objects.get().shift_id, self.old.pk)
+
+
+class OneRegisterOneComputerTest(ApiTestCase):
+    """Bitta kassa — bitta kompyuter.
+
+    Kassa tokeni birinchi ulangan kompyuterga biriktiriladi. Xuddi shu
+    tokenni ikkinchi kompyuterga ko'chirib ishlatib bo'lmaydi: 18.09.2026
+    da aynan shu tufayli bitta login ikkita kompyuterda ishlagan va
+    smenalar aralashib ketgan.
+    """
+
+    def hello(self, device="", name=""):
+        extra = {}
+        if device:
+            extra["HTTP_X_DEVICE"] = device
+        if name:
+            extra["HTTP_X_DEVICE_NAME"] = name
+        return self.client.get("/api/v1/hello", **{**self.auth(), **extra})
+
+    def test_first_computer_is_bound_and_keeps_working(self):
+        self.assertEqual(self.hello("pos-1", "POS-1").status_code, 200)
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.device, "pos-1")
+        self.assertEqual(self.register.device_name, "POS-1")
+        self.assertIsNotNone(self.register.device_bound_at)
+        self.assertEqual(self.hello("pos-1").status_code, 200)
+
+    def test_second_computer_with_the_same_token_is_refused(self):
+        self.hello("pos-1", "POS-1")
+        response = self.hello("pos-2", "POS-2")
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("POS-1", response.json()["error"])
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.device, "pos-1")
+
+    def test_second_computer_cannot_write_a_sale(self):
+        self.hello("pos-1")
+        self.open_shift()
+        payload = self.sale_payload()
+        refused = self.post("/api/v1/sales", payload, HTTP_X_DEVICE="pos-2")
+        self.assertEqual(refused.status_code, 401)
+        self.assertFalse(Sale.objects.exists())
+        self.assertEqual(
+            self.post("/api/v1/sales", payload, HTTP_X_DEVICE="pos-1").status_code, 201
+        )
+
+    def test_login_and_password_move_the_register_to_a_new_computer(self):
+        self.hello("pos-1", "POS-1")
+        self.register.set_password("maxfiy")
+        self.register.login = "kassa-1"
+        self.register.save(update_fields=["password_hash", "login"])
+        moved = self.client.post(
+            "/api/v1/connect",
+            data=json.dumps({"login": "kassa-1", "password": "maxfiy"}),
+            content_type="application/json",
+            HTTP_X_DEVICE="pos-2", HTTP_X_DEVICE_NAME="POS-2",
+        )
+        self.assertEqual(moved.status_code, 200)
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.device, "pos-2")
+        self.assertEqual(self.hello("pos-2").status_code, 200)
+        self.assertEqual(self.hello("pos-1").status_code, 401)
+
+    def test_old_app_without_the_header_is_not_locked_out(self):
+        self.assertEqual(self.hello().status_code, 200)
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.device, "")
+        self.hello("pos-1")
+        self.assertEqual(self.hello().status_code, 200)
+
+    def test_panel_can_release_the_computer(self):
+        self.hello("pos-1", "POS-1")
+        self.register.device = ""
+        self.register.device_name = ""
+        self.register.save(update_fields=["device", "device_name"])
+        self.assertEqual(self.hello("pos-2", "POS-2").status_code, 200)
+        self.register.refresh_from_db()
+        self.assertEqual(self.register.device, "pos-2")

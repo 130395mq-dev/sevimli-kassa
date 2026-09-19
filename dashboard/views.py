@@ -401,6 +401,24 @@ def registers(request):
                     "shu login bilan kirish mumkin.",
                 )
 
+        elif action == "unbind":
+            # «Kompyuterni bo'shatish» — kassa boshqa monoblokka ko'chirilsa
+            # yoki eski kompyuter buzilsa. Keyin birinchi ulangan kompyuter
+            # o'ziga biriktiradi.
+            reg = Register.objects.filter(pk=request.POST.get("id")).first()
+            if reg:
+                was = reg.device_name or "eski kompyuter"
+                reg.device = ""
+                reg.device_name = ""
+                reg.device_bound_at = None
+                reg.save(update_fields=["device", "device_name", "device_bound_at"])
+                messages.success(
+                    request,
+                    f"{reg.name}: «{was}» dan bo'shatildi — endi bu kassani "
+                    "istalgan kompyuterda ochish mumkin, birinchi ulangani "
+                    "o'ziga biriktiriladi.",
+                )
+
         return redirect("dashboard:registers")
 
     from catalog.models import Warehouse

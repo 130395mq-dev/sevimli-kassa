@@ -63,6 +63,8 @@ from shared.receipt import render
 from . import pricing, session_security
 
 from .auth import (
+    bind_device,
+    device_of,
     error,
     make_session_token,
     manager_required,
@@ -199,6 +201,13 @@ def connect(request):
 
     if not register or not register.check_password(password):
         return error("Login yoki parol noto'g'ri", status=401)
+
+    # Bitta kassa — bitta kompyuter. Login-parol kiritilgan kompyuter shu
+    # kassaning kompyuteri bo'ladi. Ilgarigisi (bo'lsa) endi kira olmaydi
+    # va o'zi ham login-parol so'raydi. Egasi kassani yangi monoblokka
+    # ko'chirganda boshqa hech narsa qilishi shart emas.
+    device, device_name = device_of(request)
+    bind_device(register, device, device_name)
 
     return JsonResponse({
         "token": register.api_token,
