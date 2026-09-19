@@ -46,16 +46,10 @@
       {% csrf_token %}
       <input type="hidden" name="action" value="activate">
       <button type="submit" style="font-size:15px;padding:12px 22px;">
-        ★ SEVIMLI BONUS ni yoqish (MoySklad balanslarini olib qolib)</button>
-      {% if not has_token %}
-        <div class="alert warn" style="margin-top:10px;"><span>!</span>
-          <div>MoySklad tokeni sozlanmagan — balanslar bazadagidek qoladi.
-            Avval MoySklad'ni ulang, keyin yoqing.</div></div>
-      {% else %}
-        <span class="sec" style="margin-left:12px;">
-          Bosishdan oldin katalog sinxronlansin — bu tugma MoySklad'dan
-          har mijozning joriy balansini olib qo'yadi.</span>
-      {% endif %}
+        ★ SEVIMLI BONUS ni yoqish</button>
+      <span class="sec" style="margin-left:12px;">
+        Ball faqat shu yerda yuriladi — MoySklad'dan olinmaydi va unga
+        yozilmaydi. Bazadagi balanslar o'z holicha qoladi.</span>
     </form>
   {% endif %}
 
@@ -83,17 +77,6 @@
     </div>
     <button type="submit">Saqlash</button>
   </form>
-
-  {% if program.active and has_token %}
-    <form method="post" style="margin:10px 0 22px;"
-          onsubmit="return confirm('Lokal balanslar MoySklad qiymatiga tenglanadi. Faqat ishga tushirishda kerak. Davom etilsinmi?');">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="reimport">
-      <button type="submit" class="ghost">MoySklad'dan balanslarni qayta olish</button>
-      <span class="sec" style="margin-left:12px;">Ehtiyot bo'ling — lokal
-        o'zgarishlar ustidan yoziladi.</span>
-    </form>
-  {% endif %}
 
   <!-- ============ MIJOZLAR ============ -->
   <h2>Mijoz balanslari</h2>

@@ -813,42 +813,17 @@ def bonus(request):
         action = request.POST.get("action")
 
         if action == "activate":
-            client = _moysklad_client()
-            pulled = 0
-            if client is not None:
-                try:
-                    from catalog.sync import CatalogSync
-                    pulled = CatalogSync(client).force_import_bonus()
-                except Exception as e:  # pull ishlamasa ham yoqamiz — balanslar bazada bor
-                    messages.error(request, f"MoySklad'dan olishda xato: {e}")
+            # MoySklad'ga MUROJAAT QILINMAYDI. Boshlang'ich balanslar
+            # 08.09.2026 da bir marta olingan; ball endi faqat bizda
+            # yuriladi (egasining qarori, 2026-09-19).
             program.active = True
             program.activated_at = timezone.now()
             program.save(update_fields=["active", "activated_at"])
             messages.success(
                 request,
-                "SEVIMLI BONUS yoqildi. " +
-                (f"MoySklad'dan {pulled} ta balans yangilandi. "
-                 if client is not None else
-                 "MoySklad tokeni yo'q — balanslar bazadagidek qoldi. ") +
-                "Endi ballni faqat biz yuritamiz.",
+                "SEVIMLI BONUS yoqildi. Ball faqat shu yerda yuriladi — "
+                "MoySklad'dan olinmaydi va unga yozilmaydi.",
             )
-            return redirect("dashboard:bonus")
-
-        if action == "reimport":
-            client = _moysklad_client()
-            if client is None:
-                messages.error(request, "MoySklad tokeni sozlanmagan")
-            else:
-                try:
-                    from catalog.sync import CatalogSync
-                    n = CatalogSync(client).force_import_bonus()
-                    messages.success(
-                        request,
-                        f"MoySklad'dan {n} ta balans qayta olindi. "
-                        "Diqqat: lokal balanslar MoySklad qiymatiga tenglandi.",
-                    )
-                except Exception as e:
-                    messages.error(request, f"Xato: {e}")
             return redirect("dashboard:bonus")
 
         if action == "deactivate":
@@ -856,8 +831,8 @@ def bonus(request):
             program.save(update_fields=["active"])
             messages.success(
                 request,
-                "SEVIMLI BONUS o'chirildi. Ehtiyot bo'ling: o'chiq bo'lsa "
-                "ball berilmaydi va MoySklad balansi qayta yozila boshlaydi.",
+                "SEVIMLI BONUS o'chirildi — endi ball berilmaydi va "
+                "sarflanmaydi. Mavjud balanslar bazada saqlanib qoladi.",
             )
             return redirect("dashboard:bonus")
 
@@ -927,7 +902,6 @@ def bonus(request):
         "page": page,
         "q": q,
         "recent": recent,
-        "has_token": _moysklad_client() is not None,
     })
 
 

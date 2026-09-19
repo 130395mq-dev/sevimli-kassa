@@ -43,20 +43,6 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def _bonus_is_active() -> bool:
-    """SEVIMLI BONUS dasturi yoqilganmi. Yoqilgan bo'lsa — biz ballni
-    o'zimiz yuritamiz, MoySklad'dan qayta yozmaymiz.
-
-    Lazy import: `sales` `catalog` ni import qiladi, aylanma importdan
-    qochamiz. Jadval hali yaratilmagan bo'lsa (migratsiyagacha) — False.
-    """
-    try:
-        from sales.models import BonusProgram
-        return BonusProgram.objects.filter(active=True).exists()
-    except Exception:
-        return False
-
-
 # MoySklad `updated` ni "YYYY-MM-DD HH:MM:SS.mmm" formatida kutadi.
 MS_TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -437,12 +423,12 @@ class CatalogSync:
         params = self._delta_filter(state, full)
         count = 0
 
-        # SEVIMLI BONUS yoqilgan bo'lsa — `bonus_points` ni MoySklad'dan
-        # QAYTA YOZMAYMIZ. Endi ballning haqiqat manbai bizning bazamiz:
-        # savdo/qaytarish/qo'lda tuzatish uni o'zgartiradi. Agar bu yerda
-        # MoySklad qiymatini yozsak, sarflangan ball qaytib tiklanardi
-        # (mijoz bir ballni cheksiz sarflashi mumkin bo'lardi).
-        own_bonus = _bonus_is_active()
+        # BALL MoySklad'dan HECH QACHON O'QILMAYDI (egasining qarori,
+        # 2026-09-19). Ballning yagona haqiqat manbai — bizning bazamiz:
+        # savdo, qaytarish va qo'lda tuzatish uni o'zgartiradi. Boshlang'ich
+        # balanslar 08.09.2026 da bir marta olingan, boshqa kerak emas.
+        # Agar bu yerda MoySklad qiymatini yozsak, sarflangan ball qaytib
+        # tiklanardi — mijoz bir ballni cheksiz sarflay olardi.
 
         for row in self.client.iter_list("entity/counterparty", **params):
             discounts = row.get("discounts") or []
@@ -460,11 +446,6 @@ class CatalogSync:
                 "archived": row.get("archived", False),
                 "updated": _parse_ms_datetime(row.get("updated")),
             }
-            if not own_bonus:
-                # Dastur hali yoqilmagan — MoySklad balansi bilan sinxron
-                # turamiz (yoqilganda shu oxirgi qiymat boshlang'ich balans
-                # bo'lib qoladi, hech kimning bonusi kuymaydi).
-                defaults["bonus_points"] = int(row.get("bonusPoints") or 0)
             Customer.objects.update_or_create(ms_id=row["id"], defaults=defaults)
             count += 1
         return count
@@ -477,9 +458,10 @@ class CatalogSync:
         MoySklad balanslari boshlang'ich balans bo'lib qoladi, hech kimning
         bonusi kuymaydi. O'zgargan har balans reyestrga (IMPORT) yoziladi.
 
-        Diqqat: bu lokal balansni MoySklad qiymatiga TENGLAYDI. Faqat
-        ishga tushirishда yoki egasi ataylab «qayta olish» bosgandagina
-        chaqirilishi kerak (aks holda lokal sarflar ustidan yozib yuboradi).
+        Diqqat: bu lokal balansni MoySklad qiymatiga TENGLAYDI, ya'ni
+        hamma yig'ilgan va sarflangan ballni bekor qiladi. Panelda tugmasi
+        YO'Q (2026-09-19 da olib tashlandi) — faqat yangi o'rnatishda,
+        qo'lda (`manage.py shell`) chaqirish uchun turibdi.
         """
         from sales.models import BonusEntry  # aylanma importdan qochish
 

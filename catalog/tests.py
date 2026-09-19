@@ -292,3 +292,61 @@ class ProductSyncOnlyChangedTest(TestCase):
         row = self._row(); row["salePrices"][0]["value"] = 13_000_00
         self._sync(row)
         self.assertEqual(Product.objects.get(ms_id=self.P).sale_price, 13_000_00)
+
+
+class BonusIsOursOnlyTest(TestCase):
+    """Ball MoySklad'dan HECH QACHON o'qilmaydi (egasining qarori).
+
+    Mijoz sinxronizatsiyasi ism, telefon, karta raqamini yangilaydi,
+    lekin `bonus_points` ga tegmaydi — dastur yoqilgan bo'lsa ham,
+    o'chiq bo'lsa ham. Aks holda sarflangan ball qaytib tiklanardi.
+    """
+
+    C = "00000000-0000-0000-0000-0000000004a1"
+
+    def _row(self, ms_bonus, name="Akmal"):
+        return {
+            "id": self.C, "name": name, "phone": "901234567",
+            "discountCardNumber": "2900000000001",
+            "salesAmount": 5_000_000,
+            "bonusPoints": ms_bonus,
+            "discounts": [],
+            "updated": "2026-09-19 10:00:00.000",
+        }
+
+    def _sync(self, row):
+        from unittest.mock import MagicMock
+        from catalog.sync import CatalogSync
+        client = MagicMock()
+        client.iter_list.return_value = iter([row])
+        CatalogSync(client).sync_customers(full=True)
+
+    def _customer(self):
+        from catalog.models import Customer
+        return Customer.objects.get(ms_id=self.C)
+
+    def test_yangi_mijozda_ball_nol_boladi(self):
+        self._sync(self._row(9_999))
+        self.assertEqual(self._customer().bonus_points, 0)
+
+    def test_sarflangan_ball_qayta_tiklanmaydi(self):
+        from sales.models import BonusProgram
+        BonusProgram.objects.update_or_create(pk=1, defaults={"active": True})
+        self._sync(self._row(9_999))
+        c = self._customer()
+        c.bonus_points = 120          # savdo bergan ball
+        c.save(update_fields=["bonus_points"])
+        self._sync(self._row(9_999, name="Akmal FX"))
+        c = self._customer()
+        self.assertEqual(c.bonus_points, 120)
+        self.assertEqual(c.name, "Akmal FX")   # qolgani yangilanadi
+
+    def test_dastur_ochiq_bolsa_ham_tegmaydi(self):
+        from sales.models import BonusProgram
+        BonusProgram.objects.update_or_create(pk=1, defaults={"active": False})
+        self._sync(self._row(9_999))
+        c = self._customer()
+        c.bonus_points = 55
+        c.save(update_fields=["bonus_points"])
+        self._sync(self._row(9_999))
+        self.assertEqual(self._customer().bonus_points, 55)
