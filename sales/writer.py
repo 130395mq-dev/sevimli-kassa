@@ -652,41 +652,6 @@ class SaleWriter:
         payment.ms_payment_id = doc["id"]
         payment.save(update_fields=["ms_payment_id"])
 
-    # -------------------------------------------------------------- ball
-
-    def _write_bonus(self, sale: Sale) -> None:
-        """Ball berish va yechish.
-
-        MoySklad ballni faqat o'z kassasida avtomatik hisoblaydi. Biz
-        Отгрузка bilan ketayotganimiz uchun `bonustransaction` ni o'zimiz
-        yozamiz — shunda mijozning kartasidagi balans to'g'ri qoladi.
-        """
-        if not sale.customer_id or not sale.customer.ms_id:
-            return
-
-        agent = meta("counterparty", sale.customer.ms_id)
-        moment = ms_moment(sale.created_at)
-
-        for kind, points, suffix in (
-            ("EARNING", sale.points_earned, "earn"),
-            ("SPENDING", sale.points_spent, "spend"),
-        ):
-            if points <= 0:
-                continue
-            sync_id = f"{sale.local_uuid}-{suffix}"
-            self._ensure(
-                "bonustransaction",
-                sync_id,
-                {
-                    "syncId": sync_id,
-                    "transactionType": kind,
-                    "bonusValue": points,
-                    "moment": moment,
-                    "agent": agent,
-                    "applicable": True,
-                },
-            )
-
     # ---------------------------------------------------------- tekshirish
 
     def _check_sum(self, sale: Sale, demand: dict) -> None:
