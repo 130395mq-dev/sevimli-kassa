@@ -154,6 +154,24 @@ class Register(models.Model):
         max_length=64, unique=True, db_index=True, default=new_api_token
     )
     last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    # ---- Bitta kassa — bitta kompyuter --------------------------------
+    #
+    # Token birinchi ulangan kompyuterga biriktiriladi (`X-Device`). Shu
+    # tokenni boshqa kompyuterga ko'chirib ishlatib bo'lmaydi: server uni
+    # tanimaydi va o'sha kassa login-parol so'raydi. Nega kerak: 18.09.2026
+    # da bitta login ikkita kompyuterda ishlagan — biri smenani yopgan,
+    # ikkinchisi eski smenaga sotishda davom etgan va Z-hisobot 9 mln so'm
+    # kam ko'rsatgan.
+    #
+    # Biriktirish O'ZGARADI faqat ikki yo'l bilan: (a) yangi kompyuterda
+    # kassa login-paroli kiritilsa (`connect`), (b) panelda «Kompyuterni
+    # bo'shatish» bosilsa. Shuning uchun kassa qayta o'rnatilsa ham
+    # qulflanib qolmaydi — login-parolni terib ishlayveradi.
+    device = models.CharField(max_length=64, blank=True, default="")
+    device_name = models.CharField(max_length=128, blank=True, default="")
+    device_bound_at = models.DateTimeField(null=True, blank=True)
+
     local_pending = models.PositiveIntegerField(null=True, blank=True)
     local_stuck = models.PositiveIntegerField(null=True, blank=True)
     local_queue_error = models.CharField(max_length=512, blank=True)
