@@ -24,16 +24,18 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count, Q, Sum
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
+from dashboard import batafsil as batafsil_mod
 from sales import aloqa, healer, selftest, sender
+from dashboard import grafik
 from sales.models import (
-    BonusEntry, BonusProgram, MoySkladCheck, PaymentMethod, POINT_TIYIN,
-    Register, Sale, Shift,
+    BonusEntry, BonusProgram, MoySkladCheck, PanelSettings, PaymentMethod,
+    POINT_TIYIN, Register, Sale, Shift,
 )
 from sales.services import build_receipt
 from shared.receipt import render as render_receipt
@@ -190,9 +192,23 @@ def points(request):
         .order_by("-created_at")[:10]
     )
 
+    # Kassalar holati — nechta kassa ulangan (halqa grafigi uchun)
+    live = [r for r in snap["registers"] if r["state"] == "ok"]
+    kassa_state = {
+        "online": len(live),
+        "total": len(snap["registers"]),
+        "ring": grafik.ring(
+            len(live) / len(snap["registers"]) * 100 if snap["registers"] else 0
+        ),
+        "rows": snap["registers"],
+    }
+
     return render(request, "dashboard/points.html", {
         "alerts": alerts,
         "last_sales": last_sales,
+        "kassa_state": kassa_state,
+        # ?detail=savdo bilan ochilgan bo'lsa — panel darhol ochiladi
+        "detail": request.GET.get("detail", ""),
         "rows": rows,
         "board": board,
         "by_method": board["methods"],
@@ -207,6 +223,50 @@ def points(request):
         "bonus_total": bonus_total,
         "today": timezone.localdate(),
     })
+
+
+@login_required
+def batafsil(request, kpi: str):
+    """Karta bosilganda ochiladigan panel mazmuni (HTML bo'lagi yoki CSV).
+
+    Bosh sahifaga qo'shib hisoblanmaydi: faqat kerak bo'lganda so'raladi —
+    shu tufayli panel ochilishi sekinlashmaydi.
+    """
+    if kpi not in batafsil_mod.KPIS:
+        raise Http404("Bunday ko'rsatkich yo'q")
+    if request.GET.get("format") == "csv":
+        name, text = batafsil_mod.csv_response(kpi, request.GET)
+        resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{name}"'
+        return resp
+    return render(request, "dashboard/_batafsil.html",
+                  {"d": batafsil_mod.build(kpi, request.GET)})
+
+
+@login_required
+def avg_target(request):
+    """O'rtacha chek maqsadini saqlash (batafsil paneldagi kichik shakl)."""
+    if request.method != "POST":
+        return redirect("dashboard:points")
+    raw = (request.POST.get("target") or "").replace(" ", "").replace("\u00a0", "")
+    settings_row = PanelSettings.get()
+    if raw == "":
+        settings_row.avg_receipt_target = 0
+        settings_row.save(update_fields=["avg_receipt_target", "updated_at"])
+        messages.success(request, "O'rtacha chek maqsadi olib tashlandi.")
+    else:
+        try:
+            som = int(float(raw.replace(",", ".")))
+        except ValueError:
+            messages.error(request, "Maqsad raqam bo'lishi kerak, masalan 70000.")
+            return redirect(request.POST.get("next") or "/")
+        if som < 0:
+            messages.error(request, "Maqsad manfiy bo'lmaydi.")
+            return redirect(request.POST.get("next") or "/")
+        settings_row.avg_receipt_target = som * 100
+        settings_row.save(update_fields=["avg_receipt_target", "updated_at"])
+        messages.success(request, f"Maqsad saqlandi: {som:,}".replace(",", " ") + " so'm.")
+    return redirect(request.POST.get("next") or "/")
 
 
 @login_required
