@@ -182,8 +182,17 @@ def points(request):
         .aggregate(t=Sum("bonus_points"))["t"] or 0
     )
 
+    # So'nggi cheklar — «hozir savdo ketyaptimi?» degan savolga bir qarashda
+    # javob beradi. Davr filtriga bog'liq emas: doim eng oxirgi 10 tasi.
+    last_sales = (
+        Sale.objects.filter(kind=Sale.SALE)
+        .select_related("shift__register__store")
+        .order_by("-created_at")[:10]
+    )
+
     return render(request, "dashboard/points.html", {
         "alerts": alerts,
+        "last_sales": last_sales,
         "rows": rows,
         "board": board,
         "by_method": board["methods"],
