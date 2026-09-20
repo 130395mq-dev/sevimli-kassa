@@ -25,7 +25,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
 from django.db.models import Count, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -35,6 +35,8 @@ from sales.models import Payment, Register, Sale, Shift
 MAX_DAYS = 92
 #: Grafik uchun kamida shuncha kun ko'rsatiladi
 CHART_MIN_DAYS = 14
+#: Sutkadagi soatlar — soatlik grafik shuncha ustundan iborat
+HOURS = 24
 
 PRESETS = [("bugun", "Bugun"), ("kecha", "Kecha"), ("7", "7 kun"), ("30", "30 kun")]
 #: Hafta kunlari — o'zbekcha qisqa (Django'niki ruscha chiqadi)
@@ -213,6 +215,7 @@ def build(params, now=None) -> dict:
     daily = _daily(c_start, c_end, ranking, start, end)
 
     return {
+        "hourly": _hourly(start, end),
         "start": start, "end": end, "span": span, "preset": preset,
         "label": period_label(start, end),
         "prev_label": period_label(prev_start, prev_end),
@@ -271,6 +274,114 @@ def _daily(c_start: date, c_end: date, ranking: list[dict], sel_start: date, sel
         "avg_day": (sum(x["total"] for x in days) / len(days)) if days else 0,
         "best_day": best_day if best_day and best_day["total"] > 0 else None,
         "is_window": not (c_start == sel_start and c_end == sel_end),
+    }
+
+
+# ----------------------------------------------------------- soatlik kun
+
+
+def _hourly(start: date, end: date) -> dict:
+    """Kun ichidagi savdo: qaysi soatda qancha sotildi va nechta chek.
+
+    Do'kon egasi uchun eng amaliy kesim: xodimni qachon ko'paytirish, aksiyani
+    qachon boshlash. Ikki o'lchov bitta vaqt o'qida — summa ustun bilan,
+    chek soni ustidan o'tadigan chiziq bilan.
+    """
+    a, b = _bounds(start, end)
+    tz = timezone.get_current_timezone()
+    rows = (
+        Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+        .annotate(hh=ExtractHour("created_at", tzinfo=tz))
+        .values("hh")
+        .annotate(total=Sum("net_total"), n=Count("id"))
+        .order_by()
+    )
+    tot = [0.0] * HOURS
+    cnt = [0] * HOURS
+    for r in rows:
+        h = int(r["hh"] or 0) % HOURS
+        tot[h] += (r["total"] or 0) / 100
+        cnt[h] += r["n"]
+
+    peak = max(range(HOURS), key=lambda h: tot[h]) if any(tot) else None
+    return {
+        "hours": [
+            {"h": h, "label": f"{h:02d}:00", "total": tot[h], "n": cnt[h]}
+            for h in range(HOURS)
+        ],
+        "total": sum(tot),
+        "receipts": sum(cnt),
+        "peak": {"label": f"{peak:02d}:00", "total": tot[peak], "n": cnt[peak]}
+        if peak is not None else None,
+        "chart": _hour_chart(tot, cnt),
+    }
+
+
+def _axis(values, plot_h: float):
+    """O'q: (tepa qiymati, masshtab, chiziqlar ro'yxati uchun qadam)."""
+    max_v = max(values) if values else 0
+    step = _nice_step(max_v)
+    top_v = step * (int(max_v // step) + 1) if max_v > 0 else step
+    return top_v, plot_h / top_v, step
+
+
+def _hour_chart(tot: list[float], cnt: list[int]) -> dict:
+    """Soatlik grafik (SVG) koordinatalari.
+
+    Chap o'q — so'm (ustunlar), o'ng o'q — chek soni (chiziq). Ikki o'lchov
+    bitta rasmda bo'lgani uchun har ikkalasining o'qi alohida imzolanadi va
+    ranglari bir-biridan aniq farq qiladi; hoverda aniq raqamlar chiqadi.
+    """
+    left, right, top, bottom = 64, 56, 18, 34
+    w, h = 960, 250
+    plot_w = w - left - right
+    plot_h = h - top - bottom
+    slot = plot_w / HOURS
+    bar_w = min(20.0, slot - 8)
+
+    top_v, scale, step = _axis(tot, plot_h)
+    n_top, n_scale, n_step = _axis(cnt, plot_h)
+
+    ticks, v = [], 0.0
+    while v <= top_v + 1e-9:
+        ticks.append({"y": round(top + plot_h - v * scale, 1), "label": _short(v)})
+        v += step
+    n_ticks, v = [], 0.0
+    while v <= n_top + 1e-9:
+        n_ticks.append({"y": round(top + plot_h - v * n_scale, 1), "label": f"{int(v)}"})
+        v += n_step
+
+    bars, pts = [], []
+    for hh in range(HOURS):
+        x = left + hh * slot + (slot - bar_w) / 2
+        bh = tot[hh] * scale
+        y = top + plot_h - bh
+        r = min(4.0, bh / 2)
+        path = (
+            f"M{x:.1f},{y + r:.1f} a{r:.1f},{r:.1f} 0 0 1 {r:.1f},-{r:.1f} "
+            f"h{bar_w - 2 * r:.1f} a{r:.1f},{r:.1f} 0 0 1 {r:.1f},{r:.1f} "
+            f"v{bh - r:.1f} h-{bar_w:.1f} z"
+        ) if bh > 0 else ""
+        cx = x + bar_w / 2
+        ny = top + plot_h - cnt[hh] * n_scale
+        bars.append({
+            "h": hh, "label": f"{hh:02d}:00",
+            "x": round(x, 1), "y": round(y, 1), "w": round(bar_w, 1),
+            "cx": round(cx, 1), "path": path, "ny": round(ny, 1),
+            "slot_x": round(left + hh * slot, 1), "slot_w": round(slot, 1),
+            "total": tot[hh], "n": cnt[hh],
+            # X o'qi: har ikki soatda bir imzo — 00:00, 02:00 … 22:00
+            "show_label": hh % 2 == 0,
+        })
+        pts.append(f"{cx:.1f},{ny:.1f}")
+
+    return {
+        "w": w, "h": h, "left": left, "top": top, "bottom": bottom,
+        "plot_w": round(plot_w, 1), "plot_h": plot_h,
+        "baseline": top + plot_h, "axis_right": round(left + plot_w, 1),
+        "ticks": ticks, "n_ticks": n_ticks, "bars": bars,
+        "line": " ".join(pts),
+        "has_data": any(tot) or any(cnt),
     }
 
 
