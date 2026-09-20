@@ -10,7 +10,9 @@ from django.utils import timezone
 from catalog.models import RetailStore, Warehouse
 from dashboard import savdo
 from dashboard.templatetags.pul import som
-from sales.models import Payment, PaymentMethod, Register, Sale, Shift
+from sales.models import (
+    PanelSettings, Payment, PaymentMethod, Register, Sale, SaleItem, Shift,
+)
 
 
 def _at(day: date, hour: int = 12):
@@ -277,6 +279,108 @@ class HourlyTest(SavdoBase):
         by_hour = {x["h"]: x for x in h["hours"]}
         self.assertEqual(by_hour[11]["total"], 10_000)
         self.assertEqual(by_hour[11]["n"], 1)
+
+
+class KartaMalumotiTest(SavdoBase):
+    """Karta ichidagi mini-grafiklar uchun ma'lumot."""
+
+    def test_spark_oxirgi_7_kun(self):
+        self.sale(self.reg1, self.today, 10_000_00)
+        self.sale(self.reg1, self.today - timedelta(days=3), 20_000_00)
+        self.sale(self.reg1, self.today - timedelta(days=30), 99_000_00)
+        days = savdo._spark(self.today)
+        self.assertEqual(len(days), 7)
+        self.assertEqual(days[-1]["total"], 10_000)
+        self.assertEqual(days[3]["total"], 20_000)
+        self.assertEqual(sum(d["total"] for d in days), 30_000)   # 30 kunlik kirmaydi
+
+    def test_spark_qaytarishni_alohida_sanaydi(self):
+        self.sale(self.reg1, self.today, 10_000_00)
+        self.sale(self.reg1, self.today, 4_000_00, kind=Sale.RETURN)
+        days = savdo._spark(self.today)
+        self.assertEqual(days[-1]["total"], 10_000)
+        self.assertEqual(days[-1]["returns"], 4_000)
+        self.assertEqual(days[-1]["returns_n"], 1)
+
+    def test_eng_baland_va_eng_past_kun(self):
+        self.sale(self.reg1, self.today, 10_000_00)
+        self.sale(self.reg1, self.today - timedelta(days=2), 80_000_00)
+        peak, low = savdo._peak_low(savdo._spark(self.today))
+        self.assertEqual(peak["total"], 80_000)
+        self.assertEqual(low["total"], 10_000)
+
+    def test_savdo_yoq_bolsa_kun_tanlanmaydi(self):
+        peak, low = savdo._peak_low(savdo._spark(self.today))
+        self.assertIsNone(peak)
+        self.assertIsNone(low)
+
+    def test_eng_faol_oyna(self):
+        cnt = [0] * 24
+        cnt[9], cnt[10], cnt[11] = 3, 9, 8
+        w = savdo._busy_window(cnt)
+        self.assertEqual(w["label"], "10:00–12:00")
+        self.assertEqual(w["n"], 17)
+        self.assertIsNone(savdo._busy_window([0] * 24))
+
+    def test_kartalar_buildga_qoshilgan(self):
+        self.sale(self.reg1, self.today, 50_000_00)
+        c = savdo.build({})["cards"]
+        for key in ("sale_area", "receipt_bars", "avg_area", "returns_bars",
+                    "pay_donut", "busy", "peak_day", "returns_share"):
+            self.assertIn(key, c)
+        self.assertEqual(len(c["days"]), 7)
+        self.assertFalse(c["pay_donut"]["empty"])
+
+    def test_maqsad_foizi(self):
+        self.sale(self.reg1, self.today, 50_000_00)
+        PanelSettings.objects.update_or_create(defaults={"avg_receipt_target": 100_000_00})
+        c = savdo.build({})["cards"]
+        self.assertEqual(c["target"], 100_000)
+        self.assertEqual(c["target_percent"], 50)
+        self.assertEqual(c["target_left"], 50_000)
+
+    def test_maqsadsiz(self):
+        self.sale(self.reg1, self.today, 50_000_00)
+        c = savdo.build({})["cards"]
+        self.assertEqual(c["target"], 0)
+        self.assertIsNone(c["target_percent"])
+
+
+class TopMahsulotTest(SavdoBase):
+    def _sale_items(self, reg, day, lines, kind=Sale.SALE, hour=12):
+        total = sum(q * p for _, q, p in lines)
+        s = self.sale(reg, day, total, kind=kind, hour=hour)
+        for i, (name, qty, price) in enumerate(lines, start=1):
+            SaleItem.objects.create(sale=s, position=i, name=name, quantity=qty,
+                                    price=price, total=qty * price)
+        return s
+
+    def test_summa_boyicha_tartib(self):
+        self._sale_items(self.reg1, self.today, [("Non", 2, 5_000_00), ("Sut", 1, 12_000_00)])
+        self._sale_items(self.reg1, self.today, [("Non", 3, 5_000_00)], hour=14)
+        top = savdo.top_products(self.today, self.today)
+        self.assertEqual([t["label"] for t in top], ["Non", "Sut"])
+        self.assertEqual(top[0]["value"], 25_000)
+        self.assertEqual(top[0]["qty"], 5.0)
+        self.assertEqual(top[0]["n"], 2)
+
+    def test_qaytarilgan_mahsulotlar_alohida(self):
+        self._sale_items(self.reg1, self.today, [("Non", 1, 5_000_00)])
+        self._sale_items(self.reg1, self.today, [("Sut", 1, 3_000_00)],
+                         kind=Sale.RETURN, hour=15)
+        self.assertEqual([t["label"] for t in savdo.top_products(self.today, self.today)],
+                         ["Non"])
+        ret = savdo.top_products(self.today, self.today, kind=Sale.RETURN)
+        self.assertEqual([t["label"] for t in ret], ["Sut"])
+
+    def test_bir_chekdagi_ortacha_mahsulot(self):
+        self._sale_items(self.reg1, self.today, [("Non", 2, 1_000_00), ("Sut", 2, 1_000_00)])
+        self._sale_items(self.reg1, self.today, [("Non", 2, 1_000_00)], hour=13)
+        self.assertEqual(savdo.items_per_receipt(self.today, self.today), 3.0)
+
+    def test_savdosiz_kun(self):
+        self.assertEqual(savdo.items_per_receipt(self.today, self.today), 0)
+        self.assertEqual(savdo.top_products(self.today, self.today), [])
 
 
 class PanelTest(SavdoBase):
