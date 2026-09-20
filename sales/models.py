@@ -907,3 +907,30 @@ class KassaSession(models.Model):
         if self.device_name:
             parts.append(self.device_name)
         return " · ".join(parts)
+
+
+class PanelSettings(models.Model):
+    """Panelning bitta qatorli sozlamasi — do'kon egasi o'zi qo'yadigan raqamlar.
+
+    Hozircha faqat o'rtacha chek maqsadi. Maqsad nol bo'lsa kartada u
+    ko'rsatilmaydi: «maqsad yo'q» ham to'g'ri holat, majburlamaymiz.
+    """
+
+    avg_receipt_target = models.BigIntegerField(
+        "O'rtacha chek maqsadi", default=0, help_text="Tiyinda; 0 — belgilanmagan"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Panel sozlamasi"
+        verbose_name_plural = "Panel sozlamalari"
+
+    def __str__(self) -> str:
+        return "Panel sozlamasi"
+
+    @classmethod
+    def get(cls) -> "PanelSettings":
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
