@@ -209,6 +209,76 @@ class QisqaRaqamTest(TestCase):
         self.assertEqual(savdo._nice_step(0), 1)
 
 
+class HourlyTest(SavdoBase):
+    """Soatlik grafik: kun ichidagi savdo va chek soni."""
+
+    def test_savdo_oz_soatiga_tushadi(self):
+        self.sale(self.reg1, self.today, 40_000_00, hour=9)
+        self.sale(self.reg1, self.today, 60_000_00, hour=9)
+        self.sale(self.reg2, self.today, 10_000_00, hour=20)
+        h = savdo._hourly(self.today, self.today)
+        by_hour = {x["h"]: x for x in h["hours"]}
+        self.assertEqual(by_hour[9]["total"], 100_000)
+        self.assertEqual(by_hour[9]["n"], 2)
+        self.assertEqual(by_hour[20]["total"], 10_000)
+        self.assertEqual(by_hour[8]["total"], 0)
+        self.assertEqual(len(h["hours"]), 24)
+        self.assertEqual(h["total"], 110_000)
+        self.assertEqual(h["receipts"], 3)
+
+    def test_eng_gavjum_soat(self):
+        self.sale(self.reg1, self.today, 5_000_00, hour=7)
+        self.sale(self.reg1, self.today, 90_000_00, hour=18)
+        h = savdo._hourly(self.today, self.today)
+        self.assertEqual(h["peak"]["label"], "18:00")
+        self.assertEqual(h["peak"]["total"], 90_000)
+
+    def test_savdo_bolmasa_grafik_bosh(self):
+        h = savdo._hourly(self.today, self.today)
+        self.assertIsNone(h["peak"])
+        self.assertFalse(h["chart"]["has_data"])
+        self.assertEqual(h["chart"]["bars"][0]["path"], "")
+
+    def test_grafik_koordinatalari(self):
+        self.sale(self.reg1, self.today, 100_000_00, hour=13)
+        c = savdo._hourly(self.today, self.today)["chart"]
+        self.assertEqual(len(c["bars"]), 24)
+        self.assertTrue(c["has_data"])
+        # X o'qi imzosi har ikki soatda bir: 00:00, 02:00 … 22:00
+        labels = [b["label"] for b in c["bars"] if b["show_label"]]
+        self.assertEqual(labels[0], "00:00")
+        self.assertEqual(labels[-1], "22:00")
+        self.assertEqual(len(labels), 12)
+        # Ustun faqat savdo bo'lgan soatda chiziladi
+        drawn = [b for b in c["bars"] if b["path"]]
+        self.assertEqual([b["h"] for b in drawn], [13])
+        # Chiziq — har soat uchun bitta nuqta
+        self.assertEqual(len(c["line"].split(" ")), 24)
+        # Ikkala o'q ham imzolangan (chap — so'm, o'ng — chek soni)
+        self.assertTrue(c["ticks"] and c["n_ticks"])
+        # Ustunlar chizilgan maydondan chiqib ketmaydi
+        for b in c["bars"]:
+            self.assertGreaterEqual(b["y"], c["top"])
+            self.assertLessEqual(b["y"], c["baseline"])
+
+    def test_davr_bir_necha_kun_bolsa_soatlar_qoshiladi(self):
+        kecha = self.today - timedelta(days=1)
+        self.sale(self.reg1, kecha, 20_000_00, hour=15)
+        self.sale(self.reg1, self.today, 30_000_00, hour=15)
+        h = savdo._hourly(kecha, self.today)
+        by_hour = {x["h"]: x for x in h["hours"]}
+        self.assertEqual(by_hour[15]["total"], 50_000)
+        self.assertEqual(by_hour[15]["n"], 2)
+
+    def test_qaytarish_soatlik_grafikka_kirmaydi(self):
+        self.sale(self.reg1, self.today, 10_000_00, hour=11)
+        self.sale(self.reg1, self.today, 4_000_00, kind=Sale.RETURN, hour=11)
+        h = savdo._hourly(self.today, self.today)
+        by_hour = {x["h"]: x for x in h["hours"]}
+        self.assertEqual(by_hour[11]["total"], 10_000)
+        self.assertEqual(by_hour[11]["n"], 1)
+
+
 class PanelTest(SavdoBase):
     def setUp(self):
         super().setUp()
@@ -219,8 +289,10 @@ class PanelTest(SavdoBase):
         self.sale(self.reg1, self.today, 100_000_00)
         self.sale(self.reg2, self.today, 30_000_00)
         html = unescape(self.client.get("/").content.decode())
-        self.assertIn("Qaysi nuqta yaxshi sotyapti", html)
+        self.assertIn("Nuqtalar bo'yicha savdo", html)
+        self.assertIn("Kunlik savdo dinamikasi", html)
         self.assertIn("Kunlik ko'rsatkichlar", html)
+        self.assertIn("So'nggi 10 ta chek", html)
         self.assertIn('class="chart"', html)
         self.assertIn("Chilonzor", html)
         self.assertIn("eng yaxshi", html)  # CSS ::after emas — badge sinf orqali
@@ -242,3 +314,37 @@ class PanelTest(SavdoBase):
         self.sale(self.reg1, d2, 6_000_00)
         html = unescape(self.client.get(f"/?dan={d1}&gacha={d2}").content.decode())
         self.assertIn(som(11_000), html)
+
+    def test_songgi_cheklar_jadvali(self):
+        """So'nggi 10 ta chek — davr filtriga bog'liq emas, doim oxirgilari."""
+        eski = self.today - timedelta(days=30)
+        self.sale(self.reg1, eski, 777_00, hour=10)
+        # 11 ta chek, har biri alohida soatda — tartib aniq bo'lsin
+        for hour in range(1, 12):
+            self.sale(self.reg2, self.today, hour * 1_000_00, hour=hour)
+        r = self.client.get("/")
+        last = list(r.context["last_sales"])
+        self.assertEqual(len(last), 10)
+        # Eng oxirgisi birinchi turadi va eski chek ro'yxatga tushmaydi
+        self.assertEqual(last[0].net_total, 11_000_00)
+        self.assertNotIn(777_00, [s.net_total for s in last])
+        html = unescape(r.content.decode())
+        self.assertIn("So'nggi 10 ta chek", html)
+        self.assertIn(som(11_000), html)
+
+    def test_soatlik_grafik_sahifada(self):
+        self.sale(self.reg1, self.today, 100_000_00, hour=14)
+        html = unescape(self.client.get("/").content.decode())
+        self.assertIn("Kunlik savdo dinamikasi", html)
+        self.assertIn("Savdo, so'm", html)      # grafik izohi (legend)
+        self.assertIn("Cheklar soni", html)
+        self.assertIn("14:00", html)
+        self.assertIn("Eng gavjum soat", html)
+
+    def test_savdosiz_kun_sahifani_yiqitmaydi(self):
+        """Bo'sh kun — 0 ga bo'lish yoki bo'sh grafik xatosi bo'lmasin."""
+        r = self.client.get("/?davr=kecha")
+        self.assertEqual(r.status_code, 200)
+        html = unescape(r.content.decode())
+        self.assertIn("Kunlik savdo dinamikasi", html)
+        self.assertIn("Bu davrda savdo bo'lmagan", html)
