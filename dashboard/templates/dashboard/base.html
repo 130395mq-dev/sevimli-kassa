@@ -522,9 +522,218 @@
       h1 { font-size: 23px; }
       .topsep, header.top .clock { display: none; }
     }
+
+    /* -------------------------------------------- ikki ustunli tarmoq */
+    .grid2 {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px; margin-bottom: 10px;
+    }
+    .grid2 .card { margin-bottom: 0; }
+
+    /* ================================================ grafik palitrasi
+       Beshta qator rangi — dataviz validatoridan o'tgan (dark rejimda
+       yorqinlik oralig'i, rang to'yinganligi, rang ko'rmaslikda ajralish
+       va fon bilan kontrast: 5/5 PASS). Tartibi o'zgarmaydi: bir xil
+       narsa doim bir xil rangda bo'lsin. */
+    :root {
+      --c0: #13A657;  --c1: #5B8DEF;  --c2: #C2861C;
+      --c3: #A472E8;  --c4: #12A5A0;
+    }
+
+    /* ------------------------------------------- bosiladigan KPI karta */
+    button.tile {
+      margin: 0; min-height: 0; padding: 18px 20px; font-family: inherit;
+      font-size: 15px; font-weight: 400; line-height: inherit; text-align: left;
+      background: var(--surface); color: var(--ink);
+      border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); cursor: pointer; width: 100%;
+      transition: background .12s, border-color .12s;
+    }
+    button.tile:hover { background: var(--surface-2); border-color: var(--accent-line); }
+    button.tile:active { background: var(--surface-3); filter: none; }
+    button.tile.hero { background: var(--surface-2); border-color: var(--accent-line); }
+    button.tile.hero:hover { background: var(--surface-3); }
+    .tile .more {
+      margin-top: 10px; font-size: 12px; color: var(--faint);
+      display: flex; align-items: center; gap: 5px; opacity: .55;
+      transition: opacity .12s, color .12s;
+    }
+    button.tile:hover .more, button.tile:focus-visible .more {
+      opacity: 1; color: var(--accent);
+    }
+
+    /* ------------------------------------------------- mini-grafiklar */
+    .spark { display: block; width: 100%; height: 46px; margin-top: 12px; }
+    .spark .area { fill: var(--accent-soft); stroke: none; }
+    .spark .line { fill: none; stroke: var(--accent); stroke-width: 2;
+                   stroke-linejoin: round; stroke-linecap: round; }
+    .spark .hi { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+    .spark .lo { fill: var(--muted); stroke: var(--surface); stroke-width: 2; }
+    .spark.info .line { stroke: var(--info); }
+    .spark.info .area { fill: var(--info-soft); }
+    .spark.info .hi { fill: var(--info); }
+    .sbar { display: block; width: 100%; height: 46px; margin-top: 12px; }
+    .sbar rect { fill: var(--accent-deep); }
+    .sbar rect.hi { fill: var(--accent); }
+    .sbar.info rect { fill: var(--info); }
+    .sbar.danger rect { fill: var(--danger); }
+    .sbar.danger rect.hi { fill: var(--danger); }
+
+    /* ------------------------------------------------------- donut */
+    .donutwrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+    svg.donut { display: block; flex: 0 0 auto; }
+    svg.donut .slice { stroke: var(--surface); stroke-width: 1.5; }
+    svg.donut .slice.s0 { fill: var(--c0); }
+    svg.donut .slice.s1 { fill: var(--c1); }
+    svg.donut .slice.s2 { fill: var(--c2); }
+    svg.donut .slice.s3 { fill: var(--c3); }
+    svg.donut .slice.s4 { fill: var(--c4); }
+    svg.donut .slice:hover { filter: brightness(1.18); }
+    .donut-legend { list-style: none; margin: 0; padding: 0; min-width: 240px;
+                    flex: 1 1 auto; }
+    .tile .donut-legend { min-width: 0; font-size: 12.5px; }
+    .tile .donut-legend li { padding: 4px 0; gap: 8px; }
+    .tile { overflow: hidden; }
+    .donut-legend li {
+      display: grid; grid-template-columns: 14px 1fr auto auto; gap: 10px;
+      align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line);
+      font-size: 13.5px;
+    }
+    .donut-legend li:last-child { border-bottom: none; }
+    .dl-name { color: var(--ink-soft); }
+    .dl-val { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .dl-pct { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 46px;
+              text-align: right; }
+    .swatch.s0 { background: var(--c0); }
+    .swatch.s1 { background: var(--c1); }
+    .swatch.s2 { background: var(--c2); }
+    .swatch.s3 { background: var(--c3); }
+    .swatch.s4 { background: var(--c4); }
+    .legend .swatch.line.l0 { background: var(--accent); }
+    .legend .swatch.line.l1 { background: var(--muted); }
+    .legend .swatch.line.l2 { background: var(--warn); }
+    .legend .swatch.line.dashed {
+      background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px);
+      color: var(--muted);
+    }
+
+    /* --------------------------------------------------- katta grafik */
+    svg.chart.big .area.a0 { fill: var(--accent-soft); stroke: none; }
+    svg.chart.big .area.a1 { fill: none; }
+    svg.chart.big .line { fill: none; stroke-width: 2; stroke-linejoin: round;
+                          stroke-linecap: round; }
+    svg.chart.big .line.l0 { stroke: var(--accent); }
+    svg.chart.big .line.l1 { stroke: var(--muted); }
+    svg.chart.big .line.l2 { stroke: var(--warn); }
+    svg.chart.big .line.dashed { stroke-dasharray: 6 5; }
+    svg.chart.big .line.goal { stroke: var(--warn); stroke-dasharray: 2 6; stroke-width: 1.6; }
+    svg.chart .hov .hit { fill: transparent; }
+    svg.chart.big .hov:hover .hit { fill: rgba(255,255,255,.035); }
+    html[data-theme="light"] svg.chart.big .hov:hover .hit { fill: rgba(0,0,0,.03); }
+    svg.chart.big .hov .cross { stroke: var(--line-strong); stroke-width: 1; opacity: 0; }
+    svg.chart.big .hov .dot { opacity: 0; stroke: var(--surface); stroke-width: 1.5; }
+    svg.chart.big .hov .dot.d0 { fill: var(--accent); }
+    svg.chart.big .hov .dot.d1 { fill: var(--muted); }
+    svg.chart.big .hov .dot.d2 { fill: var(--warn); }
+    svg.chart.big .hov:hover .cross, svg.chart.big .hov:hover .dot { opacity: 1; }
+    svg.chart.big.danger .bar path { fill: var(--danger); }
+    svg.chart.big.danger .bar:hover path { filter: brightness(1.15); }
+
+    /* ------------------------------------------- gorizontal ustunlar */
+    .hrows { display: flex; flex-direction: column; gap: 2px; }
+    .hrow { padding: 8px 10px; border-radius: var(--radius-sm); }
+    .hrow:hover { background: var(--surface-2); }
+    .hrow .top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+    .hrow .nm { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis;
+                white-space: nowrap; font-size: 13.5px; flex: 1; min-width: 0; }
+    .hrow .vl { margin-left: auto; }
+    .hrow .track { height: 10px; border-radius: 5px; background: var(--surface-3);
+                   overflow: hidden; }
+    .hrow .fill { height: 100%; background: var(--accent-deep); border-radius: 5px; }
+    .hrow.danger .fill { background: var(--danger); }
+    .hrow .vl { font-variant-numeric: tabular-nums; font-size: 13.5px;
+                color: var(--ink); white-space: nowrap; }
+    .hrow .pc { color: var(--muted); font-size: 12.5px; margin-left: 8px; }
+
+    /* ------------------------------------------------------- halqa */
+    .ringwrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+    svg.ring { flex: 0 0 auto; }
+    svg.ring circle { fill: none; }
+    svg.ring circle.bg { stroke: var(--surface-3); }
+    svg.ring circle.fg { stroke: var(--accent); stroke-linecap: round;
+                         transform: rotate(-90deg); transform-origin: 50% 50%; }
+    svg.ring text { fill: var(--ink); font-size: 19px; font-weight: 700;
+                    text-anchor: middle; font-variant-numeric: tabular-nums; }
+
+    /* ============================================ «Batafsil» paneli */
+    .bx-scrim {
+      position: fixed; inset: 0; background: rgba(3,7,13,.6); z-index: 40;
+      opacity: 0; pointer-events: none; transition: opacity .16s;
+    }
+    .bx-scrim.on { opacity: 1; pointer-events: auto; }
+    .bx {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(1000px, 94vw);
+      z-index: 41; background: var(--bg); border-left: 1px solid var(--line);
+      box-shadow: -20px 0 60px rgba(0,0,0,.45); transform: translateX(101%);
+      transition: transform .2s ease; display: flex; flex-direction: column;
+    }
+    .bx.on { transform: none; }
+    .bx-top {
+      display: flex; align-items: center; gap: 12px; padding: 14px 22px;
+      border-bottom: 1px solid var(--line); background: var(--surface);
+      flex: 0 0 auto;
+    }
+    .bx-top .t { font-weight: 600; font-size: 15px; }
+    .bx-close { margin-left: auto; }
+    .bx-body { overflow-y: auto; padding: 20px 22px 48px; flex: 1; }
+    .bx-kicker { font-size: 11px; font-weight: 700; letter-spacing: .9px;
+                 text-transform: uppercase; color: var(--faint); }
+    .bx-value { font-size: 34px; font-weight: 700; letter-spacing: -1px;
+                margin-top: 4px; line-height: 1.1; }
+    .bx-unit { font-size: 14px; font-weight: 500; color: var(--muted);
+               letter-spacing: 0; margin-left: 4px; }
+    .bx-period { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .bx-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+              margin: 18px 0 20px; }
+    .bx-bar .presets { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+    .bx-bar .chip {
+      padding: 8px 14px; border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm); background: var(--surface-2);
+      color: var(--ink-soft); font-size: 13px; font-family: inherit;
+      cursor: pointer; margin: 0; min-height: 0; font-weight: 500;
+    }
+    .bx-bar .chip:hover { background: var(--surface-3); color: var(--ink); }
+    .bx-bar .chip.on { background: var(--accent); color: var(--accent-ink);
+                       border-color: var(--accent); font-weight: 600; }
+    .bx-bar .iconbtn { margin-left: auto; text-decoration: none; }
+    .bx-facts {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px; margin-bottom: 22px;
+    }
+    .fact { background: var(--surface); border: 1px solid var(--line);
+            border-radius: var(--radius-sm); padding: 13px 15px; }
+    .fact-label { font-size: 11px; font-weight: 700; letter-spacing: .7px;
+                  text-transform: uppercase; color: var(--faint); }
+    .fact-value { font-size: 19px; font-weight: 700; margin-top: 4px;
+                  overflow-wrap: anywhere; }
+    .fact-note { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .bx-block { margin-bottom: 26px; }
+    .bx-title { font-size: 12px; font-weight: 700; letter-spacing: .9px;
+                text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+    .bx-empty { text-align: center; color: var(--muted); padding: 48px 20px;
+                border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+    .bx-empty b { display: block; color: var(--ink); margin-bottom: 4px; }
+    .bx-target { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .bx-target label { display: flex; flex-direction: column; gap: 6px;
+                       font-size: 12.5px; color: var(--muted); font-weight: 600; }
+    .bx-load { text-align: center; color: var(--muted); padding: 60px 20px; }
+    @media (max-width: 760px) {
+      .bx { width: 100vw; }
+      .bx-value { font-size: 28px; }
+    }
   </style>
 </head>
-<body>
+<body data-open-detail="{{ detail|default:'' }}">
 
 {# ---------------------------------------------------------- ikonkalar #}
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
@@ -625,7 +834,140 @@
   </main>
 </div>
 
+
+{# ------------------------------------------------- «Batafsil» paneli #}
+<div class="bx-scrim" id="bx-scrim" hidden></div>
+<aside class="bx" id="bx" role="dialog" aria-modal="true"
+       aria-labelledby="bx-name" aria-hidden="true" hidden>
+  <div class="bx-top">
+    <span class="t" id="bx-name">Batafsil ma'lumot</span>
+    <button type="button" class="iconbtn bx-close" id="bx-close">
+      <span aria-hidden="true">✕</span><span class="sr-only">Yopish</span>
+    </button>
+  </div>
+  <div class="bx-body" id="bx-body"></div>
+</aside>
+
 <script>
+// ------------------------------------------- «Batafsil» paneli (drawer)
+// Karta bosilganda o'ngdan ochiladi. Mazmuni serverdan alohida olinadi —
+// bosh sahifa shu tufayli og'irlashmaydi. Yopish: ✕, Escape, tashqariga
+// bosish. Ochiq karta manzilda saqlanadi (?detail=savdo) — sahifani
+// yangilasa ham o'sha joyda qoladi, havolani ham ulashish mumkin.
+(function () {
+  var scrim = document.getElementById("bx-scrim");
+  var box = document.getElementById("bx");
+  var body = document.getElementById("bx-body");
+  var name = document.getElementById("bx-name");
+  var closeBtn = document.getElementById("bx-close");
+  if (!box || !scrim || !body) return;
+
+  var kpi = null;
+  var lastFocus = null;
+
+  function query(extra) {
+    var p = new URLSearchParams(window.location.search);
+    p.delete("detail");
+    if (extra) {
+      p.set("davr", extra);
+      p.delete("dan");
+      p.delete("gacha");
+    }
+    return p.toString();
+  }
+
+  function remember(k, davr) {
+    var p = new URLSearchParams(window.location.search);
+    if (davr) { p.set("davr", davr); p.delete("dan"); p.delete("gacha"); }
+    if (k) { p.set("detail", k); } else { p.delete("detail"); }
+    var q = p.toString();
+    history.replaceState(null, "", q ? "?" + q : window.location.pathname);
+  }
+
+  function wire() {
+    body.querySelectorAll("[data-davr]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        remember(kpi, b.dataset.davr);
+        load(b.dataset.davr);
+      });
+    });
+  }
+
+  function load(davr) {
+    body.innerHTML = '<div class="bx-load">Yuklanmoqda…</div>';
+    fetch("/batafsil/" + kpi + "/?" + query(davr),
+          { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+      })
+      .then(function (html) { body.innerHTML = html; wire(); })
+      .catch(function () {
+        body.innerHTML = '<div class="bx-empty"><b>Ma\'lumot olinmadi</b>' +
+          '<div class="sec">Internetni tekshirib, qaytadan urinib ko\'ring.</div></div>';
+      });
+  }
+
+  function open(k, label) {
+    kpi = k;
+    lastFocus = document.activeElement;
+    scrim.hidden = false;
+    box.hidden = false;
+    name.textContent = label || "Batafsil ma'lumot";
+    // hidden olib tashlangach bir kadr kutamiz — siljish ko'rinsin
+    requestAnimationFrame(function () {
+      scrim.classList.add("on");
+      box.classList.add("on");
+    });
+    box.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    remember(k, null);
+    load(null);
+    setTimeout(function () { closeBtn.focus(); }, 60);
+  }
+
+  function close() {
+    if (!kpi) return;
+    kpi = null;
+    scrim.classList.remove("on");
+    box.classList.remove("on");
+    box.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+    remember(null, null);
+    setTimeout(function () {
+      if (!kpi) { scrim.hidden = true; box.hidden = true; body.innerHTML = ""; }
+    }, 220);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  document.querySelectorAll("button[data-detail]").forEach(function (card) {
+    card.addEventListener("click", function () {
+      open(card.dataset.detail, card.dataset.detailName);
+    });
+  });
+
+  closeBtn.addEventListener("click", close);
+  scrim.addEventListener("click", close);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && kpi) { close(); return; }
+    // Tab panel ichida aylansin — orqadagi sahifaga o'tib ketmasin
+    if (e.key !== "Tab" || !kpi) return;
+    var items = box.querySelectorAll(
+      'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!items.length) return;
+    var first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+
+  // Manzilda ?detail= bo'lsa — darhol ochamiz
+  var want = document.body.dataset.openDetail;
+  if (want) {
+    var card = document.querySelector('button[data-detail="' + want + '"]');
+    open(want, card ? card.dataset.detailName : "");
+  }
+})();
+
 // --------------------------------------------------- menyu, mavzu, soat
 (function () {
   var shell = document.getElementById("shell");
