@@ -1,0 +1,144 @@
+{% load pul l10n %}
+{% comment %}
+  «Batafsil» panelining ichi. Bu to'liq sahifa emas — karta bosilganda
+  JS shu bo'lakni olib, o'ngdagi oynaga qo'yadi. Shuning uchun bu yerda
+  <html> yoki <body> yo'q.
+{% endcomment %}
+
+<div class="bx-head">
+  <div>
+    <div class="bx-kicker">{{ d.title }}</div>
+    <div class="bx-value num">
+      {% if d.money %}{{ d.value|som }}{% else %}{{ d.value }}{% endif %}
+      <span class="bx-unit">{{ d.unit }}</span>
+    </div>
+    <div class="bx-period">{{ d.label }} · solishtirish: {{ d.prev_label }}</div>
+  </div>
+</div>
+
+<div class="bx-bar">
+  <div class="presets">
+    {% for key, name in d.presets %}
+      <button type="button" class="chip {% if d.preset == key %}on{% endif %}"
+              data-davr="{{ key }}">{{ name }}</button>
+    {% endfor %}
+  </div>
+  <a class="iconbtn" href="/batafsil/{{ d.kpi }}/?davr={{ d.preset }}&dan={{ d.start|date:'Y-m-d' }}&gacha={{ d.end|date:'Y-m-d' }}&format=csv"
+     download>CSV yuklash</a>
+</div>
+
+{% if d.empty %}
+  <div class="bx-empty">
+    <b>Bu davrda ma'lumot yo'q</b>
+    <div class="sec">Boshqa davrni tanlab ko'ring.</div>
+  </div>
+{% else %}
+
+  {% if d.findings %}
+    <div class="bx-facts">
+      {% for f in d.findings %}
+        <div class="fact">
+          <div class="fact-label">{{ f.label }}</div>
+          <div class="fact-value num">
+            {% if f.percent is not None and f.percent != '' %}
+              {% if f.percent >= 0 %}
+                <span class="delta {% if f.worse_is_up %}down{% else %}up{% endif %}">▲ {{ f.percent }}%</span>
+              {% else %}
+                <span class="delta {% if f.worse_is_up %}up{% else %}down{% endif %}">▼ {{ f.percent }}%</span>
+              {% endif %}
+            {% elif f.money %}{{ f.value|som }}
+            {% elif f.percent_value %}{{ f.value }}%
+            {% elif f.value is not None %}{{ f.value }}
+            {% else %}<span class="sec">—</span>{% endif %}
+          </div>
+          {% if f.note %}<div class="fact-note">{{ f.note }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if d.donut and not d.donut.empty %}{% localize off %}
+    <div class="bx-block">
+      <div class="bx-title">To'lov turlari ulushi</div>
+      <div class="donutwrap">
+        <svg class="donut" viewBox="0 0 {{ d.donut.size }} {{ d.donut.size }}"
+             width="{{ d.donut.size }}" height="{{ d.donut.size }}" role="img"
+             aria-label="To'lov turlari ulushi">
+          {% for p in d.donut.parts %}
+            <path class="slice s{{ p.i }}" d="{{ p.d }}">
+              <title>{{ p.label }} — {{ p.percent }}%</title>
+            </path>
+          {% endfor %}
+        </svg>
+        <ul class="donut-legend">
+          {% for p in d.donut_parts %}
+            <li>
+              <span class="swatch s{{ forloop.counter0 }}"></span>
+              <span class="dl-name">{{ p.label }}</span>
+              <span class="dl-val num">{{ p.value|som }}</span>
+              <span class="dl-pct num">{{ p.percent }}%</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endlocalize %}{% endif %}
+
+  {% if d.chart %}{% localize off %}
+    <div class="bx-block">
+      <div class="bx-title">{{ d.chart_title }}</div>
+      {% if d.chart_kind == 'bars' %}
+        {% include "dashboard/_chart_bars.html" with c=d.chart danger=d.danger money=d.money %}
+      {% else %}
+        {% include "dashboard/_chart_lines.html" with c=d.chart %}
+      {% endif %}
+    </div>
+  {% endlocalize %}{% endif %}
+
+  {% if d.show_target_form %}
+    <div class="bx-block">
+      <div class="bx-title">O'rtacha chek maqsadi</div>
+      <form method="post" action="/maqsad/" class="bx-target">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="/?detail=ortacha&davr={{ d.preset }}">
+        <label>Maqsad (so'm)
+          <input type="text" inputmode="numeric" name="target"
+                 value="{% if d.target %}{{ d.target|floatformat:0 }}{% endif %}"
+                 placeholder="masalan 70000">
+        </label>
+        <button type="submit" class="small">Saqlash</button>
+        <span class="sec">Bo'sh qoldirsangiz maqsad o'chiriladi.</span>
+      </form>
+    </div>
+  {% endif %}
+
+  {% for t in d.tables %}
+    <div class="bx-block">
+      <div class="bx-title">{{ t.title }}</div>
+      {% if t.note %}<div class="sec" style="margin-bottom:8px">{{ t.note }}</div>{% endif %}
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            {% for c in t.cols %}
+              <th {% if c.1 != 'l' %}class="right"{% endif %}>{{ c.0 }}</th>
+            {% endfor %}
+          </tr></thead>
+          <tbody>
+            {% for row in t.rows %}
+              <tr>
+                {% for cell in row %}
+                  <td {% if cell.a != 'l' %}class="right num"{% endif %}>
+                    {% if cell.a == 'm' %}{{ cell.v|som }}{% else %}{{ cell.v }}{% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% empty %}
+              <tr><td colspan="{{ t.cols|length }}" class="empty">Ma'lumot yo'q.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endfor %}
+
+{% endif %}

@@ -1,0 +1,23 @@
+{% load pul %}
+{% comment %}
+  Katta ustunli grafik. `c` — grafik.chart_bars() natijasi.
+  `danger` berilsa ustunlar qizil bo'ladi (qaytarishlar uchun).
+{% endcomment %}
+<div class="chartwrap">
+  <svg class="chart big{% if danger %} danger{% endif %}" viewBox="0 0 {{ c.w }} {{ c.h }}"
+       width="{{ c.w }}" height="{{ c.h }}" role="img" aria-label="Ustunli grafik">
+    {% for t in c.ticks %}
+      <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+      <text x="{{ c.left|add:'-9' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+    {% endfor %}
+    {% for b in c.bars %}
+      <g class="bar">
+        <title>{{ b.label }} — {% if money %}{{ b.v|som }} so'm{% else %}{{ b.v }}{% endif %}</title>
+        <rect x="{{ b.slot_x }}" y="{{ c.top }}" width="{{ b.slot_w }}" height="{{ c.plot_h }}" class="hit"></rect>
+        {% if b.path %}<path d="{{ b.path }}"></path>{% endif %}
+        {% if b.show_label %}<text x="{{ b.cx }}" y="{{ c.baseline|add:'18' }}" class="day">{{ b.label }}</text>{% endif %}
+      </g>
+    {% endfor %}
+    <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+  </svg>
+</div>

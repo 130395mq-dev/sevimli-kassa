@@ -63,9 +63,12 @@
     </div>
   {% endif %}
 
-  {# ------------------------------------------------- asosiy raqamlar #}
+  {# --------------------------------------- asosiy raqamlar (bosiladi) #}
+  {% localize off %}
   <div class="tiles">
-    <div class="tile hero">
+    {% with c=board.cards %}
+
+    <button type="button" class="tile hero" data-detail="savdo" data-detail-name="Savdo">
       <div class="head">
         <div class="label">Savdo · {{ board.label }}</div>
         <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span>
@@ -75,12 +78,24 @@
         {% if board.summary.delta_total is not None %}
           <span class="delta {% if board.summary.delta_total >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_total }}%</span>
-          oldingi davrga nisbatan ({{ board.summary.prev_total|som }})
+          oldingi davrga nisbatan
         {% else %}oldingi davrda savdo bo'lmagan{% endif %}
       </div>
-    </div>
+      <svg class="spark" viewBox="0 0 {{ c.sale_area.w }} {{ c.sale_area.h }}"
+           preserveAspectRatio="none" aria-hidden="true">
+        <path class="area" d="{{ c.sale_area.area }}"></path>
+        <path class="line" d="{{ c.sale_area.line }}" vector-effect="non-scaling-stroke"></path>
+      </svg>
+      <div class="note">
+        {% if c.peak_day %}
+          eng yuqori <b>{{ c.peak_day.date|date:"d.m" }}</b> {{ c.peak_day.total|som }}
+          {% if c.low_day %}· eng past <b>{{ c.low_day.date|date:"d.m" }}</b> {{ c.low_day.total|som }}{% endif %}
+        {% else %}oxirgi 7 kunda savdo bo'lmagan{% endif %}
+      </div>
+      <div class="more">Batafsil ko'rish →</div>
+    </button>
 
-    <div class="tile">
+    <button type="button" class="tile" data-detail="cheklar" data-detail-name="Cheklar">
       <div class="head">
         <div class="label">Cheklar</div>
         <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span>
@@ -93,9 +108,20 @@
           oldingi davrga nisbatan
         {% else %}—{% endif %}
       </div>
-    </div>
+      <svg class="sbar info" viewBox="0 0 {{ c.receipt_bars.w }} {{ c.receipt_bars.h }}"
+           preserveAspectRatio="none" aria-hidden="true">
+        {% for b in c.receipt_bars.bars %}
+          <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ b.r }}"></rect>
+        {% endfor %}
+      </svg>
+      <div class="note">
+        {% if c.busy %}eng faol <b>{{ c.busy.label }}</b> · {{ c.busy.n }} chek
+        {% else %}soatlik taqsimot yo'q{% endif %}
+      </div>
+      <div class="more">Batafsil ko'rish →</div>
+    </button>
 
-    <div class="tile">
+    <button type="button" class="tile" data-detail="ortacha" data-detail-name="O'rtacha chek">
       <div class="head">
         <div class="label">O'rtacha chek</div>
         <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-avg"/></svg></span>
@@ -108,26 +134,70 @@
           oldingi davrga nisbatan
         {% else %}so'm{% endif %}
       </div>
-    </div>
+      <svg class="spark" viewBox="0 0 {{ c.avg_area.w }} {{ c.avg_area.h }}"
+           preserveAspectRatio="none" aria-hidden="true">
+        <path class="area" d="{{ c.avg_area.area }}"></path>
+        <path class="line" d="{{ c.avg_area.line }}" vector-effect="non-scaling-stroke"></path>
+      </svg>
+      <div class="note">
+        {% if c.target %}
+          maqsad <b>{{ c.target|som }}</b> · bajarilgan {{ c.target_percent }}%
+        {% else %}maqsad belgilanmagan{% endif %}
+      </div>
+      <div class="more">Batafsil ko'rish →</div>
+    </button>
 
-    <div class="tile">
+    <button type="button" class="tile" data-detail="tolov" data-detail-name="Naqd / naqdsiz">
       <div class="head">
         <div class="label">Naqd / naqdsiz</div>
         <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-cash"/></svg></span>
       </div>
       <div class="value num">{{ board.summary.cash|som }}</div>
       <div class="note num">naqdsiz {{ board.summary.cashless|som }}</div>
-    </div>
+      {% if not c.pay_donut.empty %}
+        <div class="donutwrap" style="margin-top:12px; gap:14px;">
+          <svg class="donut" viewBox="0 0 {{ c.pay_donut.size }} {{ c.pay_donut.size }}"
+               width="{{ c.pay_donut.size }}" height="{{ c.pay_donut.size }}" aria-hidden="true">
+            {% for part in c.pay_donut.parts %}
+              <path class="slice s{{ part.i }}" d="{{ part.d }}"></path>
+            {% endfor %}
+          </svg>
+          <ul class="donut-legend" style="min-width:0">
+            {% for part in c.pay_donut.parts %}
+              <li style="grid-template-columns:14px 1fr auto">
+                <span class="swatch s{{ part.i }}"></span>
+                <span class="dl-name">{{ part.label }}</span>
+                <span class="dl-pct num">{{ part.percent_int }}%</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <div class="note">to'lov bo'lmagan</div>
+      {% endif %}
+      <div class="more">Batafsil ko'rish →</div>
+    </button>
 
-    <div class="tile {% if board.summary.returns %}bad{% endif %}">
+    <button type="button" class="tile" data-detail="qaytarish" data-detail-name="Qaytarish">
       <div class="head">
         <div class="label">Qaytarish</div>
         <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-return"/></svg></span>
       </div>
-      <div class="value num">{{ board.summary.returns|som }}</div>
-      <div class="note num">{{ board.summary.returns_n }} ta</div>
-    </div>
+      <div class="value num {% if board.summary.returns %}bad{% endif %}">{{ board.summary.returns|som }}</div>
+      <div class="note num">{{ board.summary.returns_n }} ta chek</div>
+      <svg class="sbar danger" viewBox="0 0 {{ c.returns_bars.w }} {{ c.returns_bars.h }}"
+           preserveAspectRatio="none" aria-hidden="true">
+        {% for b in c.returns_bars.bars %}
+          <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="{{ b.r }}"></rect>
+        {% endfor %}
+      </svg>
+      <div class="note">savdoga nisbatan <b>{{ c.returns_share }}%</b></div>
+      <div class="more">Batafsil ko'rish →</div>
+    </button>
+
+    {% endwith %}
   </div>
+  {% endlocalize %}
 
   {# ------------------------------------------- kunlik savdo dinamikasi #}
   <h2>Kunlik savdo dinamikasi</h2>
@@ -253,6 +323,103 @@
     </tbody>
   </table>
   </div>
+
+  {# ------------------------------------------------ qo'shimcha kesimlar #}
+  {% localize off %}
+  <div class="grid2">
+
+    <div class="card">
+      <div class="bx-title">Filiallar savdosi</div>
+      <div class="hrows">
+        {% for r in board.points_bars %}
+          <div class="hrow">
+            <div class="top">
+              <span class="nm" title="{{ r.label }}">{{ r.label }}</span>
+              <span class="vl num">{{ r.value|som }}<span class="pc">{{ r.share }}%</span></span>
+            </div>
+            <span class="track"><span class="fill" style="width: {{ r.bar }}%"></span></span>
+          </div>
+        {% empty %}
+          <div class="empty">Kassa qo'shilmagan.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="bx-title">Kassalar holati</div>
+      <div class="ringwrap">
+        <svg class="ring" viewBox="0 0 {{ kassa_state.ring.size }} {{ kassa_state.ring.size }}"
+             width="{{ kassa_state.ring.size }}" height="{{ kassa_state.ring.size }}" role="img"
+             aria-label="{{ kassa_state.online }} kassa {{ kassa_state.total }} tadan ulangan">
+          <circle class="bg" cx="{{ kassa_state.ring.c }}" cy="{{ kassa_state.ring.c }}"
+                  r="{{ kassa_state.ring.r }}" stroke-width="{{ kassa_state.ring.thickness }}"></circle>
+          <circle class="fg" cx="{{ kassa_state.ring.c }}" cy="{{ kassa_state.ring.c }}"
+                  r="{{ kassa_state.ring.r }}" stroke-width="{{ kassa_state.ring.thickness }}"
+                  stroke-dasharray="{{ kassa_state.ring.dash }} {{ kassa_state.ring.gap }}"></circle>
+          <text x="{{ kassa_state.ring.c }}" y="{{ kassa_state.ring.c|add:6 }}">{{ kassa_state.online }}</text>
+        </svg>
+        <div>
+          <div class="num" style="font-size:17px;font-weight:700">
+            {{ kassa_state.online }} / {{ kassa_state.total }} ulangan</div>
+          <div class="sec">Qolganlari o'chirilgan yoki aloqasi yo'q.</div>
+          <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px 14px">
+            {% for r in kassa_state.rows %}
+              <span class="aloqa-item">
+                <span class="dot {{ r.state }}" data-aloqa="reg-{{ r.id }}" title="{{ r.text }}"></span>
+                <span class="dot-label">{{ r.name }}</span>
+              </span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if not board.methods_donut.empty %}
+      <div class="card">
+        <div class="bx-title">To'lov turlari</div>
+        <div class="donutwrap">
+          <svg class="donut" viewBox="0 0 {{ board.methods_donut.size }} {{ board.methods_donut.size }}"
+               width="{{ board.methods_donut.size }}" height="{{ board.methods_donut.size }}"
+               role="img" aria-label="To'lov turlari ulushi">
+            {% for part in board.methods_donut.parts %}
+              <path class="slice s{{ part.i }}" d="{{ part.d }}">
+                <title>{{ part.label }} — {{ part.percent }}%</title>
+              </path>
+            {% endfor %}
+          </svg>
+          <ul class="donut-legend">
+            {% for part in board.methods_donut.parts %}
+              <li>
+                <span class="swatch s{{ part.i }}"></span>
+                <span class="dl-name">{{ part.label }}</span>
+                <span class="dl-val num">{{ part.value|som }}</span>
+                <span class="dl-pct num">{{ part.percent }}%</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if board.top %}
+      <div class="card">
+        <div class="bx-title">Top-10 mahsulot</div>
+        <div class="hrows">
+          {% for r in board.top %}
+            <div class="hrow">
+              <div class="top">
+                <span class="nm" title="{{ r.label }}">{{ r.label }}</span>
+                <span class="vl num">{{ r.value|som }}<span class="pc">{{ r.n }} chek</span></span>
+              </div>
+              <span class="track"><span class="fill" style="width: {{ r.bar }}%"></span></span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+  {% endlocalize %}
 
   {# ---------------------------------------- kassalardagi yuborish holati #}
   <h2>Kassalardagi yuborish holati</h2>
