@@ -6,6 +6,8 @@ app_name = "dashboard"
 
 urlpatterns = [
     path("", views.points, name="points"),
+    path("batafsil/<str:kpi>/", views.batafsil, name="batafsil"),
+    path("maqsad/", views.avg_target, name="avg-target"),
     path("smenalar/", views.shifts, name="shifts"),
     path("smena/<int:pk>/", views.shift_detail, name="shift-detail"),
     path("kassalar/", views.registers, name="registers"),
