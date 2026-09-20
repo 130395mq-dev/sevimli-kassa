@@ -1,0 +1,45 @@
+{% load pul %}
+{% comment %}
+  Katta chiziqli grafik. `c` — grafik.chart_lines() natijasi.
+  Ikkinchi qator (oldingi davr) uzuq chiziq bilan — rang emas, shakl
+  ajratadi: rangni ajrata olmaydigan odam ham farqni ko'radi.
+{% endcomment %}
+<div class="legend">
+  {% for s in c.series %}
+    <span class="key">
+      <span class="swatch line l{{ forloop.counter0 }}{% if s.dash %} dashed{% endif %}"></span>
+      {{ s.name }}
+    </span>
+  {% endfor %}
+</div>
+<div class="chartwrap">
+  <svg class="chart big" viewBox="0 0 {{ c.w }} {{ c.h }}" width="{{ c.w }}" height="{{ c.h }}"
+       role="img" aria-label="{{ c.series.0.name }}">
+    {% for t in c.ticks %}
+      <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+      <text x="{{ c.left|add:'-9' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+    {% endfor %}
+
+    {% for s in c.series %}
+      {% if s.area %}<path class="area a{{ forloop.counter0 }}" d="{{ s.area }}"></path>{% endif %}
+    {% endfor %}
+    {% for s in c.series %}
+      <path class="line l{{ forloop.counter0 }}{% if s.dash %} dashed{% endif %}{% if s.goal %} goal{% endif %}"
+            d="{{ s.line }}"></path>
+    {% endfor %}
+
+    {% for h in c.hover %}
+      <g class="hov">
+        <title>{{ h.label }}{% for it in h.items %} · {{ it.name }}: {{ it.v|som }}{% endfor %}</title>
+        <rect x="{{ h.x }}" y="{{ c.top }}" width="{{ h.w }}" height="{{ c.plot_h }}" class="hit"></rect>
+        <line class="cross" x1="{{ h.cx }}" x2="{{ h.cx }}" y1="{{ c.top }}" y2="{{ c.baseline }}"></line>
+        {% for it in h.items %}<circle class="dot d{{ forloop.counter0 }}" cx="{{ h.cx }}" cy="{{ it.y }}" r="4"></circle>{% endfor %}
+      </g>
+    {% endfor %}
+
+    {% for x in c.xlabels %}
+      <text x="{{ x.x }}" y="{{ c.baseline|add:'18' }}" class="day">{{ x.label }}</text>
+    {% endfor %}
+    <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+  </svg>
+</div>
