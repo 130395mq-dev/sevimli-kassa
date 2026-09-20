@@ -40,21 +40,21 @@
           <form method="post" class="inline" style="margin-top: 8px;">
             {% csrf_token %}
             <input type="hidden" name="action" value="retry_stuck">
-            <button type="submit" class="small" style="margin-top: 0;">Qayta yuborish</button>
+            <button type="submit" class="small">Qayta yuborish</button>
           </form>
         {% endif %}
       </div>
     </div>
   {% endfor %}
 
-    <div class="alert warn" data-queue-banner {% if not queued %}style="display: none;"{% endif %}>
-      <span>⧗</span>
-      <div>
-        <b data-queue-title>{{ queued }} ta chek navbatda</b>
-        MoySklad'ga yuborilishini kutmoqda. Bu odatiy holat — bir necha
-        daqiqada o'zi ketadi.
-      </div>
+  <div class="alert warn" data-queue-banner {% if not queued %}style="display: none;"{% endif %}>
+    <span>⧗</span>
+    <div>
+      <b data-queue-title>{{ queued }} ta chek navbatda</b>
+      MoySklad'ga yuborilishini kutmoqda. Bu odatiy holat — bir necha
+      daqiqada o'zi ketadi.
     </div>
+  </div>
 
   {% if not alerts and not queued %}
     <div class="alert ok" data-queue-empty>
@@ -63,36 +63,13 @@
     </div>
   {% endif %}
 
-  <h2>Kassalardagi yuborish holati</h2>
-  <div class="sub">Kompyuterdagi navbat va MoySklad navbati alohida hisoblanadi. Aloqa uzilganda oxirgi ma'lumot ko'rsatiladi.</div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Kassa</th><th>Versiya</th><th>Serverga kutilmoqda</th><th>Tiqilgan</th><th>Oxirgi ma'lumot</th><th>Sabab</th></tr></thead>
-    <tbody>{% for k in board.kassas %}<tr>
-      <td>{{ k.register.name }}</td><td>{{ k.register.app_version|default:"—" }}</td>
-      <td>{{ k.register.local_pending|default_if_none:"Noma'lum" }}</td>
-      <td>{{ k.register.local_stuck|default_if_none:"—" }}</td>
-      <td>{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
-      <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
-    </tr>{% empty %}<tr><td colspan="6">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>
-  </table></div>
-
-  {# ---------------------------------------------------- sana filtri #}
-  <form method="get" class="davr" id="davr">
-    <div class="presets">
-      {% for key, name in board.presets %}
-        <a class="chip {% if board.preset == key %}on{% endif %}" href="?davr={{ key }}">{{ name }}</a>
-      {% endfor %}
-    </div>
-    <label>dan <input type="date" name="dan" value="{{ board.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
-    <label>gacha <input type="date" name="gacha" value="{{ board.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
-    <button type="submit" class="small" style="margin-top:0;">Ko'rsatish</button>
-    <span class="sec">Solishtirish: {{ board.prev_label }}</span>
-  </form>
-
-  {# ---------------------------------------------------- asosiy raqamlar #}
+  {# ------------------------------------------------- asosiy raqamlar #}
   <div class="tiles">
     <div class="tile hero">
-      <div class="label">Savdo · {{ board.label }}</div>
+      <div class="head">
+        <div class="label">Savdo · {{ board.label }}</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span>
+      </div>
       <div class="value num">{{ board.summary.total|som }}</div>
       <div class="note num">
         {% if board.summary.delta_total is not None %}
@@ -102,46 +79,151 @@
         {% else %}oldingi davrda savdo bo'lmagan{% endif %}
       </div>
     </div>
+
     <div class="tile">
-      <div class="label">Cheklar</div>
+      <div class="head">
+        <div class="label">Cheklar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+      </div>
       <div class="value num">{{ board.summary.receipts }}</div>
       <div class="note num">
         {% if board.summary.delta_receipts is not None %}
           <span class="delta {% if board.summary.delta_receipts >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_receipts >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_receipts }}%</span>
+          oldingi davrga nisbatan
         {% else %}—{% endif %}
       </div>
     </div>
+
     <div class="tile">
-      <div class="label">O'rtacha chek</div>
+      <div class="head">
+        <div class="label">O'rtacha chek</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-avg"/></svg></span>
+      </div>
       <div class="value num">{{ board.summary.avg|som }}</div>
       <div class="note num">
         {% if board.summary.delta_avg is not None %}
           <span class="delta {% if board.summary.delta_avg >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_avg >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_avg }}%</span>
+          oldingi davrga nisbatan
         {% else %}so'm{% endif %}
       </div>
     </div>
+
     <div class="tile">
-      <div class="label">Naqd / naqdsiz</div>
+      <div class="head">
+        <div class="label">Naqd / naqdsiz</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-cash"/></svg></span>
+      </div>
       <div class="value num">{{ board.summary.cash|som }}</div>
       <div class="note num">naqdsiz {{ board.summary.cashless|som }}</div>
     </div>
-    <div class="tile">
-      <div class="label">Qaytarish</div>
+
+    <div class="tile {% if board.summary.returns %}bad{% endif %}">
+      <div class="head">
+        <div class="label">Qaytarish</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-return"/></svg></span>
+      </div>
       <div class="value num">{{ board.summary.returns|som }}</div>
       <div class="note num">{{ board.summary.returns_n }} ta</div>
     </div>
   </div>
 
-  {# ---------------------------------------------------- nuqtalar reytingi #}
-  <h2>Qaysi nuqta yaxshi sotyapti</h2>
+  {# ------------------------------------------- kunlik savdo dinamikasi #}
+  <h2>Kunlik savdo dinamikasi</h2>
+
+  {% comment %}
+    Sana filtri butun sahifaga tegishli: yuqoridagi raqamlar ham, quyidagi
+    jadvallar ham shu davr bo'yicha hisoblanadi.
+  {% endcomment %}
+  <form method="get" class="davr" id="davr">
+    <div class="presets">
+      {% for key, name in board.presets %}
+        <a class="chip {% if board.preset == key %}on{% endif %}" href="?davr={{ key }}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <label>dan <input type="date" name="dan" value="{{ board.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>gacha <input type="date" name="gacha" value="{{ board.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <button type="submit" class="small">Ko'rsatish</button>
+    <span class="sec">Solishtirish: {{ board.prev_label }}</span>
+  </form>
+
+  {% with hc=board.hourly.chart %}{% localize off %}
+  <div class="legend">
+    <span class="key"><span class="swatch" style="background: var(--accent-deep)"></span> Savdo, so'm</span>
+    <span class="key"><span class="swatch line" style="background: var(--info)"></span> Cheklar soni</span>
+    {% if board.hourly.peak %}
+      <span class="sec">Eng gavjum soat: <b>{{ board.hourly.peak.label }}</b>
+        ({{ board.hourly.peak.total|som }} · {{ board.hourly.peak.n }} chek)</span>
+    {% endif %}
+  </div>
+  <div class="chartwrap">
+    <svg class="chart" viewBox="0 0 {{ hc.w }} {{ hc.h }}" width="{{ hc.w }}" height="{{ hc.h }}"
+         role="img" aria-label="Soat bo'yicha savdo va cheklar soni">
+      {% for t in hc.ticks %}
+        <line x1="{{ hc.left }}" x2="{{ hc.axis_right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+        <text x="{{ hc.left|add:'-9' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+      {% endfor %}
+      {% for t in hc.n_ticks %}
+        <text x="{{ hc.axis_right|add:'9' }}" y="{{ t.y|add:'4' }}" class="tick r">{{ t.label }}</text>
+      {% endfor %}
+
+      {% for b in hc.bars %}
+        <g class="bar">
+          <title>{{ b.label }} — {{ b.total|som }} so'm, {{ b.n }} chek</title>
+          <rect x="{{ b.slot_x }}" y="{{ hc.top }}" width="{{ b.slot_w }}" height="{{ hc.plot_h }}" class="hit"></rect>
+          {% if b.path %}<path d="{{ b.path }}"></path>{% endif %}
+          {% if b.show_label %}<text x="{{ b.cx }}" y="{{ hc.baseline|add:'17' }}" class="day">{{ b.label }}</text>{% endif %}
+        </g>
+      {% endfor %}
+
+      {% if hc.has_data %}
+        <polyline class="line" points="{{ hc.line }}"></polyline>
+        {% for b in hc.bars %}{% if b.n %}
+          <circle class="lined" cx="{{ b.cx }}" cy="{{ b.ny }}" r="4"></circle>
+        {% endif %}{% endfor %}
+      {% endif %}
+
+      <line x1="{{ hc.left }}" x2="{{ hc.axis_right }}" y1="{{ hc.baseline }}" y2="{{ hc.baseline }}" class="axis"></line>
+    </svg>
+  </div>
+  {% endlocalize %}{% endwith %}
+
+  <div class="tablewrap">
+    <table>
+      <caption class="sr-only">Soat bo'yicha savdo</caption>
+      <thead><tr><th>Soat</th><th class="right">Savdo</th><th class="right">Cheklar</th></tr></thead>
+      <tbody>
+        {% if board.hourly.receipts %}
+          {% for hrow in board.hourly.hours %}{% if hrow.n %}
+            <tr>
+              <td class="num tight">{{ hrow.label }}</td>
+              <td class="right num"><b>{{ hrow.total|som }}</b></td>
+              <td class="right num">{{ hrow.n }}</td>
+            </tr>
+          {% endif %}{% endfor %}
+          <tr class="total">
+            <td>Jami</td>
+            <td class="right num">{{ board.hourly.total|som }}</td>
+            <td class="right num">{{ board.hourly.receipts }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="empty">Bu davrda savdo bo'lmagan.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ------------------------------------------- nuqtalar bo'yicha savdo #}
+  <h2>Nuqtalar bo'yicha savdo</h2>
+  <div class="tablewrap">
   <table class="rating">
-    <tr>
+    <thead><tr>
       <th class="tight">#</th><th>Nuqta</th><th class="right">Savdo</th><th>Ulush</th>
       <th class="right">Chek</th><th class="right">O'rtacha chek</th>
       <th class="right">Oldingi davr</th><th class="right">Farq</th>
-    </tr>
+    </tr></thead>
+    <tbody>
     {% for p in board.ranking %}
       <tr class="{% if p.rank == 1 and p.total %}best{% endif %}">
         <td class="tight num">{{ p.rank }}</td>
@@ -168,7 +250,39 @@
     {% empty %}
       <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
+    </tbody>
   </table>
+  </div>
+
+  {# ---------------------------------------- kassalardagi yuborish holati #}
+  <h2>Kassalardagi yuborish holati</h2>
+  <div class="sub">Kompyuterdagi navbat va MoySklad navbati alohida hisoblanadi. Aloqa uzilganda oxirgi ma'lumot ko'rsatiladi.</div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Kassa</th><th>Versiya</th><th>Serverga kutilmoqda</th><th>Tiqilgan</th><th>Oxirgi ma'lumot</th><th>Sabab</th></tr></thead>
+    <tbody>{% for k in board.kassas %}<tr>
+      <td><b>{{ k.register.name }}</b></td>
+      <td class="num">{{ k.register.app_version|default:"—" }}</td>
+      <td class="num">{{ k.register.local_pending|default_if_none:"Noma'lum" }}</td>
+      <td class="num">{{ k.register.local_stuck|default_if_none:"—" }}</td>
+      <td class="num">{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
+      <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
+    </tr>{% empty %}<tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>
+  </table></div>
+
+  {# -------------------------------------------------- so'nggi 10 ta chek #}
+  <h2>So'nggi 10 ta chek</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th class="tight">№</th><th>Nuqta</th><th class="right">Summa</th><th class="right">Vaqt</th></tr></thead>
+    <tbody>{% for s in last_sales %}<tr>
+      <td class="tight num"><b>{{ s.number }}</b></td>
+      <td>
+        {{ s.shift.register.point_name }}
+        <div class="sec">{{ s.shift.register.name }}</div>
+      </td>
+      <td class="right num"><b>{{ s.net_sum|som }}</b></td>
+      <td class="right num">{{ s.created_at|date:"d.m H:i" }}</td>
+    </tr>{% empty %}<tr><td colspan="4" class="empty">Hali chek yo'q.</td></tr>{% endfor %}</tbody>
+  </table></div>
 
   {# ---------------------------------------------------- kunlik ko'rsatkichlar #}
   <h2>Kunlik ko'rsatkichlar</h2>
@@ -203,11 +317,12 @@
 
   <div class="tablewrap">
   <table class="daily">
-    <tr>
+    <thead><tr>
       <th>Sana</th>
       {% for name in board.daily.point_names %}<th class="right">{{ name }}</th>{% endfor %}
       <th class="right">Jami</th><th class="right">Chek</th><th class="right">O'rtacha</th>
-    </tr>
+    </tr></thead>
+    <tbody>
     {% for d in board.daily.days reversed %}
       <tr class="{% if d.selected and board.daily.is_window %}sel{% endif %}">
         <td class="num">{{ d.date|date:"d.m.Y" }} <span class="sec">{{ d.dow }}</span></td>
@@ -222,13 +337,15 @@
       {% for name in board.daily.point_names %}<td></td>{% endfor %}
       <td class="right num">{{ board.daily.total|som }}</td><td></td><td></td>
     </tr>
+    </tbody>
   </table>
   </div>
 
   {# ---------------------------------------------------- kassalar (davr) #}
   <h2>Kassalar · {{ board.label }}</h2>
+  <div class="tablewrap">
   <table>
-    <tr>
+    <thead><tr>
       <th>Nuqta</th>
       <th>Kassa</th>
       <th>Holat</th>
@@ -238,7 +355,8 @@
       <th class="right">Naqdsiz</th>
       <th class="right">Jami</th>
       <th class="right">Farq</th>
-    </tr>
+    </tr></thead>
+    <tbody>
     {% for r in rows %}
       <tr>
         <td>{{ r.point }}</td>
@@ -283,12 +401,16 @@
         <td></td>
       </tr>
     {% endif %}
+    </tbody>
   </table>
+  </div>
 
   {% if by_method %}
     <h2>To'lov turlari · {{ board.label }}</h2>
+    <div class="tablewrap">
     <table>
-      <tr><th>Tur</th><th class="right">Chek</th><th class="right">Summa</th></tr>
+      <thead><tr><th>Tur</th><th class="right">Chek</th><th class="right">Summa</th></tr></thead>
+      <tbody>
       {% for m in by_method %}
         <tr>
           <td>{{ m.name }}{% if m.is_cash %} <span class="sec">· naqd</span>{% endif %}</td>
@@ -296,14 +418,18 @@
           <td class="right num">{{ m.total|som }}</td>
         </tr>
       {% endfor %}
+      </tbody>
     </table>
+    </div>
   {% endif %}
 
   {% if stuck %}
   <div data-queue-stuck>
     <h2>Yozilmagan cheklar</h2>
+    <div class="tablewrap">
     <table>
-      <tr><th>Chek</th><th>Vaqt</th><th class="right">Summa</th><th>Sabab</th></tr>
+      <thead><tr><th>Chek</th><th>Vaqt</th><th class="right">Summa</th><th>Sabab</th></tr></thead>
+      <tbody>
       {% for s in stuck %}
         <tr>
           <td>
@@ -315,7 +441,9 @@
           <td class="sec">{{ s.sync_error|truncatechars:160 }}</td>
         </tr>
       {% endfor %}
+      </tbody>
     </table>
+    </div>
   </div>
   {% endif %}
 
@@ -326,11 +454,11 @@
     Sinov hujjatlari «проведён» qilinmaydi va shu zahoti o'chiriladi:
     qoldiq va pulga ta'sir yo'q. Har deploy'da va har 3 soatda o'zi ishlaydi.
   </div>
-  <form method="post" class="inline" style="margin-bottom: 12px;"
+  <form method="post" class="inline" style="margin-bottom: 12px; margin-left: 0;"
         onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Tekshirilmoqda… (20 soniyagacha)';">
     {% csrf_token %}
     <input type="hidden" name="action" value="selftest">
-    <button type="submit" class="small" style="margin-top: 0;">Hozir tekshirish</button>
+    <button type="submit" class="small">Hozir tekshirish</button>
     {% if check %}
       <span class="sec" style="margin-left: 10px;">
         Oxirgi sinov: {{ check.started_at|date:"d.m H:i" }}
@@ -343,8 +471,10 @@
     {% endif %}
   </form>
   {% if check and check.steps %}
+    <div class="tablewrap">
     <table>
-      <tr><th class="tight"></th><th>Bosqich</th><th>Natija</th></tr>
+      <thead><tr><th class="tight"></th><th>Bosqich</th><th>Natija</th></tr></thead>
+      <tbody>
       {% for st in check.steps %}
         <tr>
           <td class="tight">
@@ -355,21 +485,28 @@
           <td class="sec">{{ st.detail|truncatechars:220 }}</td>
         </tr>
       {% endfor %}
+      </tbody>
     </table>
+    </div>
   {% endif %}
 
   <h2>SEVIMLI BONUS</h2>
-  <div class="tiles" style="grid-template-columns: repeat(auto-fit, minmax(190px, 260px));">
+  <div class="tiles" style="grid-template-columns: repeat(auto-fit, minmax(210px, 280px));">
     <div class="tile">
-      <div class="label">Sarflanmagan ballar</div>
+      <div class="head">
+        <div class="label">Sarflanmagan ballar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg></span>
+      </div>
       <div class="value num">{{ bonus_total|som }}</div>
       <div class="note">majburiyat (mijozlar hisobida)</div>
     </div>
   </div>
 
   <h2>Katalog</h2>
+  <div class="tablewrap">
   <table>
-    <tr><th>Nima</th><th>Oxirgi sinxronizatsiya</th><th class="right">Soni</th></tr>
+    <thead><tr><th>Nima</th><th>Oxirgi sinxronizatsiya</th><th class="right">Soni</th></tr></thead>
+    <tbody>
     {% for s in sync_rows %}
       <tr>
         <td>{{ s.entity }}</td>
@@ -386,6 +523,8 @@
       <td colspan="2">Tovarlar / mijozlar</td>
       <td class="right num">{{ products }} / {{ customers }}</td>
     </tr>
+    </tbody>
   </table>
+  </div>
 
 {% endblock %}
