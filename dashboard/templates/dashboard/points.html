@@ -454,10 +454,14 @@
   {# ---------------------------------------------------- kunlik ko'rsatkichlar #}
   <h2>Kunlik ko'rsatkichlar</h2>
   <div class="sub" style="margin-bottom: 10px;">
-    {{ board.daily.label }}
-    {% if board.daily.is_window %}<span class="sec">— tanlangan kun ajratib ko'rsatilgan</span>{% endif %}
-    · o'rtacha kuniga <b class="num">{{ board.daily.avg_day|som }}</b>
-    {% if board.daily.best_day %}· eng yaxshi kun <b class="num">{{ board.daily.best_day.date|date:"d.m" }}</b> ({{ board.daily.best_day.total|som }}){% endif %}
+    <div class="subline">
+      {{ board.daily.label }}
+      {% if board.daily.is_window %}<span class="sec">— tanlangan kun ajratib ko'rsatilgan</span>{% endif %}
+    </div>
+    <div class="subline">
+      O'rtacha kuniga <b class="num">{{ board.daily.avg_day|som }}</b> so'm
+      {% if board.daily.best_day %}· eng yaxshi kun <b class="num">{{ board.daily.best_day.date|date:"d.m" }}</b> ({{ board.daily.best_day.total|som }} so'm){% endif %}
+    </div>
   </div>
 
   {% with c=board.daily.chart %}{% localize off %}
