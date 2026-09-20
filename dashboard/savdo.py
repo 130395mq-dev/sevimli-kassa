@@ -29,7 +29,8 @@ from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
-from sales.models import Payment, Register, Sale, Shift
+from dashboard import grafik
+from sales.models import Payment, PanelSettings, Register, Sale, SaleItem, Shift
 
 #: Bir so'rovda eng ko'pi shuncha kun (jadval o'qiladigan bo'lsin)
 MAX_DAYS = 92
@@ -37,6 +38,10 @@ MAX_DAYS = 92
 CHART_MIN_DAYS = 14
 #: Sutkadagi soatlar — soatlik grafik shuncha ustundan iborat
 HOURS = 24
+#: Karta ichidagi mini-grafik shuncha kunni ko'rsatadi
+SPARK_DAYS = 7
+#: «Eng faol vaqt» shuncha soatlik oyna bo'yicha qidiriladi
+BUSY_WINDOW = 2
 
 PRESETS = [("bugun", "Bugun"), ("kecha", "Kecha"), ("7", "7 kun"), ("30", "30 kun")]
 #: Hafta kunlari — o'zbekcha qisqa (Django'niki ruscha chiqadi)
@@ -214,8 +219,45 @@ def build(params, now=None) -> dict:
         c_start = end - timedelta(days=CHART_MIN_DAYS - 1)
     daily = _daily(c_start, c_end, ranking, start, end)
 
+    # ---- karta ichidagi mini-grafiklar
+    hourly = _hourly(start, end)
+    spark = _spark(end)
+    peak_day, low_day = _peak_low(spark)
+    hour_counts = [h["n"] for h in hourly["hours"]]
+    target = PanelSettings.get().avg_receipt_target / 100
+    cards = {
+        "days": spark,
+        "peak_day": peak_day,
+        "low_day": low_day,
+        "busy": _busy_window(hour_counts),
+        "sale_area": grafik.spark_area([d["total"] for d in spark]),
+        "receipt_bars": grafik.spark_bars([float(n) for n in hour_counts]),
+        "avg_area": grafik.spark_area([d["avg"] for d in spark]),
+        "returns_bars": grafik.spark_bars([d["returns"] for d in spark]),
+        "pay_donut": grafik.donut(
+            [{"label": "Naqd", "value": cur["cash"]},
+             {"label": "Naqdsiz", "value": cur["cashless"]}],
+            size=64, thickness=10,
+        ),
+        "returns_share": (round(cur["returns"] / cur["total"] * 100, 1)
+                          if cur["total"] else 0),
+        "target": target,
+        "target_left": max(0.0, target - cur["avg"]) if target else 0,
+        "target_percent": (round(cur["avg"] / target * 100) if target else None),
+    }
+
     return {
-        "hourly": _hourly(start, end),
+        "hourly": hourly,
+        "cards": cards,
+        "methods_donut": grafik.donut(
+            [{"label": m["name"], "value": m["total"]} for m in methods]
+        ),
+        "points_bars": grafik.bars_h([
+            {"label": p["name"], "value": p["total"], "receipts": p["receipts"],
+             "rank": p["rank"], "avg": p["avg"]}
+            for p in ranking
+        ]),
+        "top": grafik.bars_h(top_products(start, end)),
         "start": start, "end": end, "span": span, "preset": preset,
         "label": period_label(start, end),
         "prev_label": period_label(prev_start, prev_end),
@@ -277,6 +319,110 @@ def _daily(c_start: date, c_end: date, ranking: list[dict], sel_start: date, sel
     }
 
 
+# ------------------------------------------------- karta mini-grafiklari
+
+
+def _spark(end: date, days: int = SPARK_DAYS) -> list[dict]:
+    """Oxirgi N kun: har kuni savdo, chek, o'rtacha chek, qaytarish.
+
+    Kartalar ichidagi mayda grafiklar shu qatordan chiziladi. Davr filtridan
+    qat'i nazar oxirgi N kunni ko'rsatadi — «hozir qaysi tomonga ketyapti»
+    degan savolga javob beradi.
+    """
+    start = end - timedelta(days=days - 1)
+    a, b = _bounds(start, end)
+    tz = timezone.get_current_timezone()
+    rows = (
+        Sale.objects.filter(created_at__gte=a, created_at__lt=b)
+        .annotate(day=TruncDate("created_at", tzinfo=tz))
+        .values("day", "kind")
+        .annotate(total=Sum("net_total"), n=Count("id"))
+        .order_by()
+    )
+    per: dict[date, dict] = defaultdict(
+        lambda: {"total": 0.0, "n": 0, "returns": 0.0, "returns_n": 0}
+    )
+    for r in rows:
+        cell = per[r["day"]]
+        if r["kind"] == Sale.SALE:
+            cell["total"] += (r["total"] or 0) / 100
+            cell["n"] += r["n"]
+        else:
+            cell["returns"] += (r["total"] or 0) / 100
+            cell["returns_n"] += r["n"]
+
+    out = []
+    d = start
+    while d <= end:
+        c = per.get(d, {"total": 0.0, "n": 0, "returns": 0.0, "returns_n": 0})
+        out.append({
+            "date": d, "dow": DOW[d.weekday()],
+            "total": c["total"], "n": c["n"],
+            "avg": (c["total"] / c["n"]) if c["n"] else 0,
+            "returns": c["returns"], "returns_n": c["returns_n"],
+        })
+        d += timedelta(days=1)
+    return out
+
+
+def _peak_low(days: list[dict], key: str = "total"):
+    """Eng baland va eng past kun (ikkalasi ham nol bo'lsa — None)."""
+    live = [d for d in days if d[key] > 0]
+    if not live:
+        return None, None
+    return (max(live, key=lambda d: d[key]), min(live, key=lambda d: d[key]))
+
+
+def _busy_window(cnt: list[int], width: int = BUSY_WINDOW):
+    """Eng ko'p chek uriladigan uzluksiz soat oynasi: («09:00–11:00», soni)."""
+    if not any(cnt):
+        return None
+    best_i, best_sum = 0, -1
+    for i in range(HOURS - width + 1):
+        s = sum(cnt[i:i + width])
+        if s > best_sum:
+            best_i, best_sum = i, s
+    return {
+        "label": f"{best_i:02d}:00–{best_i + width:02d}:00",
+        "n": best_sum,
+        "from": best_i, "to": best_i + width,
+    }
+
+
+def top_products(start: date, end: date, limit: int = 10,
+                 kind: str = Sale.SALE) -> list[dict]:
+    """Eng ko'p sotilgan (yoki qaytarilgan) tovarlar — summa bo'yicha.
+
+    Nom chek qatoridan olinadi: tovar keyin o'chirilsa ham tarix buzilmaydi.
+    """
+    a, b = _bounds(start, end)
+    rows = (
+        SaleItem.objects.filter(
+            sale__kind=kind, sale__created_at__gte=a, sale__created_at__lt=b
+        )
+        .values("name")
+        .annotate(total=Sum("total"), qty=Sum("quantity"), n=Count("sale", distinct=True))
+        .order_by("-total")[:limit]
+    )
+    return [
+        {"label": r["name"], "value": (r["total"] or 0) / 100,
+         "qty": float(r["qty"] or 0), "n": r["n"]}
+        for r in rows
+    ]
+
+
+def items_per_receipt(start: date, end: date) -> float:
+    """Bir chekdagi o'rtacha mahsulot soni (qator emas, dona)."""
+    a, b = _bounds(start, end)
+    agg = SaleItem.objects.filter(
+        sale__kind=Sale.SALE, sale__created_at__gte=a, sale__created_at__lt=b
+    ).aggregate(q=Sum("quantity"))
+    n = Sale.objects.filter(
+        kind=Sale.SALE, created_at__gte=a, created_at__lt=b
+    ).count()
+    return (float(agg["q"] or 0) / n) if n else 0
+
+
 # ----------------------------------------------------------- soatlik kun
 
 
@@ -290,23 +436,33 @@ def _hourly(start: date, end: date) -> dict:
     a, b = _bounds(start, end)
     tz = timezone.get_current_timezone()
     rows = (
-        Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+        Sale.objects.filter(created_at__gte=a, created_at__lt=b)
         .annotate(hh=ExtractHour("created_at", tzinfo=tz))
-        .values("hh")
+        .values("hh", "kind")
         .annotate(total=Sum("net_total"), n=Count("id"))
         .order_by()
     )
     tot = [0.0] * HOURS
     cnt = [0] * HOURS
+    ret = [0.0] * HOURS
+    ret_n = [0] * HOURS
     for r in rows:
         h = int(r["hh"] or 0) % HOURS
-        tot[h] += (r["total"] or 0) / 100
-        cnt[h] += r["n"]
+        if r["kind"] == Sale.SALE:
+            tot[h] += (r["total"] or 0) / 100
+            cnt[h] += r["n"]
+        else:
+            ret[h] += (r["total"] or 0) / 100
+            ret_n[h] += r["n"]
 
     peak = max(range(HOURS), key=lambda h: tot[h]) if any(tot) else None
     return {
+        # Qatorlar `_spark()` bilan bir xil kalitlarga ega — batafsil panel
+        # ikkalasini ham farqsiz ishlatadi.
         "hours": [
-            {"h": h, "label": f"{h:02d}:00", "total": tot[h], "n": cnt[h]}
+            {"h": h, "label": f"{h:02d}:00", "total": tot[h], "n": cnt[h],
+             "avg": (tot[h] / cnt[h]) if cnt[h] else 0,
+             "returns": ret[h], "returns_n": ret_n[h]}
             for h in range(HOURS)
         ],
         "total": sum(tot),
@@ -388,16 +544,9 @@ def _hour_chart(tot: list[float], cnt: list[int]) -> dict:
 # ---------------------------------------------------------------- grafik
 
 
-def _nice_step(max_value: float) -> float:
-    """Toza o'q qadamlari: 1/2/5 × 10^n, 4–6 ta chiziq chiqadigan qilib."""
-    if max_value <= 0:
-        return 1
-    raw = max_value / 4
-    mag = 10 ** len(str(int(raw))) / 10 if raw >= 1 else 1
-    for m in (1, 2, 5, 10):
-        if raw <= m * mag:
-            return m * mag
-    return 10 * mag
+#: O'q qadami va qisqa raqam — yagona nusxa grafik.py da (ikki joyda
+#: boshqacha ishlamasin). Eski nomlar saqlanadi.
+_nice_step = grafik.nice_step
 
 
 def _chart(days: list[dict]) -> dict:
@@ -455,13 +604,4 @@ def _chart(days: list[dict]) -> dict:
     }
 
 
-def _short(v: float) -> str:
-    """O'q uchun qisqa raqam: 1 250 000 → 1.25 mln, 45 000 → 45 ming."""
-    v = float(v)
-    if v >= 1_000_000:
-        s = f"{v / 1_000_000:.2f}".rstrip("0").rstrip(".")
-        return f"{s} mln"
-    if v >= 1_000:
-        s = f"{v / 1_000:.1f}".rstrip("0").rstrip(".")
-        return f"{s} ming"
-    return f"{v:.0f}"
+_short = grafik.short
