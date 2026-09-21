@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.test import RequestFactory
 from api.tests import ApiTestCase
 from api import pricing
-from sales.models import Sale, Shift, Register, Cashier
+from sales.models import CashOperation, Sale, Shift, Register, Cashier
 from api.session_security import verify
 
 class ReceiptSafetyTest(ApiTestCase):
@@ -370,3 +370,82 @@ class OneRegisterOneComputerTest(ApiTestCase):
         self.assertEqual(self.hello("pos-2", "POS-2").status_code, 200)
         self.register.refresh_from_db()
         self.assertEqual(self.register.device, "pos-2")
+
+
+class OfflineShiftCloseTest(ApiTestCase):
+    """Internetsiz yopilgan smena keyin serverga kelganda.
+
+    Kassada internet kun bo'yi bo'lmasa kassir smenani o'zida yopadi va
+    pulni topshiradi. Ulanish tiklanganda smena shu yerga keladi — HAQIQIY
+    yopilish vaqti bilan va aynan o'sha smena yopilishi kerak.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.open_shift()
+        self.shift = Shift.objects.get()
+        self.shift.local_uuid = "11111111-1111-1111-1111-111111111111"
+        self.shift.opened_at = timezone.now() - timedelta(hours=12)
+        self.shift.save(update_fields=["local_uuid", "opened_at"])
+
+    def test_real_close_time_is_kept(self):
+        closed = timezone.now() - timedelta(hours=3)
+        r = self.post("/api/v1/shift/close", {
+            "closed_at": closed.isoformat(),
+            "local_uuid": self.shift.local_uuid,
+        })
+        self.assertEqual(r.status_code, 200, r.content)
+        self.shift.refresh_from_db()
+        self.assertEqual(self.shift.status, Shift.CLOSED)
+        self.assertEqual(int(self.shift.closed_at.timestamp()),
+                         int(closed.timestamp()))
+
+    def test_repeated_close_is_not_an_error(self):
+        """Javob yo'lda yo'qolsa kassa qayta yuboradi — xato bo'lmasin."""
+        body = {"closed_at": timezone.now().isoformat(),
+                "local_uuid": self.shift.local_uuid}
+        self.assertEqual(self.post("/api/v1/shift/close", body).status_code, 200)
+        again = self.post("/api/v1/shift/close", body)
+        self.assertEqual(again.status_code, 200, again.content)
+        self.assertIn("receipt_text", json.loads(again.content))
+
+    def test_a_newer_shift_is_not_closed_by_mistake(self):
+        """Eski smenaning yopilishi yangi ochilganini yopib qo'ymasin."""
+        self.post("/api/v1/shift/close",
+                  {"local_uuid": self.shift.local_uuid,
+                   "closed_at": timezone.now().isoformat()})
+        self.open_shift()
+        new = Shift.objects.get(status=Shift.OPEN)
+        # Kassa eski smenani qayta yuborib yubordi
+        r = self.post("/api/v1/shift/close",
+                      {"local_uuid": self.shift.local_uuid,
+                       "closed_at": timezone.now().isoformat()})
+        self.assertEqual(r.status_code, 200)
+        new.refresh_from_db()
+        self.assertEqual(new.status, Shift.OPEN)
+
+    def test_unknown_shift_is_refused(self):
+        r = self.post("/api/v1/shift/close",
+                      {"local_uuid": "22222222-2222-2222-2222-222222222222"})
+        self.assertEqual(r.status_code, 409)
+
+    def test_broken_clock_falls_back_to_now(self):
+        """Kassa soati adashsa hisobot vaqti buzilmasin."""
+        r = self.post("/api/v1/shift/close", {
+            "closed_at": (timezone.now() + timedelta(days=2)).isoformat(),
+            "local_uuid": self.shift.local_uuid,
+        })
+        self.assertEqual(r.status_code, 200)
+        self.shift.refresh_from_db()
+        self.assertLess(self.shift.closed_at, timezone.now() + timedelta(minutes=1))
+
+    def test_cash_operation_keeps_the_time_it_was_made(self):
+        made = timezone.now() - timedelta(hours=6)
+        r = self.post("/api/v1/cash", {
+            "kind": "out", "amount": 1000000,
+            "local_uuid": "33333333-3333-3333-3333-333333333333",
+            "created_at": made.isoformat(),
+        }, HTTP_X_SESSION=self.manager_token())
+        self.assertEqual(r.status_code, 201, r.content)
+        op = CashOperation.objects.get()
+        self.assertEqual(int(op.created_at.timestamp()), int(made.timestamp()))
