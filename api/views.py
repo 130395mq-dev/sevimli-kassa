@@ -1027,18 +1027,38 @@ def shift_close(request):
     reg = request.register
     data = body(request)
 
-    shift = reg.shifts.filter(status=Shift.OPEN).first()
-    if not shift:
-        return error("Ochiq smena yo'q", status=409)
+    # Internetsiz yopilgan smena keyin shu yerga keladi. Qaysi smena
+    # yopilayotganini `local_uuid` aniqlaydi: o'sha paytgacha kassada
+    # yangi smena ochilgan bo'lishi mumkin va uni adashib yopib
+    # qo'ymasligimiz kerak.
+    local_uuid = (data.get("local_uuid") or "").strip()
+    if local_uuid:
+        shift = reg.shifts.filter(local_uuid=local_uuid).first()
+        if shift is None:
+            return error("Bu smena kassada topilmadi", status=409)
+        if shift.status == Shift.CLOSED:
+            # Takroriy yuborish (aloqa uzilib javob yetmagan) — xato emas,
+            # o'sha smenaning hisobotini qaytaramiz.
+            return _closed_json(shift, build_receipt(shift))
+    else:
+        shift = reg.shifts.filter(status=Shift.OPEN).first()
+        if not shift:
+            return error("Ochiq smena yo'q", status=409)
 
     counted = data.get("counted_cash")
     try:
         receipt = close_shift(
-            shift, counted_cash=int(counted) if counted is not None else None
+            shift,
+            counted_cash=int(counted) if counted is not None else None,
+            closed_at=parse_datetime(data.get("closed_at") or "") or None,
         )
     except ShiftError as e:
         return error(str(e), status=409)
 
+    return _closed_json(shift, receipt)
+
+
+def _closed_json(shift, receipt):
     return JsonResponse(
         {
             "shift_id": shift.pk,
@@ -1102,6 +1122,11 @@ def cash_operation(request):
             return error("Pul amali boshqa smenaga tegishli", status=409)
         op = CashOperation.objects.create(shift=shift, local_uuid=key, kind=kind,
                                          amount=amount, comment=comment)
+        # Internetsiz qilingan amal keyin keladi — o'sha paytdagi vaqti
+        # bilan yozilsin (`created_at` auto_now_add, shuning uchun update).
+        made = parse_datetime(data.get("created_at") or "")
+        if made and shift.opened_at <= made <= timezone.now():
+            CashOperation.objects.filter(pk=op.pk).update(created_at=made)
     return JsonResponse({"id": op.pk, "duplicate": False}, status=201)
 
 
