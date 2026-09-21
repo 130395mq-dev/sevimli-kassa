@@ -96,13 +96,18 @@ def build_receipt(shift: Shift, market: str = "Sevimli Market") -> ShiftReceipt:
 
 
 @transaction.atomic
-def close_shift(shift: Shift, counted_cash: int | None = None) -> ShiftReceipt:
+def close_shift(shift: Shift, counted_cash: int | None = None,
+                closed_at=None) -> ShiftReceipt:
     """Smenani yopadi va yakuniy chek ma'lumotini qaytaradi.
 
     Yopishga to'sqinlik qiladigan yagona narsa — smenaning allaqachon
     yopilgani. Yuborilmagan cheklar yopishga to'sqinlik qilmaydi:
     ular navbatda qoladi va keyin yuboriladi. Kassirni internet uchun
     ushlab turish noto'g'ri bo'lardi.
+
+    `closed_at` — internetsiz yopilgan smenaning HAQIQIY yopilish vaqti.
+    Kassa uni keyin yuboradi; shusiz smena kechqurun emas, ulanish
+    tiklangan payt bilan yopilgan bo'lib qolardi.
     """
     shift = Shift.objects.select_for_update().get(pk=shift.pk)
 
@@ -112,7 +117,13 @@ def close_shift(shift: Shift, counted_cash: int | None = None) -> ShiftReceipt:
     if counted_cash is not None:
         shift.counted_cash = counted_cash
 
-    shift.closed_at = timezone.now()
+    # Ochilishdan oldingi yoki kelajakdagi vaqtga ishonmaymiz — kassaning
+    # soati noto'g'ri bo'lsa hisobot buzilmasin.
+    now = timezone.now()
+    if closed_at and shift.opened_at <= closed_at <= now:
+        shift.closed_at = closed_at
+    else:
+        shift.closed_at = now
     shift.status = Shift.CLOSED
     shift.save(update_fields=["closed_at", "status", "counted_cash"])
 
