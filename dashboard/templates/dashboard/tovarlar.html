@@ -1,0 +1,105 @@
+{% extends "dashboard/base.html" %}
+{% load pul l10n %}
+
+{% block title %}Top tovarlar — Sevimli Kassa{% endblock %}
+{% block nav_top %}on{% endblock %}
+{% block crumb %}Top tovarlar{% endblock %}
+
+{% block body %}
+  <h1>Top tovarlar</h1>
+  <div class="sub">
+    Eng ko'p sotilgan {{ d.size }} ta tovar — {{ d.label }}{% if d.bonus_only %} · faqat bonus kartali cheklar{% endif %}
+  </div>
+
+  <form method="get" class="davr">
+    <div class="presets">
+      {% for key, name in d.presets %}
+        <a class="chip {% if d.preset == key %}on{% endif %}" href="?davr={{ key }}{% if filt %}&amp;{{ filt }}{% endif %}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <label>dan <input type="date" name="dan" value="{{ d.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>gacha <input type="date" name="gacha" value="{{ d.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>Saralash
+      <select name="tartib">
+        {% for key, name in d.sorts %}<option value="{{ key }}" {% if d.sort == key %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Nechta
+      <select name="soni">
+        {% for n in d.sizes %}<option value="{{ n }}" {% if d.size == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="check" style="gap: 8px;">
+      <input type="checkbox" name="bonus" value="1" {% if d.bonus_only %}checked{% endif %}>
+      faqat bonus kartali cheklar
+    </label>
+    <button type="submit" class="small">Ko'rsatish</button>
+    <a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>
+  </form>
+
+  {% localize off %}
+  <div class="tiles">
+    <div class="tile hero">
+      <div class="head">
+        <div class="label">Savdo</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span>
+      </div>
+      <div class="value num">{{ d.grand|som }}</div>
+      <div class="note">so'm, tovar qatorlari bo'yicha</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Cheklar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+      </div>
+      <div class="value num">{{ d.receipts|som }}</div>
+      <div class="note">shu davrda</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Sotilgan tovar turi</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-box"/></svg></span>
+      </div>
+      <div class="value num">{{ d.distinct|som }}</div>
+      <div class="note">xil tovar sotildi</div>
+    </div>
+  </div>
+  {% endlocalize %}
+
+  <h2>Ro'yxat</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="tight">#</th><th class="tight">Kodi</th><th class="tight">Shtrix kodi</th><th>Nomi</th>
+      <th class="right">Sotildi</th><th class="right">Qaytarildi</th><th class="right">Summa</th>
+      <th class="right">Cheklar</th><th>Ulush</th>
+    </tr></thead>
+    <tbody>
+    {% for r in d.rows %}
+      <tr>
+        <td class="num tight">{{ r.rank }}</td>
+        <td class="code">{{ r.code|default:"—" }}</td>
+        <td class="code">{{ r.barcode|default:"—" }}</td>
+        <td><b>{{ r.name }}</b></td>
+        <td class="right num tight"><b>{{ r.qty_text }}</b>{% if r.uom %} <span class="sec">{{ r.uom }}</span>{% endif %}</td>
+        <td class="right num tight">{% if r.returned_text %}<span class="minus">{{ r.returned_text }}</span>{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="right num tight"><b>{{ r.total|som }}</b></td>
+        <td class="right num tight">{{ r.n|som }}</td>
+        <td class="sharecell tight">{% localize off %}
+          <div class="share"><div class="fill" style="width: {{ r.bar_css }}%;"></div></div>{% endlocalize %}
+          <span class="sec num">{{ r.share|floatformat:1 }}%</span>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="empty">Bu davrda sotuv bo'lmagan.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <p class="sec" style="margin-top: 18px;">
+    Summa — chegirmadan keyingi qator summasi (so'm). «Qaytarildi» — shu davrda
+    qaytarilgan miqdor. Shtrix kod — tovarning asosiy kodi (upakovka emas);
+    tovarda kod bo'lmasa, kassada eng ko'p skanerlangani.
+  </p>
+{% endblock %}
