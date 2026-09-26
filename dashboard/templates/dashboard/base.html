@@ -336,6 +336,28 @@
     .tablewrap { overflow-x: auto; }
     table.daily tr.sel td { background: var(--accent-soft); }
 
+    /* bo'lim ichidagi yorliqlar (SEVIMLI BONUS: cheklar / mijozlar) */
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 20px;
+            border-bottom: 1px solid var(--line); }
+    .tabs a { padding: 10px 16px; font-size: 14px; font-weight: 600;
+              color: var(--muted); border-bottom: 2px solid transparent;
+              margin-bottom: -1px; }
+    .tabs a:hover { color: var(--ink); text-decoration: none; }
+    .tabs a.on { color: var(--accent); border-bottom-color: var(--accent); }
+    form.davr .grow { flex: 1 1 220px; min-width: 180px; margin: 0;
+                      min-height: 38px; padding: 6px 12px; font-size: 13.5px; }
+    form.davr select { padding: 6px 10px; font-size: 13px; margin: 0;
+                       min-height: 38px; }
+    td.code { font-family: "IBM Plex Mono", "Courier New", monospace;
+              font-size: 13px; white-space: nowrap; }
+    .plus  { color: var(--accent); font-weight: 700; }
+    .minus { color: var(--danger); font-weight: 700; }
+    .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 14px 24px; }
+    .kv .k { font-size: 12px; color: var(--faint); text-transform: uppercase;
+             letter-spacing: .6px; font-weight: 700; }
+    .kv .v { font-size: 15px; color: var(--ink); margin-top: 3px; }
+
     /* ------------------------------------------------------------ plita */
     .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
              gap: 16px; }
@@ -756,6 +778,7 @@
   <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/></symbol>
   <symbol id="i-return" viewBox="0 0 24 24"><path d="M3 8h11a6 6 0 0 1 0 12H8"/><path d="M7 4L3 8l4 4"/></symbol>
   <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 9h16v11H4z"/><path d="M3 9l2-5h14l2 5"/><path d="M9 20v-6h6v6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5l9 4.5 9-4.5M12 12v9"/></symbol>
 </svg>
 
 <div class="shell" id="shell">
@@ -776,6 +799,9 @@
       <a class="item {% block nav_shifts %}{% endblock %}" href="/smenalar/">
         <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>
         <span class="txt">Smenalar</span></a>
+      <a class="item {% block nav_top %}{% endblock %}" href="/tovarlar/">
+        <svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>
+        <span class="txt">Top tovarlar</span></a>
     </nav>
 
     <nav aria-label="Sozlash">
