@@ -10,6 +10,11 @@
   <div class="sub">Bonus ballari shu yerda — o'z bazamizda — yuritiladi
     (MoySklad Отгрузка yo'lida ballni hisoblamaydi)</div>
 
+  <nav class="tabs" aria-label="SEVIMLI BONUS">
+    <a href="{% url 'dashboard:bonus-receipts' %}">Bonusli cheklar</a>
+    <a class="on" href="{% url 'dashboard:bonus' %}">Mijozlar va sozlamalar</a>
+  </nav>
+
   {% if messages %}
     {% for m in messages %}
       <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
@@ -130,18 +135,19 @@
   <!-- ============ OXIRGI HARAKATLAR ============ -->
   <h2>Oxirgi ball harakatlari</h2>
   <table>
-    <tr><th>Vaqt</th><th>Mijoz</th><th>Turi</th><th class="num">O'zgarish</th><th class="num">Balans</th><th>Izoh</th></tr>
+    <tr><th>Vaqt</th><th>Mijoz</th><th>Turi</th><th class="num">O'zgarish</th><th class="num">Balans</th><th>Chek</th><th>Izoh</th></tr>
     {% for e in recent %}
       <tr>
         <td class="num tight">{{ e.created_at|date:"d.m H:i" }}</td>
-        <td>{{ e.customer.name }}</td>
+        <td><a href="{% url 'dashboard:customer-bonus' e.customer_id %}">{{ e.customer.name }}</a></td>
         <td><span class="badge {% if e.delta >= 0 %}ok{% else %}warn{% endif %}">{{ e.get_kind_display }}</span></td>
         <td class="num">{% if e.delta >= 0 %}+{% endif %}{{ e.delta }}</td>
         <td class="num">{{ e.balance_after|som }}</td>
+        <td class="num tight">{% if e.sale_id %}<a href="{% url 'dashboard:receipt' e.sale_id %}">ochish</a>{% else %}—{% endif %}</td>
         <td class="sec">{{ e.comment }}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="6" class="sec" style="padding:14px;text-align:center;">Hali harakat yo'q</td></tr>
+      <tr><td colspan="7" class="sec" style="padding:14px;text-align:center;">Hali harakat yo'q</td></tr>
     {% endfor %}
   </table>
 {% endblock %}
