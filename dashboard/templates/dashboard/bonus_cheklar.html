@@ -1,0 +1,141 @@
+{% extends "dashboard/base.html" %}
+{% load pul l10n %}
+
+{% block title %}Bonusli cheklar — SEVIMLI BONUS{% endblock %}
+{% block nav_bonus %}on{% endblock %}
+{% block crumb %}SEVIMLI BONUS · Bonusli cheklar{% endblock %}
+
+{% block body %}
+  <h1>SEVIMLI BONUS</h1>
+  <div class="sub">Qaysi chekda qancha ball berildi va qancha yechildi — {{ d.label }}</div>
+
+  <nav class="tabs" aria-label="SEVIMLI BONUS">
+    <a class="on" href="{% url 'dashboard:bonus-receipts' %}">Bonusli cheklar</a>
+    <a href="{% url 'dashboard:bonus' %}">Mijozlar va sozlamalar</a>
+  </nav>
+
+  {% comment %}
+    Sana tanlovi bosh sahifadagidek. Qidiruv va «tur» tanlovi saqlanib
+    qoladi — tayyor davr bosilganda ham.
+  {% endcomment %}
+  <form method="get" class="davr">
+    <div class="presets">
+      {% for key, name in d.presets %}
+        <a class="chip {% if d.preset == key %}on{% endif %}" href="?davr={{ key }}{% if filt %}&amp;{{ filt }}{% endif %}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <label>dan <input type="date" name="dan" value="{{ d.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>gacha <input type="date" name="gacha" value="{{ d.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <input class="grow" type="search" name="q" value="{{ d.q }}" placeholder="Mijoz, telefon, karta yoki chek raqami">
+    {% if d.tur %}<input type="hidden" name="tur" value="{{ d.tur }}">{% endif %}
+    <button type="submit" class="small">Ko'rsatish</button>
+  </form>
+
+  {% localize off %}
+  <div class="tiles">
+    <div class="tile hero">
+      <div class="head">
+        <div class="label">Ball berildi</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg></span>
+      </div>
+      <div class="value num">+{{ d.totals.earned|som }}</div>
+      <div class="note">xariddan to'plangan ball</div>
+    </div>
+    <div class="tile bad">
+      <div class="head">
+        <div class="label">Ball yechildi</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span>
+      </div>
+      <div class="value num">−{{ d.totals.spent|som }}</div>
+      <div class="note">ball bilan to'landi, {{ d.totals.spent|som }} so'm</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Bonusli cheklar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+      </div>
+      <div class="value num">{{ d.totals.receipts|som }}</div>
+      <div class="note">summasi {{ d.totals.sum|som }} so'm</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Mijozlar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-user"/></svg></span>
+      </div>
+      <div class="value num">{{ d.totals.customers|som }}</div>
+      <div class="note">
+        {% if d.totals.ret_plus or d.totals.ret_minus %}
+          qaytarishda: +{{ d.totals.ret_plus|som }} / −{{ d.totals.ret_minus|som }} ball
+        {% else %}shu davrda ball olgan yoki ishlatgan{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endlocalize %}
+
+  <h2>Cheklar</h2>
+  <form method="get" class="davr" style="margin-bottom: 12px;">
+    <div class="presets">
+      {% for key, name in d.kinds %}
+        <a class="chip {% if d.tur == key %}on{% endif %}" href="?{% if key %}tur={{ key }}{% if per %}&amp;{% endif %}{% endif %}{{ per }}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <span class="sec">Chekni bossangiz — ichidagi tovarlar ochiladi</span>
+  </form>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="tight">Vaqt</th><th class="tight">Chek</th><th>Filial</th><th>Mijoz</th>
+      <th class="right">Chek summasi</th>
+      <th class="right">Berildi</th><th class="right">Yechildi</th>
+    </tr></thead>
+    <tbody>
+    {% for s in rows %}
+      <tr>
+        <td class="num tight">{{ s.created_at|date:"d.m H:i" }}</td>
+        <td class="num tight">
+          <a href="{% url 'dashboard:receipt' s.pk %}"><b>#{% if s.receipt_number %}{{ s.receipt_number }}{% else %}{{ s.number }}{% endif %}</b></a>
+          {% if s.kind == "return" %}<div><span class="badge warn">qaytarish</span></div>{% endif %}
+        </td>
+        <td>{{ s.point }}<div class="sec">{{ s.register_name }}</div></td>
+        <td>
+          {% if s.customer %}
+            <a href="{% url 'dashboard:customer-bonus' s.customer.pk %}">{{ s.customer.name }}</a>
+            <div class="sec">{{ s.customer.phone|default:"" }}{% if s.customer.discount_card %} · {{ s.customer.discount_card }}{% endif %}</div>
+          {% else %}—{% endif %}
+        </td>
+        <td class="right num">
+          <b>{{ s.full_sum|som_aniq }}</b>
+          {% if s.points_spent %}<div class="sec">pul bilan {{ s.net_sum|som_aniq }}</div>{% endif %}
+        </td>
+        <td class="right num">{% if s.given_pts %}<span class="plus">+{{ s.given_pts|som }}</span>{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="right num">{% if s.taken_pts %}<span class="minus">−{{ s.taken_pts|som }}</span>{% else %}<span class="sec">—</span>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">
+        {% if d.q %}«{{ d.q }}» bo'yicha bonusli chek topilmadi.{% else %}Bu davrda ball berilgan yoki yechilgan chek yo'q.{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if page.paginator.num_pages > 1 %}
+    <div class="pager">
+      <span class="count">{{ page.paginator.count }} ta chek · {{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
+      {% if page.has_previous %}
+        <a href="?{% if keep %}{{ keep }}&amp;{% endif %}page={{ page.previous_page_number }}">‹ Oldingi</a>
+      {% else %}<span class="disabled">‹ Oldingi</span>{% endif %}
+      <span class="cur">{{ page.number }}</span>
+      {% if page.has_next %}
+        <a href="?{% if keep %}{{ keep }}&amp;{% endif %}page={{ page.next_page_number }}">Keyingi ›</a>
+      {% else %}<span class="disabled">Keyingi ›</span>{% endif %}
+    </div>
+  {% endif %}
+
+  <p class="sec" style="margin-top: 18px;">
+    1 ball = 1 so'm. «Berildi» — mijozga qo'shilgan ball, «Yechildi» — balansidan
+    ayrilgani (ball bilan to'lagan yoki qaytarishda qaytarib olingan). Qo'lda
+    tuzatishlar chekka bog'liq emas — ular mijoz sahifasida ko'rinadi.
+  </p>
+{% endblock %}
