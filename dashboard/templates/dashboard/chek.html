@@ -1,0 +1,143 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}{% if sale.kind == "return" %}Qaytarish{% else %}Chek{% endif %} #{% firstof sale.receipt_number sale.number %} — Sevimli Kassa{% endblock %}
+{% block nav_bonus %}{% if sale.customer_id %}on{% endif %}{% endblock %}
+{% block nav_shifts %}{% if not sale.customer_id %}on{% endif %}{% endblock %}
+{% block crumb %}Chek{% endblock %}
+
+{% block body %}
+  <h1>
+    {% if sale.kind == "return" %}Qaytarish{% else %}Chek{% endif %}
+    #{% firstof sale.receipt_number sale.number %}
+    {% if sale.kind == "return" %}<span class="badge warn" style="vertical-align: middle;">qaytarish</span>{% endif %}
+  </h1>
+  <div class="sub">{{ sale.created_at|date:"d.m.Y H:i" }} · {{ point }} · {{ sale.shift.register.name }}</div>
+
+  <div class="card">
+    <div class="kv">
+      <div><div class="k">Kassir</div><div class="v">{{ sale.shift.cashier|default:"—" }}</div></div>
+      <div><div class="k">Smena</div><div class="v">
+        <a href="{% url 'dashboard:shift-detail' sale.shift_id %}">#{{ sale.shift.number }}</a>
+        <span class="sec">· smenadagi chek №{{ sale.number }}</span></div></div>
+      <div><div class="k">Mijoz</div><div class="v">
+        {% if sale.customer %}
+          <a href="{% url 'dashboard:customer-bonus' sale.customer.pk %}">{{ sale.customer.name }}</a>
+          <div class="sec">{{ sale.customer.phone|default:"" }}{% if sale.customer.discount_card %} · karta {{ sale.customer.discount_card }}{% endif %}</div>
+        {% else %}<span class="sec">bonus kartasiz</span>{% endif %}</div></div>
+      <div><div class="k">MoySklad</div><div class="v">
+        {% if sale.sync_status == "sent" %}<span class="badge ok">yozildi</span>
+        {% elif sale.sync_status == "stuck" %}<span class="badge err">xato</span>
+        {% else %}<span class="badge warn">navbatda</span>{% endif %}</div></div>
+      {% if sale.origin %}
+        <div><div class="k">Asl chek</div><div class="v">
+          <a href="{% url 'dashboard:receipt' sale.origin_id %}">#{% firstof sale.origin.receipt_number sale.origin.number %}</a>
+          <span class="sec">· {{ sale.origin.created_at|date:"d.m.Y H:i" }}</span></div></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <h2>Tovarlar</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="tight">#</th><th>Nomi</th><th class="tight">Kodi</th><th class="tight">Shtrix kodi</th>
+      <th class="right">Soni</th><th class="right">Narxi</th><th class="right">Chegirma</th><th class="right">Summa</th>
+    </tr></thead>
+    <tbody>
+    {% for r in lines %}
+      <tr>
+        <td class="num tight">{{ r.n }}</td>
+        <td><b>{{ r.name }}</b></td>
+        <td class="code">{{ r.code|default:"—" }}</td>
+        <td class="code">{{ r.barcode|default:"—" }}</td>
+        <td class="right num tight">{{ r.qty }}{% if r.uom %} <span class="sec">{{ r.uom }}</span>{% endif %}</td>
+        <td class="right num tight">{{ r.price|som_aniq }}</td>
+        <td class="right num tight">{% if r.discount %}−{{ r.discount|som_aniq }}{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="right num tight"><b>{{ r.total|som_aniq }}</b></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="empty">Chekda qator yo'q.</td></tr>
+    {% endfor %}
+    {% if lines %}
+      <tr class="total">
+        <td colspan="7">Jami ({{ lines|length }} qator)</td>
+        <td class="right num">{{ lines_total|som_aniq }}</td>
+      </tr>
+    {% endif %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>To'lov</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Turi</th><th class="right">Summa</th><th class="right">Berildi</th><th class="right">Qaytim</th></tr></thead>
+    <tbody>
+    {% for p in payments %}
+      <tr>
+        <td>{{ p.method.name }}</td>
+        <td class="right num"><b>{{ p.amount|som_tiyin }}</b></td>
+        <td class="right num">{% if p.tendered %}{{ p.tendered|som_tiyin }}{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="right num">{% if p.change %}{{ p.change|som_tiyin }}{% else %}<span class="sec">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    {% if sale.points_spent %}
+      <tr>
+        <td>Ball bilan <span class="sec">({{ sale.points_spent|som }} ball)</span></td>
+        <td class="right num"><b>{{ points_sum|som_aniq }}</b></td>
+        <td></td><td></td>
+      </tr>
+    {% endif %}
+    {% if not payments and not sale.points_spent %}
+      <tr><td colspan="4" class="empty">To'lov yozuvi yo'q.</td></tr>
+    {% endif %}
+    <tr class="total">
+      <td>Chek summasi</td>
+      <td class="right num">{{ full_sum|som_aniq }}</td>
+      <td colspan="2" class="right sec">{% if sale.discount_total %}chegirma {{ sale.discount_total|som_tiyin }} so'm{% endif %}</td>
+    </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Ball</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th class="tight">Vaqt</th><th>Turi</th><th class="right">O'zgarish</th><th class="right">Balans keyin</th><th>Izoh</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td class="num tight">{{ e.created_at|date:"d.m.Y H:i" }}</td>
+        <td><span class="badge {% if e.delta >= 0 %}ok{% else %}warn{% endif %}">{{ e.get_kind_display }}</span></td>
+        <td class="right num">{% if e.delta >= 0 %}<span class="plus">+{{ e.delta|som }}</span>{% else %}<span class="minus">−{{ e.delta|mutlaq|som }}</span>{% endif %}</td>
+        <td class="right num">{{ e.balance_after|som }}</td>
+        <td class="sec">{{ e.comment }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">
+        {% if sale.customer %}Bu chekda ball harakati bo'lmagan.{% else %}Chek bonus kartasiz urilgan — ball berilmagan.{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if returns %}
+    <h2>Shu chekdan qaytarishlar</h2>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th class="tight">Vaqt</th><th>Qaytarish</th><th class="right">Summa</th></tr></thead>
+      <tbody>
+      {% for r in returns %}
+        <tr>
+          <td class="num tight">{{ r.created_at|date:"d.m.Y H:i" }}</td>
+          <td><a href="{% url 'dashboard:receipt' r.pk %}">#{% firstof r.receipt_number r.number %}</a></td>
+          <td class="right num"><b>{{ r.net_sum|som_aniq }}</b></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+{% endblock %}
