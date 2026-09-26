@@ -33,6 +33,7 @@ from catalog.models import Customer, Product, SyncState
 from dashboard import batafsil as batafsil_mod
 from sales import aloqa, healer, selftest, sender
 from dashboard import grafik
+from dashboard import tovarlar
 from sales.models import (
     BonusEntry, BonusProgram, MoySkladCheck, PanelSettings, PaymentMethod,
     POINT_TIYIN, Register, Sale, Shift,
@@ -981,8 +982,85 @@ def customer_bonus(request, pk: int):
     if not cust:
         raise Http404("Mijoz topilmadi")
     entries = cust.bonus_entries.select_related("sale")[:200]
+    agg = cust.bonus_entries.aggregate(
+        earned=Sum("delta", filter=Q(kind=BonusEntry.EARN)),
+        spent=Sum("delta", filter=Q(kind=BonusEntry.SPEND)),
+        receipts=Count("sale", distinct=True),
+    )
     return render(request, "dashboard/customer_bonus.html", {
         "cust": cust, "entries": entries,
+        "earned": agg["earned"] or 0, "spent": -(agg["spent"] or 0),
+        "receipts": agg["receipts"] or 0,
+    })
+
+
+@login_required
+def bonus_receipts(request):
+    """Bonusli cheklar: qaysi chekda qancha ball berildi / yechildi.
+
+    Sana filtri bosh sahifadagidek (?davr= yoki ?dan=&gacha=), qo'shimcha
+    ?tur=berildi|yechildi va ?q= (mijoz, telefon, karta yoki chek raqami).
+    """
+    data = tovarlar.bonus_receipts(request.GET)
+    page = Paginator(data["qs"], tovarlar.PAGE_SIZE).get_page(request.GET.get("page"))
+    return render(request, "dashboard/bonus_cheklar.html", {
+        "d": data,
+        "page": page,
+        "rows": tovarlar.decorate_receipts(page.object_list),
+        # havolalar boshqa tanlovlarni yo'qotmasin
+        "keep": _query_without(request.GET, "page"),
+        "filt": _query_without(request.GET, "page", "davr", "dan", "gacha"),
+        "per": _query_without(request.GET, "page", "tur"),
+        "today": timezone.localdate(),
+    })
+
+
+def _query_without(params, *names) -> str:
+    """So'rov qatori — ko'rsatilgan kalitlarsiz («a=1&b=2»)."""
+    q = params.copy()
+    for name in names:
+        q.pop(name, None)
+    return q.urlencode()
+
+
+@login_required
+def receipt(request, pk: int):
+    """Bitta chek: ichidagi tovarlar, to'lovlar va ball harakati."""
+    sale = (
+        Sale.objects.select_related("customer", "shift__register__store", "origin")
+        .filter(pk=pk).first()
+    )
+    if not sale:
+        raise Http404("Chek topilmadi")
+    lines = tovarlar.receipt_lines(sale)
+    payments = list(sale.payments.select_related("method").order_by("pk"))
+    return render(request, "dashboard/chek.html", {
+        "sale": sale,
+        "lines": lines,
+        "payments": payments,
+        "entries": sale.bonus_entries.order_by("created_at", "pk"),
+        "returns": sale.returns.order_by("created_at"),
+        "point": sale.shift.register.point_name,
+        "lines_total": sum(r["total"] for r in lines),
+        "points_sum": sale.points_spent * POINT_TIYIN / 100,
+        "full_sum": (sale.net_total + sale.points_spent * POINT_TIYIN) / 100,
+    })
+
+
+@login_required
+def top_products(request):
+    """Eng ko'p sotilgan tovarlar (Top-100): kod, shtrix kod, nom — CSV bilan."""
+    data = tovarlar.top_products(request.GET)
+    if request.GET.get("format") == "csv":
+        name, text = tovarlar.top_csv(data)
+        resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{name}"'
+        return resp
+    return render(request, "dashboard/tovarlar.html", {
+        "d": data,
+        "keep": _query_without(request.GET, "format"),
+        "filt": _query_without(request.GET, "format", "davr", "dan", "gacha"),
+        "today": timezone.localdate(),
     })
 
 
