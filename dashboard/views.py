@@ -33,7 +33,7 @@ from catalog.models import Customer, Product, SyncState
 from dashboard import batafsil as batafsil_mod
 from sales import aloqa, healer, selftest, sender
 from dashboard import grafik
-from dashboard import tovarlar
+from dashboard import oylik, tovarlar
 from sales.models import (
     BonusEntry, BonusProgram, MoySkladCheck, PanelSettings, PaymentMethod,
     POINT_TIYIN, Register, Sale, Shift,
@@ -1062,6 +1062,32 @@ def top_products(request):
         "filt": _query_without(request.GET, "format", "davr", "dan", "gacha"),
         "today": timezone.localdate(),
     })
+
+
+@login_required
+def falling_products(request):
+    """Tushib ketgan tovarlar: oldin muntazam sotilgan, hozir to'xtagan yoki
+    keskin kamaygan. ?qism=1 — bosh sahifadagi qisqa karta (keyin yuklanadi),
+    ?format=csv — Excel uchun."""
+    data = tovarlar.falling_products()
+    if request.GET.get("format") == "csv":
+        name, text = tovarlar.falling_csv(data)
+        resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{name}"'
+        return resp
+    if request.GET.get("qism") == "1":
+        return render(request, "dashboard/_tushgan_qisqa.html", {"f": data})
+    return render(request, "dashboard/tushgan.html", {"f": data})
+
+
+@login_required
+def monthly(request):
+    """Oylar kesimida savdo (MoySklad tarixidan) — bosh sahifa bo'lagi.
+
+    Bosh sahifa buni o'zi yuklangandan KEYIN so'raydi: MoySklad sekin
+    javob bersa ham sahifa kutib qolmaydi. Natija 1 soat keshda.
+    """
+    return render(request, "dashboard/_oylik.html", {"d": oylik.get()})
 
 
 def _dec(value, default):
