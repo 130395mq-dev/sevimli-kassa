@@ -248,6 +248,7 @@ def build(params, now=None) -> dict:
 
     return {
         "hourly": hourly,
+        "trend": _trend(start, end, now),
         "cards": cards,
         "methods_donut": grafik.donut(
             [{"label": m["name"], "value": m["total"]} for m in methods]
@@ -470,6 +471,111 @@ def _hourly(start: date, end: date) -> dict:
         "peak": {"label": f"{peak:02d}:00", "total": tot[peak], "n": cnt[peak]}
         if peak is not None else None,
         "chart": _hour_chart(tot, cnt),
+    }
+
+
+# Bosh sahifadagi katta grafik o'lchami (SVG viewBox; sahifada kenglikka
+# qarab cho'ziladi)
+TREND_W, TREND_H = 1200, 340
+
+
+def _trend(start: date, end: date, now=None) -> dict:
+    """Bosh sahifa tepasidagi katta grafik: tanlangan davr (yashil chiziq,
+    ostida soya) va oldingi davr (uzuq chiziq) — egasining so'rovi bilan
+    (2026-09-27) «Batafsil» panelidagi ko'rinishda, sahifada birinchi.
+
+    Bir kun — soatlar bo'yicha, uzunroq davr — kunlar bo'yicha. Tanlangan kun
+    BUGUN bo'lsa joriy chiziq hozirgi soatda to'xtaydi: hali kelmagan soatlar
+    0 bo'lib chiziq pastga «qulab» tushmasin. Solishtirish ham adolatli
+    bo'lsin — bugun «kecha shu vaqtgacha» bilan taqqoslanadi, butun kecha
+    bilan emas.
+    """
+    now = timezone.localtime(now or timezone.now())
+    span = (end - start).days + 1
+    prev_start = start - timedelta(days=span)
+    prev_end = start - timedelta(days=1)
+    live = start <= now.date() <= end
+    prev_same = None
+    peak = None
+
+    if span == 1:
+        cur = _hourly(start, end)
+        prev = _hourly(prev_start, prev_end)
+        labels = [h["label"] for h in cur["hours"]]
+        cur_vals = [h["total"] for h in cur["hours"]]
+        cur_n = [h["n"] for h in cur["hours"]]
+        prev_vals = [h["total"] for h in prev["hours"]]
+        cur_total, prev_total = cur["total"], prev["total"]
+        peak = cur["peak"]
+        if live:
+            # Faqat TUGAGAN soatlar: joriy soat (masalan 14:08 da 14:00) hali
+            # to'lmagan — uni chizsak chiziq har doim «qulab» tushgandek
+            # ko'rinadi. Uning savdosi tepadagi jami summaga baribir kiradi.
+            cur_vals = cur_vals[: max(now.hour, 1)]
+            a, _ = _bounds(start, end)
+            pa, _ = _bounds(prev_start, prev_end)
+            cutoff = pa + (now - a)
+            prev_same = (
+                Sale.objects.filter(kind=Sale.SALE, created_at__gte=pa, created_at__lt=cutoff)
+                .aggregate(t=Sum("net_total"))["t"] or 0
+            ) / 100
+        cur_name = ("Bugun" if start == now.date() else
+                    "Kecha" if start == now.date() - timedelta(days=1) else "")
+        prev_name = "Kecha" if start == now.date() else ""
+    else:
+        cur_rows = _spark(end, days=span)
+        prev_rows = _spark(prev_end, days=span)
+        labels = [d["date"].strftime("%d.%m") for d in cur_rows]
+        cur_vals = [d["total"] for d in cur_rows]
+        cur_n = [d["n"] for d in cur_rows]
+        prev_vals = [d["total"] for d in prev_rows]
+        cur_total, prev_total = sum(cur_vals), sum(prev_vals)
+        cur_name = prev_name = ""
+
+    cur_label = period_label(start, end)
+    prev_label = period_label(prev_start, prev_end)
+    chart = grafik.chart_lines(
+        [
+            {"name": f"{cur_name} {cur_label}".strip(), "values": cur_vals,
+             "area": True, "dash": False},
+            {"name": f"{prev_name} {prev_label}".strip(), "values": prev_vals,
+             "area": False, "dash": True},
+        ],
+        labels, w=TREND_W, h=TREND_H,
+    )
+    # Sichqoncha ostidagi izoh uchun har nuqtaning to'liq ma'lumoti:
+    # joriy summa va cheklar soni, oldingi davr summasi, farq
+    tips = []
+    for i, hv in enumerate(chart.get("hover", [])):
+        has = i < len(cur_vals)
+        tips.append({
+            **hv,
+            "cur": cur_vals[i] if has else None,
+            "n": cur_n[i] if has else None,
+            "prev": prev_vals[i] if i < len(prev_vals) else 0,
+            "delta": _delta(cur_vals[i], prev_vals[i]) if has and i < len(prev_vals) else None,
+            "dot_y": hv["items"][0]["y"] if has and hv["items"] else None,
+            "prev_y": hv["items"][-1]["y"] if hv["items"] else None,
+        })
+    # Jadval uchun: savdo bo'lgan (yoki solishtiriladigan) nuqtalar
+    rows = [t for t in tips if t["cur"] is not None and (t["cur"] or t["prev"])]
+    base = prev_same if prev_same is not None else prev_total
+    return {
+        "chart": chart,
+        "tips": tips,
+        "rows": rows,
+        "cur_name": chart["series"][0]["name"] if chart.get("series") else "",
+        "prev_name": chart["series"][1]["name"] if chart.get("series") else "",
+        "by_hour": span == 1,
+        "live": live and span == 1,
+        "total": cur_total,
+        "prev_total": prev_total,
+        "prev_same": prev_same,
+        "base": base,
+        "delta": _delta(cur_total, base),
+        "prev_label": prev_label,
+        "peak": peak,
+        "open_hour": f"{now.hour:02d}:00" if live and span == 1 else "",
     }
 
 
