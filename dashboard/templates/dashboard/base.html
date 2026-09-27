@@ -661,6 +661,60 @@
     svg.chart.big .hov .dot.d1 { fill: var(--muted); }
     svg.chart.big .hov .dot.d2 { fill: var(--warn); }
     svg.chart.big .hov:hover .cross, svg.chart.big .hov:hover .dot { opacity: 1; }
+
+    /* ------------------------ bosh sahifa: katta kunlik grafik (birinchi) */
+    .trend {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 20px 22px 14px; margin-bottom: 18px;
+      box-shadow: var(--shadow), inset 3px 0 0 var(--accent);
+    }
+    .trend-head { display: flex; justify-content: space-between; align-items: flex-end;
+                  gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+    .trend-title { margin: 0 0 6px; }
+    .trend-value { font-size: 36px; font-weight: 700; color: var(--ink);
+                   letter-spacing: -1px; line-height: 1.1; }
+    .trend-value .unit { font-size: 16px; font-weight: 500; color: var(--muted);
+                         letter-spacing: 0; }
+    .trend-note { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .trend-note b { color: var(--ink-soft); }
+    .trend-note .sep { margin: 0 4px; }
+    .trend .legend { margin: 0; }
+    .trend-chart { position: relative; }
+    svg.chart.wide { width: 100%; max-width: none; height: auto; }
+    svg.chart.wide .tick, svg.chart.wide .day { font-size: 12px; }
+    svg.chart.wide .line { stroke-width: 2.6; }
+    .trend-tip {
+      position: absolute; top: 4px; transform: translateX(-50%); pointer-events: none;
+      background: var(--surface-2); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px;
+      color: var(--ink-soft); box-shadow: var(--shadow); white-space: nowrap; z-index: 2;
+    }
+    .trend-tip b { color: var(--ink); }
+    .trend-tip .k0, .trend-tip .k1 { display: inline-block; width: 10px; height: 3px;
+                                     border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+    .trend-tip .k0 { background: var(--accent); }
+    .trend-tip .k1 { background: var(--muted); }
+    .trend-tip .up { color: var(--accent); font-weight: 700; }
+    .trend-tip .down { color: var(--danger); font-weight: 700; }
+    .trend-table { margin-top: 8px; }
+    .trend-table summary { cursor: pointer; color: var(--muted); font-size: 13.5px;
+                           padding: 6px 0; }
+    .trend-table summary:hover { color: var(--ink); }
+    .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+                gap: 16px; margin-bottom: 18px; }
+    .insight { margin: 0; min-width: 0; }
+    .insight h3 { margin: 0 0 4px; font-size: 16px; }
+    .insight .verdict { font-size: 22px; font-weight: 700; margin: 6px 0 2px; }
+    .insight .verdict.up { color: var(--accent); }
+    .insight .verdict.down { color: var(--danger); }
+    .insight table { box-shadow: none; }
+    .insight td, .insight th { padding: 8px 10px; }
+    .insight .more { display: inline-block; margin-top: 10px; font-size: 13.5px; }
+    svg.chart .bar.now path { fill: var(--accent); }
+    @media (max-width: 560px) {
+      .insights { grid-template-columns: 1fr; }
+      .trend-value { font-size: 28px; }
+    }
     svg.chart.big.danger .bar path { fill: var(--danger); }
     svg.chart.big.danger .bar:hover path { filter: brightness(1.15); }
 

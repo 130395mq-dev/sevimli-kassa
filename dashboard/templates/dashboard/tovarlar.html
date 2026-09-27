@@ -11,6 +11,11 @@
     Eng ko'p sotilgan {{ d.size }} ta tovar — {{ d.label }}{% if d.bonus_only %} · faqat bonus kartali cheklar{% endif %}
   </div>
 
+  <nav class="tabs" aria-label="Tovarlar">
+    <a class="on" href="{% url 'dashboard:top-products' %}">Eng ko'p sotilgan</a>
+    <a href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
+  </nav>
+
   <form method="get" class="davr">
     <div class="presets">
       {% for key, name in d.presets %}

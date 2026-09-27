@@ -1,0 +1,65 @@
+{% load pul l10n %}
+{% comment %}
+  Oylar kesimida savdo — bosh sahifa bo'lagi (views.monthly). Raqamlar
+  MoySklad «Показатели продаж» hisobotidan: bizning bazada to'liq savdo
+  faqat 2026-09-17 dan bor, oldingi oylar faqat MoySklad'da.
+{% endcomment %}
+<h3>Oylar kesimida savdo</h3>
+{% if not d.ok %}
+  <div class="sec" style="margin-top: 8px;">{{ d.error }}</div>
+{% else %}
+  {% with v=d.verdict %}
+  <div class="verdict {% if v.delta is None %}{% elif v.growth %}up{% else %}down{% endif %}">
+    {% if v.delta is None %}Solishtirish uchun ma'lumot yetarli emas
+    {% elif v.growth %}▲ O'sish bor: +{{ v.delta }}%
+    {% elif v.delta == 0 %}O'zgarish yo'q
+    {% else %}▼ Pasayish: {{ v.delta }}%{% endif %}
+  </div>
+  <div class="sec">
+    {{ v.label }}: <b class="num">{{ v.cur|som }}</b> so'm
+    · {{ v.prev_label }}: <span class="num">{{ v.prev|som }}</span> so'm
+    {% if v.kind == "cur" %}<br>(joriy oy o'tgan oyning xuddi shu kunlari bilan solishtiriladi){% endif %}
+  </div>
+  {% endwith %}
+
+  {% with c=d.chart %}{% localize off %}
+  <svg class="chart" viewBox="0 0 {{ c.w }} {{ c.h }}" style="width: 100%; height: auto; margin-top: 10px;"
+       role="img" aria-label="Oylik savdo">
+    {% for t in c.ticks %}
+      <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+      <text x="{{ c.left|add:'-8' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+    {% endfor %}
+    {% for b in c.bars %}
+      <g class="bar{% if b.current %} now{% endif %}">
+        <title>{{ b.name }} — {{ b.v|som }} so'm{% if b.current %} (oy davom etmoqda){% endif %}</title>
+        <rect x="{{ b.slot_x }}" y="{{ c.top }}" width="{{ b.slot_w }}" height="{{ c.plot_h }}" class="hit"></rect>
+        {% if b.path %}<path d="{{ b.path }}"></path>{% endif %}
+        <text x="{{ b.cx }}" y="{{ c.baseline|add:'17' }}" class="day">{{ b.label }}</text>
+      </g>
+    {% endfor %}
+    <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+  </svg>
+  {% endlocalize %}{% endwith %}
+
+  <table>
+    <thead><tr><th>Oy</th><th class="right">Savdo, so'm</th><th class="right">Cheklar</th><th class="right">Oldingi oyga</th></tr></thead>
+    <tbody>
+    {% for m in d.months|slice:":6" %}
+      <tr>
+        <td>{{ m.name }}{% if m.current %} <span class="sec">(davom etmoqda)</span>{% endif %}</td>
+        <td class="right num"><b>{{ m.total|som }}</b></td>
+        <td class="right num">{{ m.n|som }}</td>
+        <td class="right num">
+          {% if m.current %}<span class="sec">—</span>
+          {% elif m.delta is None %}<span class="sec">—</span>
+          {% else %}<span class="delta {% if m.delta >= 0 %}up{% else %}down{% endif %}">{% if m.delta >= 0 %}+{% endif %}{{ m.delta }}%</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="sec" style="margin-top: 8px;">
+    {% if d.full_n %}Oxirgi {{ d.full_n }} ta to'liq oydan {{ d.ups }} tasida o'sish bo'lgan. {% endif %}
+    Manba: MoySklad, {{ d.fetched_at|date:"d.m H:i" }} holatiga{% if d.stale %} (MoySklad hozir javob bermadi — oxirgi olingan nusxa){% endif %}.
+  </div>
+{% endif %}

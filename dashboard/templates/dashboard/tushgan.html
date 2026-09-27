@@ -1,0 +1,96 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Tushib ketgan tovarlar — Sevimli Kassa{% endblock %}
+{% block nav_top %}on{% endblock %}
+{% block crumb %}Top tovarlar · Tushib ketganlar{% endblock %}
+
+{% block body %}
+  <h1>Tushib ketgan tovarlar</h1>
+  <div class="sub">Oldin yaxshi sotilgan, lekin hozir sotilmay qolgan yoki keskin kamaygan tovarlar</div>
+
+  <nav class="tabs" aria-label="Tovarlar">
+    <a href="{% url 'dashboard:top-products' %}">Eng ko'p sotilgan</a>
+    <a class="on" href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
+  </nav>
+
+  {% if not f.ready %}
+    <div class="alert warn"><span>!</span><div>
+      <b>Hali erta.</b> Solishtirish uchun kamida 5 kunlik to'liq savdo kerak — hozir
+      {{ f.base_days }} kun bor. Har kuni ma'lumot ko'payib boradi.
+    </div></div>
+  {% else %}
+    <div class="card">
+      <div class="kv">
+        <div><div class="k">Oldin</div><div class="v">{{ f.base_start|date:"d.m" }}–{{ f.base_end|date:"d.m" }} <span class="sec">({{ f.base_days }} ta to'liq kun)</span></div></div>
+        <div><div class="k">Hozir</div><div class="v">{{ f.recent_start|date:"d.m" }}–{{ f.recent_end|date:"d.m" }} <span class="sec">+ bugun</span></div></div>
+        <div><div class="k">To'xtagan</div><div class="v"><b class="minus">{{ f.stopped|length }}</b> ta{% if f.stopped_out %} <span class="sec">({{ f.stopped_out }} tasi tugagan)</span>{% endif %}</div></div>
+        <div><div class="k">Kamaygan</div><div class="v"><b>{{ f.dropped|length }}</b> ta</div></div>
+        <div><div class="k">Yo'qotish</div><div class="v num">≈ {{ f.lost_per_day|som }} so'm/kun</div></div>
+      </div>
+      <div class="sec" style="margin-top: 12px;">
+        Muntazam tovar — «oldin» kunlarning kamida yarmida sotilgan va kuniga o'rtacha 1 donadan
+        ko'p ketgan tovar. <b>To'xtagan</b> — oxirgi 3 kun va bugun bironta ham sotilmagan.
+        <b>Kamaygan</b> — oxirgi 3 kunda kuniga oldingidan 2 barobar va undan ham kam sotilgan.
+        Qoldiq 0 bo'lsa «tugagan» — demak tovar kelmay qolgan, talab emas.
+        <a href="?format=csv">⤓ Excel (CSV)</a>
+      </div>
+    </div>
+
+    <h2>To'xtagan ({{ f.stopped|length }})</h2>
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="tight">#</th><th class="tight">Kodi</th><th class="tight">Shtrix kodi</th><th>Nomi</th>
+        <th class="right">Oldin kuniga</th><th class="right">Oxirgi sotuv</th>
+        <th class="right">Qoldiq</th><th class="right">Yo'qotish/kun</th>
+      </tr></thead>
+      <tbody>
+      {% for r in f.stopped %}
+        <tr>
+          <td class="num tight">{{ forloop.counter }}</td>
+          <td class="code">{{ r.code|default:"—" }}</td>
+          <td class="code">{{ r.barcode|default:"—" }}</td>
+          <td><b>{{ r.name }}</b></td>
+          <td class="right num tight">{{ r.before_text }} <span class="sec">{{ r.uom }}</span></td>
+          <td class="right num tight">{% if r.last %}{{ r.last|date:"d.m" }} <span class="sec">({{ r.days_idle }} kun)</span>{% else %}—{% endif %}</td>
+          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+          <td class="right num tight">{{ r.lost|som }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">To'xtab qolgan muntazam tovar yo'q.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    <h2>Kamaygan ({{ f.dropped|length }})</h2>
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="tight">#</th><th class="tight">Kodi</th><th class="tight">Shtrix kodi</th><th>Nomi</th>
+        <th class="right">Oldin kuniga</th><th class="right">Hozir kuniga</th><th class="right">O'zgarish</th>
+        <th class="right">Bugun</th><th class="right">Qoldiq</th><th class="right">Yo'qotish/kun</th>
+      </tr></thead>
+      <tbody>
+      {% for r in f.dropped %}
+        <tr>
+          <td class="num tight">{{ forloop.counter }}</td>
+          <td class="code">{{ r.code|default:"—" }}</td>
+          <td class="code">{{ r.barcode|default:"—" }}</td>
+          <td><b>{{ r.name }}</b></td>
+          <td class="right num tight">{{ r.before_text }} <span class="sec">{{ r.uom }}</span></td>
+          <td class="right num tight">{{ r.now_text }}</td>
+          <td class="right num tight"><span class="minus">{{ r.change }}%</span></td>
+          <td class="right num tight">{{ r.today_qty|floatformat:"-3" }}</td>
+          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+          <td class="right num tight">{{ r.lost|som }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="10" class="empty">Keskin kamaygan tovar yo'q.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+{% endblock %}

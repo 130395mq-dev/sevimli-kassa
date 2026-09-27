@@ -440,10 +440,14 @@ class PanelTest(SavdoBase):
         self.sale(self.reg1, self.today, 100_000_00, hour=14)
         html = unescape(self.client.get("/").content.decode())
         self.assertIn("Kunlik savdo dinamikasi", html)
-        self.assertIn("Savdo, so'm", html)      # grafik izohi (legend)
-        self.assertIn("Cheklar soni", html)
+        # 2026-09-27: katta grafik sahifada BIRINCHI — plitalardan oldin
+        self.assertLess(html.index("Kunlik savdo dinamikasi"), html.index('class="tiles"'))
+        self.assertIn('class="chart big wide"', html)
+        self.assertIn("Soatma-soat jadval", html)
         self.assertIn("14:00", html)
-        self.assertIn("Eng gavjum soat", html)
+        self.assertIn("eng gavjum soat", html)
+        self.assertIn('data-lazy="/oylik/"', html)
+        self.assertIn('data-lazy="/tovarlar/tushgan/?qism=1"', html)
 
     def test_savdosiz_kun_sahifani_yiqitmaydi(self):
         """Bo'sh kun — 0 ga bo'lish yoki bo'sh grafik xatosi bo'lmasin."""
