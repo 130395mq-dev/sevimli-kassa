@@ -1,0 +1,44 @@
+{% load pul %}
+{% comment %}
+  Bosh sahifadagi qisqa karta: tushib ketgan tovarlar (views.falling_products,
+  ?qism=1). To'liq ro'yxat — /tovarlar/tushgan/.
+{% endcomment %}
+<h3>Tushib ketgan tovarlar</h3>
+{% if not f.ready %}
+  <div class="sec" style="margin-top: 8px;">
+    Hisoblash uchun kamida 5 kunlik to'liq savdo kerak (hozir {{ f.base_days }} kun bor).
+  </div>
+{% else %}
+  <div class="verdict {% if f.stopped %}down{% else %}up{% endif %}">
+    {% if f.stopped %}▼ {{ f.stopped|length }} ta tovar sotilmay qoldi{% else %}✓ To'xtab qolgan tovar yo'q{% endif %}
+  </div>
+  <div class="sec">
+    {% if f.stopped %}Oldin muntazam sotilgan, oxirgi 3 kunda bironta ham sotilmagan{% if f.stopped_out %} — <b>{{ f.stopped_out }} tasi omborda tugagan</b>{% endif %}.{% endif %}
+    {% if f.dropped %}Yana <b>{{ f.dropped|length }} ta</b> tovar sotuvi 2 barobardan ko'proq kamaygan.{% endif %}
+    {% if f.lost_per_day %}Kuniga taxminan <b class="num">{{ f.lost_per_day|som }}</b> so'm savdo yo'qotilmoqda.{% endif %}
+  </div>
+  {% if f.stopped or f.dropped %}
+  <table style="margin-top: 10px;">
+    <thead><tr><th>Tovar</th><th class="right">Oldin kuniga</th><th class="right">Hozir</th><th class="right">Qoldiq</th></tr></thead>
+    <tbody>
+    {% for r in f.stopped|slice:":5" %}
+      <tr>
+        <td><b>{{ r.name }}</b><div class="sec">{{ r.code|default:"" }}{% if r.last %} · oxirgi sotuv {{ r.last|date:"d.m" }}{% endif %}</div></td>
+        <td class="right num tight">{{ r.before_text }} {{ r.uom }}</td>
+        <td class="right num tight"><span class="minus">0</span></td>
+        <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    {% if not f.stopped %}{% for r in f.dropped|slice:":5" %}
+      <tr>
+        <td><b>{{ r.name }}</b><div class="sec">{{ r.code|default:"" }}</div></td>
+        <td class="right num tight">{{ r.before_text }} {{ r.uom }}</td>
+        <td class="right num tight"><span class="minus">{{ r.now_text }}</span> <span class="sec">{{ r.change }}%</span></td>
+        <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+      </tr>
+    {% endfor %}{% endif %}
+    </tbody>
+  </table>
+  {% endif %}
+  <a class="more" href="{% url 'dashboard:falling-products' %}">Hammasini ko'rish →</a>
+{% endif %}
