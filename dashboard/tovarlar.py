@@ -12,6 +12,7 @@ Ball harakatlarining haqiqat manbai — `BonusEntry` reyestri (savdoda
 from __future__ import annotations
 
 import csv
+from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
 
@@ -312,3 +313,185 @@ def top_csv(data: dict) -> tuple[str, str]:
         ])
     name = f"sevimli-top-{data['size']}-{data['start']:%Y%m%d}-{data['end']:%Y%m%d}.csv"
     return name, buf.getvalue()
+
+
+# ------------------------------------------------- tushib ketgan tovarlar
+
+#: «Hozir» — oxirgi shuncha TO'LIQ kun (bugun hali tugamagan, alohida)
+RECENT_DAYS = 3
+#: «Oldin» — undan oldingi shuncha kun
+BASE_DAYS = 14
+#: Oldin kunlarning kamida shuncha qismida sotilgan bo'lsa — «muntazam»
+REGULAR_SHARE = 0.5
+#: Hozir kuniga oldingidan shuncha (yoki ko'proq) kam — «kamaygan»
+DROP_SHARE = 0.5
+#: Kun «to'liq ishlagan» hisoblanadi, agar cheklar soni o'sha oynadagi eng
+#: ko'p kunning shuncha qismidan kam bo'lmasa (tizim ishga tushgan
+#: 13–16.09 kunlari kassalarning bir qismigina ulangan edi)
+ACTIVE_DAY_SHARE = 0.3
+FALL_CACHE_TTL = 15 * 60
+
+
+def _active_days(start: date, end: date) -> list[date]:
+    """Oynadagi to'liq ishlagan kunlar (yarim kunlik ishga tushish kunlari
+    va savdosiz kunlar hisobdan chiqadi — aks holda hamma tovar «muntazam
+    emas» bo'lib qolardi)."""
+    from django.db.models.functions import TruncDate
+    from django.utils import timezone as tz
+
+    a, b = _bounds(start, end)
+    counts = {
+        r["day"]: r["n"]
+        for r in Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+        .annotate(day=TruncDate("created_at", tzinfo=tz.get_current_timezone()))
+        .values("day").annotate(n=Count("id")).order_by()
+    }
+    if not counts:
+        return []
+    top = max(counts.values())
+    return sorted(d for d, n in counts.items() if n >= top * ACTIVE_DAY_SHARE)
+
+
+def falling_products(now=None) -> dict:
+    """Oldin yaxshi sotilgan, lekin hozir kamaygan yoki umuman to'xtagan tovarlar.
+
+    Egasining so'rovi (2026-09-27): «sotilishi yaxshi bo'lib birdan to'xtagan
+    tovarlarni ko'rsatib turadigan ko'rsatkich». Qoidalar (sodda, tushuntirsa
+    bo'ladigan):
+      * «oldin» — oxirgi 3 to'liq kundan oldingi 14 kun (faqat to'liq
+        ishlagan kunlar); tovar ulardan kamida yarmida sotilgan va kuniga
+        o'rtacha kamida 1 dona ketgan bo'lsa — muntazam sotiladigan tovar;
+      * TO'XTAGAN — muntazam tovar oxirgi 3 kun va bugun umuman sotilmagan;
+      * KAMAYGAN — oxirgi 3 kunda kuniga oldingidan 2 barobar (50%) va
+        undan ham kam sotilgan (oldin kuniga kamida 2 dona ketgan bo'lsa).
+    Qoldiq (`catalog.Stock`, hamma omborlar) 0 bo'lsa — «tugagan»: demak
+    sabab talab emas, tovar kelmay qolgan.
+    """
+    from django.core.cache import cache
+    from django.db.models.functions import TruncDate
+    from django.utils import timezone as tz
+
+    today = tz.localdate(now)
+    key = f"tushgan:v1:{today.isoformat()}:{tz.localtime(now).hour}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    recent_start = today - timedelta(days=RECENT_DAYS)
+    recent_end = today - timedelta(days=1)
+    base_end = recent_start - timedelta(days=1)
+    base_start = base_end - timedelta(days=BASE_DAYS - 1)
+    base_days = _active_days(base_start, base_end)
+    recent_days = _active_days(recent_start, recent_end)
+
+    out = {"stopped": [], "dropped": [], "base_days": len(base_days),
+           "recent_days": len(recent_days), "base_start": base_start,
+           "base_end": base_end, "recent_start": recent_start,
+           "recent_end": recent_end, "ready": len(base_days) >= 5 and len(recent_days) >= 2}
+    if not out["ready"]:
+        cache.set(key, out, FALL_CACHE_TTL)
+        return out
+
+    a, _ = _bounds(base_start, base_end)
+    _, b = _bounds(today, today)
+    rows = (
+        SaleItem.objects.filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
+                                sale__created_at__lt=b, product__isnull=False)
+        .annotate(day=TruncDate("sale__created_at", tzinfo=tz.get_current_timezone()))
+        .values("product_id", "day")
+        .annotate(qty=Sum("quantity"), total=Sum("total"))
+        .order_by()
+    )
+    base_set, recent_set = set(base_days), set(recent_days)
+    stats: dict[int, dict] = {}
+    for r in rows:
+        s = stats.setdefault(r["product_id"], {"b_qty": Decimal(0), "b_sum": 0, "b_days": 0,
+                                               "r_qty": Decimal(0), "r_sum": 0,
+                                               "t_qty": Decimal(0), "last": None})
+        d = r["day"]
+        if d in base_set:
+            s["b_qty"] += r["qty"] or 0
+            s["b_sum"] += r["total"] or 0
+            s["b_days"] += 1
+        elif d in recent_set:
+            s["r_qty"] += r["qty"] or 0
+            s["r_sum"] += r["total"] or 0
+        elif d == today:
+            s["t_qty"] += r["qty"] or 0
+        if (r["qty"] or 0) > 0 and (s["last"] is None or d > s["last"]):
+            s["last"] = d
+
+    nb, nr = len(base_days), len(recent_days)
+    stopped, dropped = [], []
+    for pid, s in stats.items():
+        if s["b_days"] < nb * REGULAR_SHARE:
+            continue
+        b_day_qty = s["b_qty"] / nb
+        if b_day_qty < 1:
+            continue
+        r_day_qty = s["r_qty"] / nr
+        row = {
+            "product_id": pid, "last": s["last"],
+            "before_qty": b_day_qty, "before_sum": s["b_sum"] / nb / 100,
+            "now_qty": r_day_qty, "now_sum": s["r_sum"] / nr / 100,
+            "today_qty": s["t_qty"],
+        }
+        if s["r_qty"] <= 0 and s["t_qty"] <= 0:
+            row["lost"] = row["before_sum"]
+            stopped.append(row)
+        elif b_day_qty >= 2 and r_day_qty <= b_day_qty * Decimal(str(DROP_SHARE)):
+            row["lost"] = row["before_sum"] - row["now_sum"]
+            row["change"] = round(float((r_day_qty - b_day_qty) / b_day_qty * 100))
+            dropped.append(row)
+
+    stopped.sort(key=lambda r: -r["lost"])
+    dropped.sort(key=lambda r: -r["lost"])
+    ids = [r["product_id"] for r in stopped + dropped]
+    products = {p.pk: p for p in Product.objects.filter(pk__in=ids)}
+    codes = main_barcodes(ids)
+    from catalog.models import Stock
+    stock = {
+        r["product_id"]: r["q"]
+        for r in Stock.objects.filter(product_id__in=ids)
+        .values("product_id").annotate(q=Sum("quantity")).order_by()
+    }
+    for r in stopped + dropped:
+        p = products.get(r["product_id"])
+        r.update({
+            "name": p.name if p else "—", "code": (p.code if p else "") or "",
+            "uom": (p.uom_name if p else "") or "", "barcode": codes.get(r["product_id"], ""),
+            "stock": stock.get(r["product_id"]),
+            "before_text": fmt_qty(round(r["before_qty"], 1) if r["before_qty"] % 1 else r["before_qty"]),
+            "now_text": fmt_qty(round(r["now_qty"], 1) if r["now_qty"] % 1 else r["now_qty"]),
+        })
+        r["out"] = r["stock"] is not None and r["stock"] <= 0
+        r["stock_text"] = fmt_qty(r["stock"]) if r["stock"] is not None else "—"
+        r["days_idle"] = (today - r["last"]).days if r["last"] else None
+
+    out.update({
+        "stopped": stopped, "dropped": dropped,
+        "stopped_out": sum(1 for r in stopped if r["out"]),
+        "lost_per_day": sum(r["lost"] for r in stopped + dropped),
+    })
+    cache.set(key, out, FALL_CACHE_TTL)
+    return out
+
+
+def falling_csv(data: dict) -> tuple[str, str]:
+    buf = StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow([f"Tushib ketgan tovarlar — oldin {data['base_start']:%d.%m}–{data['base_end']:%d.%m}, "
+                f"hozir {data['recent_start']:%d.%m}–{data['recent_end']:%d.%m}"])
+    w.writerow(["Holat", "Kodi", "Shtrix kodi", "Nomi", "O'lchov", "Oldin kuniga",
+                "Hozir kuniga", "Bugun", "Oxirgi sotilgan", "Qoldiq", "Yo'qotish kuniga, so'm"])
+    for kind, rows in (("To'xtagan", data["stopped"]), ("Kamaygan", data["dropped"])):
+        for r in rows:
+            w.writerow([
+                kind, _csv_text(r["code"]), _csv_text(r["barcode"]), r["name"], r["uom"],
+                _csv_num(round(r["before_qty"], 2)), _csv_num(round(r["now_qty"], 2)),
+                _csv_num(r["today_qty"]),
+                r["last"].strftime("%d.%m.%Y") if r["last"] else "",
+                "tugagan" if r["out"] else _csv_num(r["stock"]) if r["stock"] is not None else "",
+                f"{r['lost']:.0f}",
+            ])
+    return f"sevimli-tushgan-{data['recent_end']:%Y%m%d}.csv", buf.getvalue()
