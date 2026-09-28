@@ -63,3 +63,56 @@ class ReceiptConcurrencyTest(TransactionTestCase):
         payload = {'kind': 'out', 'amount': 1000000, 'local_uuid': str(uuid.uuid4())}
         self.assertEqual(self.race('/api/v1/cash', [payload, payload], {'HTTP_X_SESSION': token}), [200, 201])
         self.assertEqual(CashOperation.objects.count(), 1)
+
+
+@skipUnless(connection.vendor == 'postgresql', 'Row-lock checks require PostgreSQL')
+class BonusConcurrencyTest(TransactionTestCase):
+    """V05 (audit 2026-09-28): bir mijozning balli ikki kassada BIR VAQTDA sarflanmasin."""
+
+    def setUp(self):
+        super().setUp()
+        self.store = RetailStore.objects.create(ms_id=uuid.uuid4(), name='Audit',
+            organization_ms_id=uuid.uuid4(), store_ms_id=uuid.uuid4())
+        self.register = Register.objects.create(code='audit', name='Audit', store=self.store)
+        self.cash = PaymentMethod.objects.create(code='naqd', name='Naqd', is_cash=True)
+        self.product = Product.objects.create(ms_id=uuid.uuid4(), name='Non', sale_price=300000)
+
+    auth = ApiTestCase.auth
+    post = ApiTestCase.post
+    open_shift = ApiTestCase.open_shift
+    sale_payload = ApiTestCase.sale_payload
+    race = ReceiptConcurrencyTest.race
+
+    def _customer(self, points):
+        from catalog.models import Customer
+        from sales.models import BonusProgram
+        prog = BonusProgram.get()
+        prog.active = True
+        prog.redeem_enabled = True
+        prog.max_redeem_percent = 100
+        prog.save()
+        return Customer.objects.create(ms_id=uuid.uuid4(), name='Parallel', bonus_points=points)
+
+    def _points_sale(self, customer, points):
+        p = self.sale_payload(customer_id=customer.pk, points_spent=points)
+        p['payments'] = [{'method': 'naqd', 'amount': 300000 - points * 100}]
+        return p
+
+    def test_parallel_ball_sarfi_balansdan_oshmaydi(self):
+        self.open_shift()
+        cust = self._customer(1000)
+        # Ikkalasi 700 tadan: birinchisi o'tadi, ikkinchisi «yetarli ball yo'q»
+        codes = self.race('/api/v1/sales', [self._points_sale(cust, 700), self._points_sale(cust, 700)])
+        self.assertEqual(codes, [201, 400])
+        cust.refresh_from_db()
+        self.assertEqual(cust.bonus_points, 1000 - 700 + Sale.objects.get(kind=Sale.SALE).points_earned)
+        self.assertEqual(Sale.objects.count(), 1)
+
+    def test_parallel_ikki_kichik_sarf_ikkalasi_otadi_balans_togri(self):
+        self.open_shift()
+        cust = self._customer(1000)
+        codes = self.race('/api/v1/sales', [self._points_sale(cust, 400), self._points_sale(cust, 400)])
+        self.assertEqual(codes, [201, 201])
+        cust.refresh_from_db()
+        earned = sum(Sale.objects.values_list('points_earned', flat=True))
+        self.assertEqual(cust.bonus_points, 1000 - 800 + earned)
