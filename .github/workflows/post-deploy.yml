@@ -1,0 +1,24 @@
+name: Post-deploy verify
+# Railway deploy'idan KEYIN qo'lda ishga tushiriladi (Actions → Run workflow).
+# Asosiy «Server checks» ichida emas: Railway «Wait for CI» shu testlarni
+# kutadi, bu esa deploy'ni kutadi — birga bo'lsa o'zaro kutish bo'lardi.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Kutilayotgan commit (bo'sh — main HEAD)"
+        required: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.13"
+      - run: python tools/verify_deploy.py
+        env:
+          GITHUB_SHA: ${{ inputs.sha || github.sha }}

@@ -19,6 +19,8 @@ tekshiruv qilinmaydi — ular fleetda qolmagan, lekin qulflanmasin.
 
 from __future__ import annotations
 
+import logging
+
 import base64
 import functools
 import hashlib
@@ -115,6 +117,8 @@ def get_register(request) -> Register | None:
     return None
 
 
+logger = logging.getLogger("api")
+
 DEVICE_HEADER = "X-Device"
 
 
@@ -145,7 +149,19 @@ def _device_guard(register: Register, request):
     """
     device, device_name = device_of(request)
     if not device:
-        return None                      # eski ilova — tekshirmaymiz
+        # Sarlavhasiz so'rov (audit I08). Kassa hali hech bir kompyuterga
+        # biriktirilmagan bo'lsa — bu eski ilova (<=1.15), o'tkazamiz.
+        # Biriktirilgan kassa esa har doim sarlavha yuboradi; lekin 1.18.6
+        # gacha yangilanishni yuklab olish so'rovi sarlavhasiz ketardi.
+        # Shuning uchun bosqichma-bosqich: avval faqat logga yozamiz, hamma
+        # kassa >=1.18.7 bo'lgach DEVICE_HEADER_REQUIRED=1 bilan yopamiz.
+        if register.device:
+            if getattr(settings, "DEVICE_HEADER_REQUIRED", False):
+                return error("Kassa qurilmasi belgisi yo'q. Kassani yangilang.", status=401)
+            logger.warning("Qurilma belgisisiz so'rov: kassa %s, %s %s (versiya %s)",
+                           register.code, request.method, request.path,
+                           (request.headers.get("X-Kassa-Version") or "-")[:32])
+        return None
     if not register.device:
         # Bo'sh bo'lsagina egallaymiz — bir vaqtda kelgan ikki so'rovdan
         # faqat bittasi yutadi, ikkinchisi quyida rad etiladi.

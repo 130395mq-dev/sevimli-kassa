@@ -181,6 +181,10 @@ RECEIPT_WIDTH = int(env("RECEIPT_WIDTH", "48"))
 # holatiga o'tadi va panelda ko'rinadi — bu yerda odam kerak bo'ladi.
 SYNC_MAX_ATTEMPTS = int(env("SYNC_MAX_ATTEMPTS", "12"))
 
+# Audit I08: biriktirilgan kassaga qurilma belgisisiz (X-Device) so'rov.
+# Hozir faqat logga yoziladi. Hamma faol kassa >=1.18.7 bo'lgach "1" qilinadi.
+DEVICE_HEADER_REQUIRED = env_bool("DEVICE_HEADER_REQUIRED", False)
+
 # Manager-only amallarda (kassaga pul kiritish/chiqarish) imzolangan
 # sessiya tokenini MAJBURIY qilish. Barcha kassalar token yuboradigan
 # versiyaga o'tgach `True` qiling — shunda token yo'q so'rov rad etiladi.

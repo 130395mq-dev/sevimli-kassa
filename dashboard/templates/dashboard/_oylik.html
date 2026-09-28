@@ -60,6 +60,7 @@
   </table>
   <div class="sec" style="margin-top: 8px;">
     {% if d.full_n %}Oxirgi {{ d.full_n }} ta to'liq oydan {{ d.ups }} tasida o'sish bo'lgan. {% endif %}
-    Manba: MoySklad, {{ d.fetched_at|date:"d.m H:i" }} holatiga{% if d.stale %} (MoySklad hozir javob bermadi — oxirgi olingan nusxa){% endif %}.
+    Manba: MoySklad «Показатели продаж» — <b>butun tarmoq</b> (barcha nuqta va omborlar,
+    boshqa kassa dasturlari ham); {{ d.fetched_at|date:"d.m H:i" }} holatiga{% if d.stale %} (MoySklad hozir javob bermadi — oxirgi olingan nusxa){% endif %}.
   </div>
 {% endif %}
