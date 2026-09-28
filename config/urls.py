@@ -9,8 +9,8 @@ class ThrottledLoginView(auth_views.LoginView):
     """Panelga kirish — login bo'yicha urinishlar cheklangan (audit I17)."""
 
     def post(self, request, *args, **kwargs):
-        user = (request.POST.get("username") or "").strip().lower()
-        if throttle.blocked("panel", user):
+        user = request.POST.get("username") or ""
+        if throttle.blocked("panel", user, throttle.client_ip(request)):
             form = self.get_form()
             form.add_error(None, throttle.MESSAGE)
             return self.render_to_response(self.get_context_data(form=form), status=429)
@@ -22,7 +22,8 @@ class ThrottledLoginView(auth_views.LoginView):
         return super().form_invalid(form)
 
     def form_valid(self, form):
-        throttle.succeeded("panel", (self.request.POST.get("username") or ""))
+        throttle.succeeded("panel", (self.request.POST.get("username") or ""),
+                           throttle.client_ip(self.request))
         return super().form_valid(form)
 
 

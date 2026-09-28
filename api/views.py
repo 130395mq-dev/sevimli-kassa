@@ -29,7 +29,7 @@ import logging
 import threading
 import uuid
 from datetime import timedelta
-from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -196,7 +196,8 @@ def connect(request):
     password = (data.get("password") or "").strip()
 
     from api import throttle
-    if throttle.blocked("connect", login):
+    ip = throttle.client_ip(request)
+    if throttle.blocked("connect", login, ip):
         return error(throttle.MESSAGE, status=429)
 
     register = Register.objects.filter(
@@ -204,9 +205,9 @@ def connect(request):
     ).select_related("store").first()
 
     if not register or not register.check_password(password):
-        throttle.failed("connect", login, throttle.client_ip(request))
+        throttle.failed("connect", login, ip)
         return error("Login yoki parol noto'g'ri", status=401)
-    throttle.succeeded("connect", login)
+    throttle.succeeded("connect", login, ip)
 
     # Bitta kassa — bitta kompyuter. Login-parol kiritilgan kompyuter shu
     # kassaning kompyuteri bo'ladi. Ilgarigisi (bo'lsa) endi kira olmaydi
@@ -255,7 +256,8 @@ def login(request):
 
     from api import throttle
     ident = f"{reg.pk}:{name}"
-    if throttle.blocked("login", ident):
+    ip = throttle.client_ip(request)
+    if throttle.blocked("login", ident, ip):
         return error(throttle.MESSAGE, status=429)
 
     # 1. Kassaning o'z login-paroli
@@ -265,7 +267,7 @@ def login(request):
         # 2. Eski kassir hisobi (o'tish davri uchun)
         cashier = Cashier.objects.filter(login=name, active=True).first()
         if not cashier or not cashier.check_password(secret):
-            throttle.failed("login", ident, throttle.client_ip(request))
+            throttle.failed("login", ident, ip)
             return error("Login yoki parol noto'g'ri", status=401)
         Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
         allowed = reg.settings.allowed_cashiers
@@ -273,7 +275,7 @@ def login(request):
             return error("Bu kassaga kirishga ruxsat yo'q", status=403)
         who = _cashier_json(cashier)
 
-    throttle.succeeded("login", ident)
+    throttle.succeeded("login", ident, ip)
     return _start_session(request, reg, who)
 
 
@@ -1273,11 +1275,16 @@ def _shift_for_created_at(reg, shift, created):
 def _log_bad_line(local_uuid, pos, raw):
     """Rad etilgan qatorning tafsiloti — keyin sababni aniq topish uchun
     (I01: payload saqlanmagani uchun kassa3 chekining sababini isbotlab
-    bo'lmadi). Maxfiy ma'lumot yo'q: faqat tovar id, miqdor, narx, summa."""
+    bo'lmadi). Faqat shu to'rt maydon: tovar id, miqdor, narx, summa.
+    Token, sessiya, mijoz, telefon, karta, to'lov YOZILMAYDI. Har qiymat
+    repr() — qator ko'chirish logni buzmaydi — va 40 belgigacha qisqartiriladi."""
+    def short(value):
+        return repr(value)[:40]
+
     logger.warning(
-        "Chek %s, %s-qator rad etildi: product_id=%s quantity=%r price=%r total=%r",
-        local_uuid, pos, raw.get("product_id"), raw.get("quantity"),
-        raw.get("price"), raw.get("total"),
+        "Chek %s, %s-qator rad etildi: product_id=%s quantity=%s price=%s total=%s",
+        short(local_uuid), pos, short(raw.get("product_id")), short(raw.get("quantity")),
+        short(raw.get("price")), short(raw.get("total")),
     )
 
 
@@ -1313,69 +1320,90 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
     lines = []
     lines_total = 0
     gross_sum = 0
+    # Qaytarish asl chekka bog'langan bo'lsa, har qatorning pulini
+    # validate_return ANIQ tekshiradi: narx asl qatorniki, miqdor qolganidan
+    # oshmaydi, summa esa asl qatorda to'langan pulning mutanosib qismiga
+    # tiyingacha teng. Narx×miqdor chegarasi u yerda ortiqcha, grammgacha
+    # keltirilgan qatorda esa noto'g'ri (pastdagi PUL QOIDASI'ga qarang).
+    return_with_origin = kind == Sale.RETURN and bool(data.get("origin_id"))
     for pos, raw in enumerate(items, start=1):
         try:
-            qty = Decimal(str(raw.get("quantity", "1")))
+            qty_raw = Decimal(str(raw.get("quantity", "1")))
         except (InvalidOperation, TypeError):
-            raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
-        if not qty.is_finite() or qty <= 0:
-            raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
-        if qty > Decimal("99999999999.999"):
             _log_bad_line(local_uuid, pos, raw)
-            raise ValueError("Miqdor juda katta yoki 3 tadan ko'p kasr xonasi bor")
+            raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
+        if not qty_raw.is_finite() or qty_raw <= 0:
+            _log_bad_line(local_uuid, pos, raw)
+            raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
+        if qty_raw > Decimal("99999999999.999"):
+            _log_bad_line(local_uuid, pos, raw)
+            raise ValueError(f"{pos}-qatorda miqdor juda katta")
 
         price = int(raw.get("price") or 0)
         total = int(raw.get("total") or 0)
         if price < 0 or total < 0:
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda manfiy qiymat")
 
-        # Narxli tarozi yorlig'i (I02, 2026-09-28): eski kassa (<=1.18.6)
-        # miqdorni «yorliq summasi ÷ narx» qilib yuboradi — 0,36499112… kg.
-        # Bazada ham, MoySklad'da ham miqdor 3 xonali (gramm). Miqdorni
-        # grammgacha yaxlitlaymiz, qator summasi esa KASSA OLGAN PUL bo'lib
-        # qoladi (writer MoySklad narxini summaga moslaydi). Ruxsat etilgan
-        # farq — faqat yaxlitlash oralig'i (yarim gramm narxi): undan katta
-        # farq avvalgidek rad etiladi.
-        rounding_tol = 0
-        normalized = qty.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-        if qty != normalized:
-            if normalized <= 0:
-                _log_bad_line(local_uuid, pos, raw)
-                raise ValueError(f"{pos}-qatorda miqdor juda kichik")
-            rounding_tol = int((Decimal(price) * Decimal("0.0005")).to_integral_value(rounding=ROUND_CEILING)) + 1
-            logger.info(
-                "Chek %s, %s-qator: miqdor %s -> %s (narx %s, summa %s)",
-                local_uuid, pos, qty, normalized, price, total,
-            )
-            qty = normalized
-
+        # PUL QOIDASI (audit I02, 2026-09-28) — TOLERANTLIK YO'Q.
+        # Narxli tarozi yorlig'ida eski kassa (<=1.18.6) miqdorni «yorliq
+        # summasi / narx» qilib yuboradi: 1 000 / 3 000 = 0,3333... kg.
+        # 1) Pul KASSA YUBORGAN aniq miqdor bilan tekshiriladi: brutto =
+        #    narx x miqdor (tiyingacha, HALF_UP); qator summasi bruttodan
+        #    oshmaydi; chegirma = brutto - summa (ruxsat va foiz chegarasi
+        #    avvalgidek). Hech qanday qo'shimcha «yarim gramm» chegara yo'q.
+        # 2) Faqat SAQLANADIGAN miqdor grammgacha (0,001) yaxlitlanadi —
+        #    bazada ham, MoySklad'da ham miqdor 3 xonali. Pul o'zgarmaydi.
+        # 3) MoySklad'ga narx «summa / saqlangan miqdor» bo'lib ketadi
+        #    (writer.position_price) — hujjat summasi chekdagi pulga teng.
+        # Oqibat: saqlangan qatorda summa narx x (saqlangan miqdor)dan
+        # ko'pi bilan yarim gramm narxicha farq qiladi — faqat miqdor
+        # ko'rinishida; pul tekshiruvlari 1-banddagi aniq qiymatda o'tgan.
         gross_line = int(
-            (Decimal(price) * qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            (Decimal(price) * qty_raw).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         )
-        if total > gross_line + rounding_tol:
-            raise ValueError(
-                f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
+        qty = qty_raw.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        if qty <= 0:
+            _log_bad_line(local_uuid, pos, raw)
+            raise ValueError(f"{pos}-qatorda miqdor juda kichik (1 grammdan kam)")
+        if qty != qty_raw:
+            logger.info(
+                "Chek %s, %s-qator: miqdor %s -> %s (grammgacha; narx %s, summa %s)",
+                local_uuid, pos, qty_raw, qty, price, total,
             )
+
+        if total > gross_line:
+            if not return_with_origin:
+                _log_bad_line(local_uuid, pos, raw)
+                raise ValueError(
+                    f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
+                )
+            # Asl chekli qaytarish: summa validate_return'da aniq tekshiriladi.
+            gross_line = total
 
         # Chegirma chegarasi — faqat savdoda (qaytarishda tekshirmaymiz).
         # Menejer ruxsati bo'lsa o'tkazamiz.
         if kind == Sale.SALE and not manager_ok and gross_line > 0:
             disc = gross_line - total
-            if rounding_tol and abs(disc) <= rounding_tol:
-                disc = 0      # grammgacha yaxlitlash — chegirma emas
             if disc > 0 and not allow_discount:
+                _log_bad_line(local_uuid, pos, raw)
                 raise ValueError(f"{pos}-qatorda chegirmaga ruxsat yo'q")
             # Chegirma foizi chegaradan oshmasin (1 tiyin yaxlitlash yo'li bilan)
             limit = (Decimal(gross_line) * max_discount / 100)
             if Decimal(disc) - limit > 1:
+                _log_bad_line(local_uuid, pos, raw)
                 raise ValueError(
                     f"{pos}-qatorda chegirma chegaradan oshdi "
                     f"(eng ko'p {max_discount}%)"
                 )
 
         if kind == Sale.SALE and str(local_uuid) not in LEGACY_PRICE_RECOVERY_UUIDS:
-            pricing.validate(raw, shift.register, allowed_types, default_type,
-                             data.get("price_type_id") or "")
+            try:
+                pricing.validate(raw, shift.register, allowed_types, default_type,
+                                 data.get("price_type_id") or "")
+            except ValueError:
+                _log_bad_line(local_uuid, pos, raw)
+                raise
 
         lines_total += total
         gross_sum += gross_line
