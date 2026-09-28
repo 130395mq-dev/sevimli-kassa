@@ -1320,24 +1320,26 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
     lines = []
     lines_total = 0
     gross_sum = 0
-    # Qaytarish asl chekka bog'langan bo'lsa, har qatorning pulini
-    # validate_return ANIQ tekshiradi: narx asl qatorniki, miqdor qolganidan
-    # oshmaydi, summa esa asl qatorda to'langan pulning mutanosib qismiga
-    # tiyingacha teng. Narx×miqdor chegarasi u yerda ortiqcha, grammgacha
-    # keltirilgan qatorda esa noto'g'ri (pastdagi PUL QOIDASI'ga qarang).
-    return_with_origin = kind == Sale.RETURN and bool(data.get("origin_id"))
     for pos, raw in enumerate(items, start=1):
         try:
-            qty_raw = Decimal(str(raw.get("quantity", "1")))
+            qty = Decimal(str(raw.get("quantity", "1")))
         except (InvalidOperation, TypeError):
             _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
-        if not qty_raw.is_finite() or qty_raw <= 0:
+        if not qty.is_finite() or qty <= 0:
             _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
-        if qty_raw > Decimal("99999999999.999"):
+        # Miqdor ko'pi bilan 3 kasr xonasi (gramm) — bazada ham, MoySklad'da
+        # ham shunday. Uzun kasr YAXLITLANMAYDI, RAD etiladi (2026-09-28):
+        # Sevimli'da narxli tarozi yorlig'i ishlatilmaydi, uzun kasr faqat
+        # kassa katalogda yo'q kodni noto'g'ri tovarga «narxli yorliq» qilib
+        # o'qiganda paydo bo'ladi (kassa3, chek 9d957adc: 21… zavod kodi
+        # «колбаса»ga aylangan). Bunday chekni jimgina qabul qilish noto'g'ri
+        # tovarni MoySklad'ga yozib qoldiqni buzardi; rad etilsa — panelda
+        # «tiqilgan» bo'lib ko'rinadi va qo'lda hal qilinadi.
+        if qty > Decimal("99999999999.999") or qty != qty.quantize(Decimal("0.001")):
             _log_bad_line(local_uuid, pos, raw)
-            raise ValueError(f"{pos}-qatorda miqdor juda katta")
+            raise ValueError("Miqdor juda katta yoki 3 tadan ko'p kasr xonasi bor")
 
         price = int(raw.get("price") or 0)
         total = int(raw.get("total") or 0)
@@ -1345,41 +1347,17 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
             _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda manfiy qiymat")
 
-        # PUL QOIDASI (audit I02, 2026-09-28) — TOLERANTLIK YO'Q.
-        # Narxli tarozi yorlig'ida eski kassa (<=1.18.6) miqdorni «yorliq
-        # summasi / narx» qilib yuboradi: 1 000 / 3 000 = 0,3333... kg.
-        # 1) Pul KASSA YUBORGAN aniq miqdor bilan tekshiriladi: brutto =
-        #    narx x miqdor (tiyingacha, HALF_UP); qator summasi bruttodan
-        #    oshmaydi; chegirma = brutto - summa (ruxsat va foiz chegarasi
-        #    avvalgidek). Hech qanday qo'shimcha «yarim gramm» chegara yo'q.
-        # 2) Faqat SAQLANADIGAN miqdor grammgacha (0,001) yaxlitlanadi —
-        #    bazada ham, MoySklad'da ham miqdor 3 xonali. Pul o'zgarmaydi.
-        # 3) MoySklad'ga narx «summa / saqlangan miqdor» bo'lib ketadi
-        #    (writer.position_price) — hujjat summasi chekdagi pulga teng.
-        # Oqibat: saqlangan qatorda summa narx x (saqlangan miqdor)dan
-        # ko'pi bilan yarim gramm narxicha farq qiladi — faqat miqdor
-        # ko'rinishida; pul tekshiruvlari 1-banddagi aniq qiymatda o'tgan.
+        # PUL QOIDASI — tolerantlik yo'q: brutto = narx x miqdor (tiyingacha,
+        # HALF_UP); qator summasi bruttodan oshmaydi; chegirma = brutto - summa
+        # (ruxsat va foiz chegarasi quyida). Chek jami = qatorlar yig'indisi.
         gross_line = int(
-            (Decimal(price) * qty_raw).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            (Decimal(price) * qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         )
-        qty = qty_raw.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
-        if qty <= 0:
-            _log_bad_line(local_uuid, pos, raw)
-            raise ValueError(f"{pos}-qatorda miqdor juda kichik (1 grammdan kam)")
-        if qty != qty_raw:
-            logger.info(
-                "Chek %s, %s-qator: miqdor %s -> %s (grammgacha; narx %s, summa %s)",
-                local_uuid, pos, qty_raw, qty, price, total,
-            )
-
         if total > gross_line:
-            if not return_with_origin:
-                _log_bad_line(local_uuid, pos, raw)
-                raise ValueError(
-                    f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
-                )
-            # Asl chekli qaytarish: summa validate_return'da aniq tekshiriladi.
-            gross_line = total
+            _log_bad_line(local_uuid, pos, raw)
+            raise ValueError(
+                f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
+            )
 
         # Chegirma chegarasi — faqat savdoda (qaytarishda tekshirmaymiz).
         # Menejer ruxsati bo'lsa o'tkazamiz.
