@@ -212,6 +212,7 @@
 
       <div class="sec-card" id="kassa-cheklari">
         <h3>Kassa cheklari</h3>
+        <p class="sec">Fiskal integratsiya hali ulanmagan. Quyidagi talabni yoqish fiskal chek yaratmaydi.</p>
         <label class="chk">
           <input type="checkbox" name="require_fiscal_receipt" {% if st.require_fiscal_receipt %}checked{% endif %}>
           <span>Kassa cheklarini majburiy shakllantirish</span>
@@ -224,6 +225,7 @@
 
       <div class="sec-card" id="tovar-cheklari">
         <h3>Tovar cheklari</h3>
+        <p class="sec">Quyidagi ikkita sozlama kassada hali ishlamaydi. Avtomatik chop etish hozir kassa dasturining o'z sozlamasida boshqariladi.</p>
         <div class="lbl">Tovar chekini avtomatik chop etish</div>
         <label class="chk">
           <input type="checkbox" name="autoprint_nonfiscal" {% if st.autoprint_nonfiscal %}checked{% endif %}>
@@ -283,11 +285,12 @@
           <input type="checkbox" name="orders_enabled" {% if st.orders_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
           Buyurtma va oldindan to'lov
         </h3>
-        <div class="sec">Kassada buyurtma va oldindan to'lov bilan ishlash uchun yoqing</div>
+        <div class="sec">Hozircha kassada ishlamaydi: buyurtma va oldindan to'lov integratsiyasi yakunlanmagan.</div>
       </div>
 
       <div class="sec-card" id="avans">
         <h3>Avans va sertifikatlar</h3>
+        <p class="sec">Hozircha kassada ishlamaydi. Bu belgilar avans yoki sertifikat hisobini yuritishni yoqmaydi.</p>
         <label class="chk">
           <input type="checkbox" name="allow_advances" {% if st.allow_advances %}checked{% endif %}>
           <span>Avans qabul qilish va undan xaridni to'lashga ruxsat</span>
@@ -303,7 +306,7 @@
           <input type="checkbox" name="credit_sales_enabled" {% if st.credit_sales_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
           Qarzga sotish
         </h3>
-        <div class="sec">Kassada qarzga sotishga ruxsat berish uchun yoqing</div>
+        <div class="sec">Hozircha kassada ishlamaydi: qarz savdosi va qarzdorlik hisobi ulanmagan.</div>
       </div>
 
       <div class="sec-card" id="xarajat">
@@ -311,7 +314,7 @@
           <input type="checkbox" name="expense_receipts_enabled" {% if st.expense_receipts_enabled %}checked{% endif %} style="width:18px;height:18px;accent-color:var(--accent);">
           Xarajat cheklari
         </h3>
-        <div class="sec">Kassadan xarajatlarni rasmiylashtirish uchun yoqing</div>
+        <div class="sec">Hozircha kassada xarajat cheklari ishlamaydi. Kassadan pul chiqarish amali alohida boshqariladi.</div>
       </div>
 
       <div class="sec-card" id="hisob">

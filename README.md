@@ -13,8 +13,16 @@ Kassa (Windows)  →  HTTPS API  →  Hub (Django)  →  PostgreSQL / MoySklad
 > aloqa chiroqlari, tiqilgan cheklar, MoySklad sinovi, to'lov turlari,
 > versiya chiqarish, shtrix-kod qoidalari.
 
-**Holat (2026-09): to'liq ishlaydi.** Savdo va qaytarish MoySklad'ga
-yoziladi (jonli hisobda tasdiqlangan), kassalar o'zi yangilanadi.
+**Holat (2026-09-29): savdo tizimi ishlayapti, audit tuzatishlari alohida
+PR'da tekshirilmoqda.** 587 server testi ajratilgan PostgreSQL'da o'tgan;
+POS Windows tekshiruvlari va alohida monoblokda o'rnatish/yangilash/qaytish
+o'tgan. Bu production backupidan tiklash, barcha uskuna holatlari yoki
+bir kunlik pilot tugadi degani emas. Joriy cheklovlar:
+[`docs/READINESS-2026-09-29.md`](docs/READINESS-2026-09-29.md).
+
+Paneldagi buyurtma, avans, sertifikat, qarz, xarajat cheklari va fiskal
+integratsiya tugallanmagan; to'lov turini tanlash bank yoki fiskal tasdiq
+o'rnini bosmaydi. Ishlamaydigan sozlamalar panelda izoh bilan belgilangan.
 
 ---
 
@@ -53,13 +61,18 @@ Chek kelganda API uni **darhol** fon oqimida MoySklad'ga yozadi
 «Qayta yuborish» tugmasi ham bor. `sales-sync` 3 daqiqa jim qolsa hub
 (`sales/healer.py`) cheklarni o'zi yozadi.
 
-Deploy: `SERVERNI-YUKLASH.bat` (GitHub'ga push) → Railway 2–3 daqiqada
-o'zi qayta o'rnatadi. Health check: `/health/`.
+Deploy: tekshirilgan PR main'ga qo'shilgach Railway yangi kodni chiqaradi.
+Oldin CI natijasi, zaxira va qaytish nuqtasi tekshiriladi. Health check:
+`/health/`; deploy tekshiruvi `post-deploy.yml` orqali aniq commit bilan.
+Railway'dagi start command Procfile'ni almashtirishi mumkin — chiqarishdan
+oldin aynan xizmat sozlamasini tekshiring. Yangi `api.0001_initial`
+migratsiyasi login cheklovi uchun jadval yaratadi.
 
 Avto yo'l: egasining kompyuterida `C:\Sevimli\server` papkasi (shu repo)
 har 5 daqiqada `sevimli-kassa-pos` dagi `tools/avto_yuklash.ps1` orqali
-GitHub bilan ikki tomonlama sinxronlanadi (fetch + rebase, keyin push,
-`--force` yo'q). `PortableGit/` va `pgit.exe` `.gitignore` da — git'ning
+GitHub bilan sinxronlanadi. Auditdagi yangi skript faqat `avto/*` branch'ga
+yuboradi; main'ga avtomatik push qilmaydi. Kompyuterga o'rnatilgan eski
+skript ham yangilanganini alohida tekshirish kerak. `PortableGit/` va `pgit.exe` `.gitignore` da — git'ning
 o'zi (~400 MB) repo'ga tushmasligi kerak.
 
 ---
@@ -127,7 +140,7 @@ python manage.py seed_demo                   # FAQAT lokal: o'ylab topilgan smen
 ```bash
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test            # ~320 ta
+python manage.py test            # audit bazasi: 587 test; PostgreSQL talab qilinadi
 python -m shared.test_receipt
 ```
 
