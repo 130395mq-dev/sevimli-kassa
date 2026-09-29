@@ -114,21 +114,8 @@ def position_price(amount: int, quantity: Decimal) -> float:
 
 
 def receipt_description(sale) -> str:
-    """MoySklad hujjati izohi: «Kassa 3 · Shaxar 1 · smena 12 · chek 45».
-
-    Qaytarishda boshida «Qaytarish ·». Faqat kassa/nuqta nomi va raqamlar —
-    mijoz yoki kassir ma'lumoti yozilmaydi.
-    """
-    register = sale.shift.register
-    parts = [register.name]
-    point = (register.point_name or "").strip()
-    if point and point != register.name:
-        parts.append(point)
-    parts.append(f"smena {sale.shift.number}")
-    parts.append(f"chek {sale.number}")
-    if sale.kind == Sale.RETURN:
-        parts.insert(0, "Qaytarish")
-    return " · ".join(p for p in parts if p)[:500]
+    """MoySklad hujjati izohida faqat kassa nomi yoziladi."""
+    return sale.shift.register.name.strip()[:500]
 
 
 def meta(entity_type: str, ms_id) -> dict:
@@ -427,10 +414,7 @@ class SaleWriter:
                     "linkedSum": payment.amount,
                 }
             ],
-            "description": (
-                f"Qaytarish · {payment.method.name} · "
-                f"chek {sale.shift.number}-{sale.number}"
-            ),
+            "description": receipt_description(sale),
         }
 
         if not payment.method.is_cash and payment.method.ms_account_id:
@@ -659,7 +643,7 @@ class SaleWriter:
                     "linkedSum": payment.amount,
                 }
             ],
-            "description": f"{payment.method.name} · chek {sale.shift.number}-{sale.number}",
+            "description": receipt_description(sale),
         }
 
         if not payment.method.is_cash and payment.method.ms_account_id:
