@@ -832,20 +832,60 @@ def catalog_refresh(request):
         try:
             products = sync.sync_products()
             customers = sync.sync_customers()
-            # Qoldiq ham — kirim (приёмка) bo'lganda kassir «Yangilash»
-            # bosib darhol yangi qoldiqni olsin, cron'ni kutmasin.
-            stock = sync.sync_stock()
         except MoySkladError as exc:
             logger.warning("Kassa yangilanishi: MoySklad xatosi: %s", exc)
             return JsonResponse({"ran": False, "reason": "error", "error": str(exc)[:200]})
     finally:
         _refresh_lock.release()
 
+    # Qoldiq ham — kirim (приёмка) bo'lganda kassir «Yangilash» bosib yangi
+    # qoldiqni tezroq olsin. Lekin to'liq qoldiq hisoboti (~70 ming qator)
+    # 5-8 daqiqa oladi, kassa esa 90 soniya kutib uzilardi (2026-09-29
+    # tekshiruvi): kassir shuncha vaqt yangilanish oynasida qolardi. Endi
+    # qoldiq FONDA tortiladi, javob darhol qaytadi; o'zgargan qoldiq
+    # `synced_at` orqali keyingi delta'da kassaga yetadi.
+    stock = "fon" if _start_stock_refresh(token) else "band"
+
     logger.info(
-        "Kassa %s yangilanish so'radi: %s tovar, %s mijoz, %s qoldiq",
+        "Kassa %s yangilanish so'radi: %s tovar, %s mijoz, qoldiq: %s",
         request.register.code, products, customers, stock,
     )
     return JsonResponse({"ran": True, "products": products, "customers": customers, "stock": stock})
+
+
+_stock_refresh_lock = threading.Lock()
+
+
+def _start_stock_refresh(token: str) -> bool:
+    """Qoldiqni fon oqimida tortadi. Shu jarayonda allaqachon tortilayotgan
+    bo'lsa yangisini boshlamaydi (False). Boshqa jarayonlar (cron) bilan
+    to'qnashuvni `catalog:stock` advisory qulfi hal qiladi."""
+    if not _stock_refresh_lock.acquire(blocking=False):
+        return False
+
+    def run():
+        from django.db import connections
+
+        from catalog.sync import CatalogSync
+        from moysklad.client import MoySkladClient
+
+        try:
+            CatalogSync(MoySkladClient(token=token)).sync_stock()
+        except Exception:
+            logger.exception("Fon qoldiq yangilanishi bo'lmadi; cron keyin tortadi")
+        finally:
+            try:
+                connections.close_all()
+            finally:
+                _stock_refresh_lock.release()
+
+    try:
+        threading.Thread(target=run, name="stock-refresh", daemon=True).start()
+    except Exception:
+        _stock_refresh_lock.release()
+        logger.exception("Fon qoldiq oqimi boshlanmadi")
+        return False
+    return True
 
 
 @require_GET

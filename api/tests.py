@@ -376,6 +376,40 @@ class CatalogTest(ApiTestCase):
             r = self.post("/api/v1/catalog/refresh", {})
         self.assertEqual(r.json(), {"ran": False, "reason": "cooldown"})
 
+    def test_refresh_qoldiqni_kutmaydi_fonda_tortadi(self):
+        """Qoldiq hisoboti daqiqalab ketadi — kassa uni kutmasligi kerak
+        (2026-09-29: kassa 90 s kutib uzilardi)."""
+        import threading
+        from unittest import mock
+
+        started, release = threading.Event(), threading.Event()
+
+        def slow_stock(self_):
+            started.set()
+            release.wait(5)
+            return 70000
+
+        with self.settings(MOYSKLAD_TOKEN="x"), \
+                mock.patch("catalog.sync.CatalogSync.sync_products", return_value=3), \
+                mock.patch("catalog.sync.CatalogSync.sync_customers", return_value=1), \
+                mock.patch("catalog.sync.CatalogSync.sync_stock", slow_stock):
+            r = self.post("/api/v1/catalog/refresh", {})
+            # Javob qoldiq tugashini kutmay qaytdi, qoldiq esa fonda boshlandi
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.json(), {"ran": True, "products": 3, "customers": 1, "stock": "fon"})
+            self.assertTrue(started.wait(5))
+            # Fon hali ishlayotganda ikkinchi bosish yangi oqim ochmaydi
+            from api import views
+            self.assertFalse(views._start_stock_refresh("x"))
+            release.set()
+            for _ in range(50):
+                if views._stock_refresh_lock.acquire(blocking=False):
+                    views._stock_refresh_lock.release()
+                    break
+                threading.Event().wait(0.1)
+            else:
+                self.fail("fon qoldiq oqimi tugamadi")
+
 
 class ReconcileTest(TestCase):
     """MoySklad'dan butunlay o'chirilgan tovar lokalda arxivlanadi."""
