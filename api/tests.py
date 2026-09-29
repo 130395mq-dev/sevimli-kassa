@@ -745,6 +745,110 @@ class PriceTypeTest(ApiTestCase):
         self.assertEqual(Sale.objects.get().price_type, "Улугржи нархи")
 
 
+class PanelPriceTransitionTest(PriceTypeTest):
+    def hello(self, **params):
+        return self.client.get("/api/v1/hello", params, **self.auth()).json()
+
+    def panel_price(self, name):
+        settings = self.register.settings
+        settings.price_type = name
+        settings.save(update_fields=["price_type"])
+
+    def receipt(self, price_type, amount):
+        data = self.sale_payload(price_type_id=str(price_type.ms_id))
+        data["items"][0].update(price=amount, total=amount)
+        data["payments"] = [{"method": "naqd", "amount": amount}]
+        return data
+
+    def test_old_outbox_accepted_until_new_policy_ack_then_rejected(self):
+        self.open_shift()
+        self.hello()
+        old_sale = self.receipt(self.chakana, 5500000)
+        self.panel_price(self.ulgurji.name)
+        offered = self.hello()
+        old = self.post("/api/v1/sales", old_sale)
+        self.assertEqual(old.status_code, 201, old.content)
+        self.assertEqual(Sale.objects.get().net_total, 5500000)
+        new = self.post("/api/v1/sales", self.receipt(self.ulgurji, 5200000))
+        self.assertEqual(new.status_code, 201, new.content)
+        self.hello(price_policy_ack=offered["price_policy_revision"], local_pending=0)
+        blocked = self.post("/api/v1/sales", self.receipt(self.chakana, 5500000))
+        self.assertEqual(blocked.status_code, 400)
+        # A retry of an already accepted receipt remains idempotent after the handover.
+        duplicate = self.post("/api/v1/sales", old_sale)
+        self.assertEqual(duplicate.status_code, 200, duplicate.content)
+        self.assertEqual(Sale.objects.count(), 2)
+
+    def test_queue_not_empty_or_stale_ack_cannot_retire_old_type(self):
+        from sales.models import RegisterPricePolicy
+        original = self.hello()
+        self.panel_price(self.ulgurji.name)
+        offered = self.hello()
+        self.hello(price_policy_ack=offered["price_policy_revision"], local_pending=1, local_stuck=1)
+        self.hello(price_policy_ack=original["price_policy_revision"], local_pending=0)
+        state = RegisterPricePolicy.objects.get(register=self.register)
+        self.assertIn(str(self.chakana.ms_id), state.accepted_types)
+        self.assertIn(str(self.ulgurji.ms_id), state.accepted_types)
+
+    def test_a_b_a_change_does_not_accept_old_a_ack(self):
+        from sales.models import RegisterPricePolicy
+        original = self.hello()
+        self.panel_price(self.ulgurji.name)
+        self.hello()
+        self.panel_price(self.chakana.name)
+        latest = self.hello(price_policy_ack=original["price_policy_revision"], local_pending=0)
+        self.assertNotEqual(latest["price_policy_revision"], original["price_policy_revision"])
+        self.assertIn(str(self.ulgurji.ms_id), RegisterPricePolicy.objects.get(register=self.register).accepted_types)
+        self.hello(price_policy_ack=latest["price_policy_revision"], local_pending=0)
+        self.assertEqual(RegisterPricePolicy.objects.get(register=self.register).accepted_types,
+                         [str(self.chakana.ms_id)])
+
+    def test_cashier_cannot_select_unassigned_type_even_with_legacy_flag(self):
+        self.open_shift()
+        settings = self.register.settings
+        settings.allow_price_type_switch = True
+        settings.save()
+        hello = self.hello()
+        self.assertFalse(hello["settings"]["allow_price_type_switch"])
+        denied = self.post("/api/v1/sales", self.receipt(self.ulgurji, 5200000))
+        self.assertEqual(denied.status_code, 400)
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_transition_still_rejects_wrong_amount(self):
+        self.open_shift()
+        self.hello()
+        self.panel_price(self.ulgurji.name)
+        self.hello()
+        denied = self.post("/api/v1/sales", self.receipt(self.chakana, 5200000))
+        self.assertEqual(denied.status_code, 400)
+        self.assertEqual(Sale.objects.count(), 0)
+
+    def test_upgrade_seeds_existing_register_before_first_new_hello(self):
+        from importlib import import_module
+        from types import SimpleNamespace
+        from django.apps import apps
+        from django.db import connection
+        from sales.models import RegisterPricePolicy
+        seed = import_module("sales.migrations.0026_registerpricepolicy").seed_current_prices
+        seed(apps, SimpleNamespace(connection=connection))
+        self.assertEqual(RegisterPricePolicy.objects.get(register=self.register).accepted_types,
+                         [str(self.chakana.ms_id)])
+        self.panel_price(self.ulgurji.name)
+        self.open_shift()
+        old = self.post("/api/v1/sales", self.receipt(self.chakana, 5500000))
+        self.assertEqual(old.status_code, 201, old.content)
+
+    def test_another_register_ack_cannot_close_this_transition(self):
+        from api import pricing
+        from sales.models import RegisterPricePolicy
+        other = Register.objects.create(code="k2", name="Kassa 2", store=self.store)
+        _, _, foreign_revision, _ = pricing.policy_for(other)
+        self.hello()
+        self.panel_price(self.ulgurji.name)
+        self.hello(price_policy_ack=foreign_revision, local_pending=0)
+        self.assertIn(str(self.chakana.ms_id), RegisterPricePolicy.objects.get(register=self.register).accepted_types)
+
+
 class CashierLoginTest(ApiTestCase):
     """Kassir login + parol bilan kiradi; ro'yxat ko'rsatilmaydi."""
 

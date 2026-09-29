@@ -516,31 +516,7 @@ def update_download(request):
 
 
 def _price_types_for(reg, st) -> tuple[list[dict], str]:
-    """Kassa uchun narx turlari ro'yxati va asosiysi (id).
-
-    Asosiy tur tanlanish tartibi: kassa sozlamasidagi nom → savdo
-    nuqtasiga biriktirilgan tur → nomida «чакана/розничная» bo'lgani →
-    birinchisi.
-    """
-    from catalog.models import PriceType
-    from catalog.sync import CatalogSync
-
-    rows = [{"id": str(pt.ms_id).lower(), "name": pt.name} for pt in PriceType.objects.all()]
-    if not rows:
-        return [], ""
-
-    wanted = (st.price_type or "").strip().lower()
-    if wanted:
-        for r in rows:
-            if r["name"].strip().lower() == wanted:
-                return rows, r["id"]
-    store_pt = str(reg.store.price_type_ms_id or "").lower() if reg.store else ""
-    if store_pt and any(r["id"] == store_pt for r in rows):
-        return rows, store_pt
-    for r in rows:
-        if any(w in r["name"].lower() for w in CatalogSync.RETAIL_WORDS):
-            return rows, r["id"]
-    return rows, rows[0]["id"]
+    return pricing.price_types_for(reg, st)
 
 
 @require_GET
@@ -560,7 +536,11 @@ def hello(request):
     shift = reg.shifts.filter(status=Shift.OPEN).first()
     st = reg.settings
 
-    price_types, default_pt = _price_types_for(reg, st)
+    price_types, default_pt, policy_revision, _ = pricing.policy_for(
+        reg, acknowledge=request.GET.get("price_policy_ack", ""),
+        queue_empty=request.GET.get("local_pending") == "0"
+        and request.GET.get("local_stuck", "0") == "0",
+    )
 
     # O'z-o'zini davolash (zaxira yozuvchi / katalog) — kassa har 15
     # soniyada keladi, demak server hech qachon «uxlamaydi». 60 soniyada
@@ -597,6 +577,7 @@ def hello(request):
             # Kassir ruxsat bo'lsa kassada almashtiradi.
             "price_types": price_types,
             "default_price_type": default_pt,
+            "price_policy_revision": policy_revision,
             # Aloqa chiroqlari: server ↔ MoySklad holati. Kassa buni
             # pastki qatorda dumaloq belgi qilib ko'rsatadi (kassa
             # MoySklad'ga o'zi ulanmaydi — serverdan so'raydi).
@@ -1369,7 +1350,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
     # summaga ko'r-ko'rona ishonmaymiz: har qatorda `total` narx×miqdordan
     # (brutto) oshmasligi (chegirma faqat kamaytiradi) va manfiy bo'lmasligi
     # shart. Bu — soxta (shishirilgan yoki manfiy) summani bloklaydi.
-    allowed_types, default_type = _price_types_for(shift.register, rs)
+    allowed_types, default_type, _, accepted_types = pricing.policy_for(shift.register)
     lines = []
     lines_total = 0
     gross_sum = 0
@@ -1431,7 +1412,7 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         if kind == Sale.SALE and str(local_uuid) not in LEGACY_PRICE_RECOVERY_UUIDS:
             try:
                 pricing.validate(raw, shift.register, allowed_types, default_type,
-                                 data.get("price_type_id") or "")
+                                 data.get("price_type_id") or "", accepted_types)
             except ValueError:
                 _log_bad_line(local_uuid, pos, raw)
                 raise

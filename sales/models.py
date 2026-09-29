@@ -255,6 +255,15 @@ class Register(models.Model):
         return obj
 
 
+class RegisterPricePolicy(models.Model):
+    """Panel price transitions stay open until the POS drains its old receipts."""
+
+    register = models.OneToOneField(Register, on_delete=models.CASCADE)
+    target_type = models.CharField(max_length=64, blank=True, default="")
+    revision = models.UUIDField(default=uuid.uuid4)
+    accepted_types = models.JSONField(default=list)
+
+
 class RegisterSettings(models.Model):
     """Bitta kassaning to'liq sozlamasi — MoySklad «Точка продаж» oynasi.
 
@@ -396,7 +405,7 @@ class RegisterSettings(models.Model):
         return {
             "allow_choose_cashier": self.allow_choose_cashier,
             "allow_price_edit": self.allow_price_edit,
-            "allow_price_type_switch": self.allow_price_type_switch,
+            "allow_price_type_switch": False,
             "price_type": self.price_type,
             "allow_delete_line": self.allow_delete_line,
             "allow_discount": self.allow_discount,

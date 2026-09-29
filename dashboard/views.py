@@ -560,7 +560,7 @@ def prices(request):
                 changed += 1
         messages.success(
             request,
-            f"{changed} ta kassaning narxi yangilandi. Kassalar bir daqiqada oladi."
+            f"{changed} ta kassaning narxi saqlandi. Ulangan kassada yangi narx keyingi chekdan qo'llanadi."
             if changed else "O'zgarish yo'q.",
         )
         return redirect("dashboard:prices")
