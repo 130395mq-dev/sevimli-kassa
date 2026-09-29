@@ -86,7 +86,54 @@ LEGACY_PRICE_RECOVERY_UUIDS = frozenset({
 })
 
 
+_push_slots = threading.BoundedSemaphore(4)
+
+
 def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
+    """Wait at most four seconds; durable DB queue survives worker restarts.
+
+    No executor backlog: at most four outbound workers per web process.
+    Saturation returns immediately and the existing sender drains the queue.
+    """
+    if not settings.MOYSKLAD_TOKEN:
+        return None
+    if not _push_slots.acquire(blocking=False):
+        return None
+    ready = threading.Event()
+    result = []
+
+    def run():
+        from django.db import connections
+        try:
+            result.append(_push_sale_now_sync(sale_id, wait=0))
+        except Exception:
+            logger.exception("Chek #%s fon yuborishi to'xtadi; navbatda qoladi", sale_id)
+        finally:
+            try:
+                connections.close_all()
+            finally:
+                _push_slots.release()
+                ready.set()
+
+    try:
+        threading.Thread(target=run, name=f"sale-push-{sale_id}", daemon=True).start()
+    except Exception:
+        _push_slots.release()
+        logger.exception("Chek #%s fon jarayoni boshlanmadi; navbatda qoladi", sale_id)
+        return None
+    ready.wait(timeout=max(0, min(wait, 4.0)))
+    return result[0] if ready.is_set() and result else None
+
+
+def _push_sale_now_sync(sale_id: int, wait: float = 4.0) -> str | None:
+    from config.work_locks import work_lock
+    with work_lock(f"sale:{sale_id}") as acquired:
+        if not acquired:
+            return None
+        return _push_sale_locked(sale_id, wait)
+
+
+def _push_sale_locked(sale_id: int, wait: float) -> str | None:
     """Savdoni MoySklad'ga darhol yozib, uning haqiqiy hujjat raqamini oladi.
 
     Oddiy onlayn holatda kassa shu natijani kutadi, chunki qog'oz chekda
@@ -113,7 +160,6 @@ def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
     if not getattr(s, "MOYSKLAD_TOKEN", ""):
         return None
 
-    from django.db import connection
     from django.utils import timezone as tz
 
     from moysklad.client import MoySkladClient
@@ -164,8 +210,6 @@ def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
     except Exception as e:  # cron baribir qayta urinadi (60 s dan keyin)
         logger.info("Darhol yozilmadi (cron qayta urinadi): %s", e)
         return None
-    finally:
-        connection.close()
 
 PAGE_SIZE = 500
 
@@ -409,9 +453,9 @@ def version(request):
     Manba: panelning «Versiyalar» sahifasi (KassaRelease). U bo'sh bo'lsa —
     Railway'dagi APP_VERSION / APP_DOWNLOAD_URL (eski, zaxira yo'l).
     """
-    from sales.models import KassaRelease
+    from sales.rollout import latest_for, release_allowed
 
-    rel = KassaRelease.latest()
+    rel = latest_for(request.register)
     if rel:
         return JsonResponse({
             "version": rel.version,
@@ -422,6 +466,12 @@ def version(request):
             "mandatory": rel.mandatory,
             "size": rel.size,
             "sha256": rel.sha256,
+        })
+    if not release_allowed(request.register, settings.APP_VERSION):
+        return JsonResponse({
+            "version": request.register.app_version or "0.0.0",
+            "url": "", "notes": "", "mandatory": False,
+            "size": 0, "sha256": "",
         })
     return JsonResponse({
         "version": settings.APP_VERSION,
@@ -440,8 +490,11 @@ def update_download(request):
     from django.http import FileResponse, Http404
 
     from sales.models import KassaRelease
+    from sales.rollout import release_allowed
 
     v = (request.GET.get("v") or "").strip()
+    if not release_allowed(request.register, v):
+        raise Http404("Bu kassa uchun yangilanish ochilmagan")
     rel = KassaRelease.objects.filter(version=v, active=True).first() if v else None
     if not rel or not rel.file:
         raise Http404("Bunday versiya yo'q")

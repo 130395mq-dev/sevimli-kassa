@@ -166,6 +166,12 @@ APP_VERSION = env("APP_VERSION", "1.0.0")
 APP_DOWNLOAD_URL = env("APP_DOWNLOAD_URL", "")
 APP_UPDATE_NOTES = env("APP_UPDATE_NOTES", "")
 
+# Updates stay closed until explicitly enabled. Pilot requires both the exact
+# release version and database register IDs; register names are not identities.
+KASSA_UPDATE_MODE = env("KASSA_UPDATE_MODE", "hold").strip().lower()
+KASSA_UPDATE_VERSION = env("KASSA_UPDATE_VERSION", "").strip()
+KASSA_UPDATE_REGISTER_IDS = env("KASSA_UPDATE_REGISTER_IDS", "").strip()
+
 # Yuklangan exe fayllar shu yerda turadi. Railway'da bu doimiy disk
 # (volume) bo'lishi kerak — aks holda har deploy'da o'chib ketadi.
 MEDIA_ROOT = Path(env("MEDIA_ROOT", str(BASE_DIR / "media")))

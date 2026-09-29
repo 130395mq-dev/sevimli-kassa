@@ -11,7 +11,7 @@ yaratilmasligi kerak, aks holda kunlik savdo ikki barobar chiqib ketadi.
 import json
 import uuid
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from catalog.models import Customer, Product, RetailStore
@@ -622,6 +622,7 @@ class BonusReturnTest(ApiTestCase):
         self.assertEqual(self.cust.bonus_points, 1000)
 
 
+@override_settings(KASSA_UPDATE_MODE="all", KASSA_UPDATE_VERSION="")
 class UpdateTest(ApiTestCase):
     """Kassa ilovasining o'zini yangilashi."""
 
