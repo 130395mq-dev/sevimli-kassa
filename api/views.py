@@ -86,7 +86,54 @@ LEGACY_PRICE_RECOVERY_UUIDS = frozenset({
 })
 
 
+_push_slots = threading.BoundedSemaphore(4)
+
+
 def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
+    """Wait at most four seconds; durable DB queue survives worker restarts.
+
+    No executor backlog: at most four outbound workers per web process.
+    Saturation returns immediately and the existing sender drains the queue.
+    """
+    if not settings.MOYSKLAD_TOKEN:
+        return None
+    if not _push_slots.acquire(blocking=False):
+        return None
+    ready = threading.Event()
+    result = []
+
+    def run():
+        from django.db import connections
+        try:
+            result.append(_push_sale_now_sync(sale_id, wait=0))
+        except Exception:
+            logger.exception("Chek #%s fon yuborishi to'xtadi; navbatda qoladi", sale_id)
+        finally:
+            try:
+                connections.close_all()
+            finally:
+                _push_slots.release()
+                ready.set()
+
+    try:
+        threading.Thread(target=run, name=f"sale-push-{sale_id}", daemon=True).start()
+    except Exception:
+        _push_slots.release()
+        logger.exception("Chek #%s fon jarayoni boshlanmadi; navbatda qoladi", sale_id)
+        return None
+    ready.wait(timeout=max(0, min(wait, 4.0)))
+    return result[0] if ready.is_set() and result else None
+
+
+def _push_sale_now_sync(sale_id: int, wait: float = 4.0) -> str | None:
+    from config.work_locks import work_lock
+    with work_lock(f"sale:{sale_id}") as acquired:
+        if not acquired:
+            return None
+        return _push_sale_locked(sale_id, wait)
+
+
+def _push_sale_locked(sale_id: int, wait: float) -> str | None:
     """Savdoni MoySklad'ga darhol yozib, uning haqiqiy hujjat raqamini oladi.
 
     Oddiy onlayn holatda kassa shu natijani kutadi, chunki qog'oz chekda
@@ -113,7 +160,6 @@ def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
     if not getattr(s, "MOYSKLAD_TOKEN", ""):
         return None
 
-    from django.db import connection
     from django.utils import timezone as tz
 
     from moysklad.client import MoySkladClient
@@ -164,8 +210,6 @@ def _push_sale_now(sale_id: int, wait: float = 4.0) -> str | None:
     except Exception as e:  # cron baribir qayta urinadi (60 s dan keyin)
         logger.info("Darhol yozilmadi (cron qayta urinadi): %s", e)
         return None
-    finally:
-        connection.close()
 
 PAGE_SIZE = 500
 
@@ -195,12 +239,19 @@ def connect(request):
     login = (data.get("login") or "").strip().lower()
     password = (data.get("password") or "").strip()
 
+    from api import throttle
+    ip = throttle.client_ip(request)
+    if throttle.blocked("connect", login, ip):
+        return error(throttle.MESSAGE, status=429)
+
     register = Register.objects.filter(
         login=login, active=True, archived=False
     ).select_related("store").first()
 
     if not register or not register.check_password(password):
+        throttle.failed("connect", login, ip)
         return error("Login yoki parol noto'g'ri", status=401)
+    throttle.succeeded("connect", login, ip)
 
     # Bitta kassa — bitta kompyuter. Login-parol kiritilgan kompyuter shu
     # kassaning kompyuteri bo'ladi. Ilgarigisi (bo'lsa) endi kira olmaydi
@@ -247,6 +298,12 @@ def login(request):
     # Eski kassalar `pin`, yangilari `password` yuboradi
     secret = (data.get("password") or data.get("pin") or "").strip()
 
+    from api import throttle
+    ident = f"{reg.pk}:{name}"
+    ip = throttle.client_ip(request)
+    if throttle.blocked("login", ident, ip):
+        return error(throttle.MESSAGE, status=429)
+
     # 1. Kassaning o'z login-paroli
     if name == (reg.login or "").lower() and reg.check_password(secret):
         who = _own_cashier(reg)
@@ -254,6 +311,7 @@ def login(request):
         # 2. Eski kassir hisobi (o'tish davri uchun)
         cashier = Cashier.objects.filter(login=name, active=True).first()
         if not cashier or not cashier.check_password(secret):
+            throttle.failed("login", ident, ip)
             return error("Login yoki parol noto'g'ri", status=401)
         Cashier.objects.filter(pk=cashier.pk).update(last_login_at=timezone.now())
         allowed = reg.settings.allowed_cashiers
@@ -261,6 +319,7 @@ def login(request):
             return error("Bu kassaga kirishga ruxsat yo'q", status=403)
         who = _cashier_json(cashier)
 
+    throttle.succeeded("login", ident, ip)
     return _start_session(request, reg, who)
 
 
@@ -394,9 +453,9 @@ def version(request):
     Manba: panelning «Versiyalar» sahifasi (KassaRelease). U bo'sh bo'lsa —
     Railway'dagi APP_VERSION / APP_DOWNLOAD_URL (eski, zaxira yo'l).
     """
-    from sales.models import KassaRelease
+    from sales.rollout import latest_for, release_allowed
 
-    rel = KassaRelease.latest()
+    rel = latest_for(request.register)
     if rel:
         return JsonResponse({
             "version": rel.version,
@@ -407,6 +466,12 @@ def version(request):
             "mandatory": rel.mandatory,
             "size": rel.size,
             "sha256": rel.sha256,
+        })
+    if not release_allowed(request.register, settings.APP_VERSION):
+        return JsonResponse({
+            "version": request.register.app_version or "0.0.0",
+            "url": "", "notes": "", "mandatory": False,
+            "size": 0, "sha256": "",
         })
     return JsonResponse({
         "version": settings.APP_VERSION,
@@ -425,8 +490,11 @@ def update_download(request):
     from django.http import FileResponse, Http404
 
     from sales.models import KassaRelease
+    from sales.rollout import release_allowed
 
     v = (request.GET.get("v") or "").strip()
+    if not release_allowed(request.register, v):
+        raise Http404("Bu kassa uchun yangilanish ochilmagan")
     rel = KassaRelease.objects.filter(version=v, active=True).first() if v else None
     if not rel or not rel.file:
         raise Http404("Bunday versiya yo'q")
@@ -1257,6 +1325,22 @@ def _shift_for_created_at(reg, shift, created):
     return open_shift
 
 
+def _log_bad_line(local_uuid, pos, raw):
+    """Rad etilgan qatorning tafsiloti — keyin sababni aniq topish uchun
+    (I01: payload saqlanmagani uchun kassa3 chekining sababini isbotlab
+    bo'lmadi). Faqat shu to'rt maydon: tovar id, miqdor, narx, summa.
+    Token, sessiya, mijoz, telefon, karta, to'lov YOZILMAYDI. Har qiymat
+    repr() — qator ko'chirish logni buzmaydi — va 40 belgigacha qisqartiriladi."""
+    def short(value):
+        return repr(value)[:40]
+
+    logger.warning(
+        "Chek %s, %s-qator rad etildi: product_id=%s quantity=%s price=%s total=%s",
+        short(local_uuid), pos, short(raw.get("product_id")), short(raw.get("quantity")),
+        short(raw.get("price")), short(raw.get("total")),
+    )
+
+
 @transaction.atomic
 def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=False):
     # Smena qatorini bloklaymiz — bir smenaga bir vaqtda kelgan ikki chek
@@ -1293,21 +1377,37 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         try:
             qty = Decimal(str(raw.get("quantity", "1")))
         except (InvalidOperation, TypeError):
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda miqdor noto'g'ri")
         if not qty.is_finite() or qty <= 0:
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda miqdor musbat bo'lishi kerak")
+        # Miqdor ko'pi bilan 3 kasr xonasi (gramm) — bazada ham, MoySklad'da
+        # ham shunday. Uzun kasr YAXLITLANMAYDI, RAD etiladi (2026-09-28):
+        # Sevimli'da narxli tarozi yorlig'i ishlatilmaydi, uzun kasr faqat
+        # kassa katalogda yo'q kodni noto'g'ri tovarga «narxli yorliq» qilib
+        # o'qiganda paydo bo'ladi (kassa3, chek 9d957adc: 21… zavod kodi
+        # «колбаса»ga aylangan). Bunday chekni jimgina qabul qilish noto'g'ri
+        # tovarni MoySklad'ga yozib qoldiqni buzardi; rad etilsa — panelda
+        # «tiqilgan» bo'lib ko'rinadi va qo'lda hal qilinadi.
         if qty > Decimal("99999999999.999") or qty != qty.quantize(Decimal("0.001")):
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError("Miqdor juda katta yoki 3 tadan ko'p kasr xonasi bor")
 
         price = int(raw.get("price") or 0)
         total = int(raw.get("total") or 0)
         if price < 0 or total < 0:
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError(f"{pos}-qatorda manfiy qiymat")
 
+        # PUL QOIDASI — tolerantlik yo'q: brutto = narx x miqdor (tiyingacha,
+        # HALF_UP); qator summasi bruttodan oshmaydi; chegirma = brutto - summa
+        # (ruxsat va foiz chegarasi quyida). Chek jami = qatorlar yig'indisi.
         gross_line = int(
             (Decimal(price) * qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         )
         if total > gross_line:
+            _log_bad_line(local_uuid, pos, raw)
             raise ValueError(
                 f"{pos}-qator summasi narx×miqdordan katta: {total} > {gross_line}"
             )
@@ -1317,18 +1417,24 @@ def _save_sale(shift, data, items, payments, local_uuid, manager_ok=False, late=
         if kind == Sale.SALE and not manager_ok and gross_line > 0:
             disc = gross_line - total
             if disc > 0 and not allow_discount:
+                _log_bad_line(local_uuid, pos, raw)
                 raise ValueError(f"{pos}-qatorda chegirmaga ruxsat yo'q")
             # Chegirma foizi chegaradan oshmasin (1 tiyin yaxlitlash yo'li bilan)
             limit = (Decimal(gross_line) * max_discount / 100)
             if Decimal(disc) - limit > 1:
+                _log_bad_line(local_uuid, pos, raw)
                 raise ValueError(
                     f"{pos}-qatorda chegirma chegaradan oshdi "
                     f"(eng ko'p {max_discount}%)"
                 )
 
         if kind == Sale.SALE and str(local_uuid) not in LEGACY_PRICE_RECOVERY_UUIDS:
-            pricing.validate(raw, shift.register, allowed_types, default_type,
-                             data.get("price_type_id") or "")
+            try:
+                pricing.validate(raw, shift.register, allowed_types, default_type,
+                                 data.get("price_type_id") or "")
+            except ValueError:
+                _log_bad_line(local_uuid, pos, raw)
+                raise
 
         lines_total += total
         gross_sum += gross_line

@@ -23,6 +23,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from moysklad.client import MoySkladClient
+from config.work_locks import work_lock
 
 from .models import Sale
 from .writer import SaleWriter, SumMismatch, WriteError
@@ -43,7 +44,7 @@ def due_queue(now=None, limit: int = 100) -> list[Sale]:
         Sale.objects.filter(sync_status__in=[Sale.NEW, Sale.FAILED])
         .filter(due_filter(now))
         .select_related("shift__register__store", "customer")
-        .order_by("created_at")[:limit]
+        .order_by("created_at", "pk")[:limit]
     )
 
 
@@ -84,7 +85,21 @@ def mark_stuck(sale: Sale, error: str) -> None:
     sale.save(update_fields=["sync_attempts", "sync_error", "sync_status", "next_attempt_at"])
 
 
-def send_one(writer: SaleWriter, sale: Sale) -> tuple[str, str]:
+def send_one(writer: SaleWriter, sale: Sale, *, only_due=False) -> tuple[str, str]:
+    with work_lock(f"sale:{sale.pk}") as acquired:
+        if not acquired:
+            return "skipped", ""
+        sale.refresh_from_db(fields=["sync_status", "sync_attempts", "next_attempt_at",
+                                     "ms_demand_id", "receipt_number"])
+        if sale.sync_status == Sale.SENT:
+            return "sent", ""
+        if only_due and (sale.sync_status not in (Sale.NEW, Sale.FAILED)
+                         or (sale.next_attempt_at and sale.next_attempt_at > timezone.now())):
+            return "skipped", ""
+        return _send_locked(writer, sale)
+
+
+def _send_locked(writer: SaleWriter, sale: Sale) -> tuple[str, str]:
     """Bitta chekni yozadi. Qaytaradi: ("sent"|"failed"|"stuck", xato matni)."""
     try:
         writer.send(sale)
@@ -118,7 +133,9 @@ def send_due(limit: int = 100, writer: SaleWriter | None = None, now=None) -> di
             return result
         writer = SaleWriter(MoySkladClient(token=settings.MOYSKLAD_TOKEN))
     for sale in queue:
-        status, error = send_one(writer, sale)
+        status, error = send_one(writer, sale, only_due=True)
+        if status == "skipped":
+            continue
         result[status] += 1
         if error:
             result["errors"].append((sale, error))

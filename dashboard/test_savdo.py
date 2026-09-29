@@ -449,6 +449,17 @@ class PanelTest(SavdoBase):
         self.assertIn('data-lazy="/oylik/"', html)
         self.assertIn('data-lazy="/tovarlar/tushgan/?qism=1"', html)
 
+    def test_plita_foizi_qaysi_davr_bilan_ekanini_aytadi(self):
+        """I10: grafik «kecha shu vaqtgacha», plita — «kecha, toʻliq kun».
+        Ikki xil foiz bo'lishi mumkin, lekin qaysi davr ekanligi yozilishi shart."""
+        from datetime import timedelta
+        self.sale(self.reg1, self.today, 100_000_00, hour=9)
+        self.sale(self.reg1, self.today - timedelta(days=1), 50_000_00, hour=9)
+        html = unescape(self.client.get("/").content.decode())
+        self.assertIn("(toʻliq kun) bilan solishtirganda", html)
+        self.assertIn("Kecha shu vaqtgacha", html)
+        self.assertNotIn("oldingi davrga nisbatan", html)
+
     def test_savdosiz_kun_sahifani_yiqitmaydi(self):
         """Bo'sh kun — 0 ga bo'lish yoki bo'sh grafik xatosi bo'lmasin."""
         r = self.client.get("/?davr=kecha")

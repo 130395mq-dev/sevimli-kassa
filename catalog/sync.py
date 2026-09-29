@@ -26,6 +26,7 @@ from decimal import Decimal
 from django.utils import timezone as dj_timezone
 
 from moysklad.client import MoySkladClient, MoySkladError
+from config.work_locks import work_lock
 
 from .models import (
     Barcode,
@@ -114,6 +115,13 @@ class CatalogSync:
         state.save()
 
     def _run(self, entity: str, full: bool, worker) -> int:
+        with work_lock(f"catalog:{entity}") as acquired:
+            if not acquired:
+                logger.info("«%s»: boshqa jarayon sinxronlayapti; takrorlanmadi", entity)
+                return 0
+            return self._run_locked(entity, full, worker)
+
+    def _run_locked(self, entity: str, full: bool, worker) -> int:
         """Umumiy o'rov: holatni yangilaydi, xatoni ushlaydi."""
         state = self._state(entity)
         started = dj_timezone.now()

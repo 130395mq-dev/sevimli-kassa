@@ -171,7 +171,7 @@ class PushSaleNowSingleWriterTest(ApiTestCase):
     def test_yozadi_va_raqamni_qaytaradi(self):
         from unittest.mock import patch
         from django.test import override_settings
-        from api.views import _push_sale_now
+        from api.views import _push_sale_now_sync as _push_sale_now
 
         sale = self._new_sale()
         calls = []
@@ -193,7 +193,7 @@ class PushSaleNowSingleWriterTest(ApiTestCase):
     def test_band_qilingan_chek_ikkinchi_marta_yozilmaydi(self):
         from unittest.mock import patch
         from django.test import override_settings
-        from api.views import _push_sale_now
+        from api.views import _push_sale_now_sync as _push_sale_now
 
         sale = self._new_sale()
         # Boshqa so'rov hozir yozyapti: band (next_attempt_at kelajakda)
@@ -215,7 +215,7 @@ class PushSaleNowSingleWriterTest(ApiTestCase):
     def test_xato_bolsa_cron_60s_dan_keyin_oladi(self):
         from unittest.mock import patch
         from django.test import override_settings
-        from api.views import _push_sale_now
+        from api.views import _push_sale_now_sync as _push_sale_now
         from sales.sender import due_exists
 
         sale = self._new_sale()

@@ -117,6 +117,7 @@
     </div>
     {% endlocalize %}
 
+    <div class="sec" style="margin-top: 4px;">Manba: Sevimli Kassa kassalari (server bazasi). Oylik karta esa MoySklad'dagi butun tarmoq savdosi — shuning uchun summalar farq qiladi.</div>
     {% if board.trend.open_hour %}
       <div class="sec" style="margin-top: 4px;">Joriy soat ({{ board.trend.open_hour }}) tugagach grafikka qo'shiladi — uning savdosi yuqoridagi jami summada bor.</div>
     {% endif %}
@@ -234,7 +235,8 @@
         {% if board.summary.delta_total is not None %}
           <span class="delta {% if board.summary.delta_total >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_total }}%</span>
-          oldingi davrga nisbatan
+          {# I10: davr nomi aniq — grafik «kecha shu vaqtgacha», bu esa butun davr #}
+          {{ board.prev_label }}{% if board.trend.live %} (toʻliq kun){% endif %} bilan solishtirganda
         {% else %}oldingi davrda savdo bo'lmagan{% endif %}
       </div>
       <svg class="spark" viewBox="0 0 {{ c.sale_area.w }} {{ c.sale_area.h }}"
@@ -261,7 +263,7 @@
         {% if board.summary.delta_receipts is not None %}
           <span class="delta {% if board.summary.delta_receipts >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_receipts >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_receipts }}%</span>
-          oldingi davrga nisbatan
+          {{ board.prev_label }}{% if board.trend.live %} (toʻliq kun){% endif %} bilan solishtirganda
         {% else %}—{% endif %}
       </div>
       <svg class="sbar info" viewBox="0 0 {{ c.receipt_bars.w }} {{ c.receipt_bars.h }}"
@@ -287,7 +289,7 @@
         {% if board.summary.delta_avg is not None %}
           <span class="delta {% if board.summary.delta_avg >= 0 %}up{% else %}down{% endif %}">
             {% if board.summary.delta_avg >= 0 %}▲{% else %}▼{% endif %} {{ board.summary.delta_avg }}%</span>
-          oldingi davrga nisbatan
+          {{ board.prev_label }}{% if board.trend.live %} (toʻliq kun){% endif %} bilan solishtirganda
         {% else %}so'm{% endif %}
       </div>
       <svg class="spark" viewBox="0 0 {{ c.avg_area.w }} {{ c.avg_area.h }}"

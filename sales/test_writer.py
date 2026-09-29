@@ -156,6 +156,8 @@ class WriterTest(TestCase):
         self.assertTrue(d["applicable"])
         self.assertEqual(len(d["positions"]), 1)
         self.assertEqual(d["positions"][0]["price"], 3_000_00)
+        # Izohda qaysi kassa ekani (MoySklad ro'yxatida ajratib ko'rish uchun)
+        self.assertEqual(d["description"], "Kassa-1 · Namuna filiali · smena 7 · chek 1")
 
         sale.refresh_from_db()
         self.assertIsNotNone(sale.ms_demand_id)
@@ -306,6 +308,8 @@ class WriterTest(TestCase):
         # Qaytarish Отгрузка emas, Возврат yozadi
         self.assertEqual(client.posted("demand"), [])
         self.assertEqual(len(client.posted("salesreturn")), 1)
+        self.assertEqual(client.posted("salesreturn")[0]["description"],
+                         "Qaytarish · Kassa-1 · Namuna filiali · smena 7 · chek 1")
 
     def test_dry_run_hech_narsa_yubormaydi(self):
         sale = self.make_sale(

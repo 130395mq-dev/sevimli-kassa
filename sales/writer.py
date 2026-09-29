@@ -113,6 +113,24 @@ def position_price(amount: int, quantity: Decimal) -> float:
     return price
 
 
+def receipt_description(sale) -> str:
+    """MoySklad hujjati izohi: «Kassa 3 · Shaxar 1 · smena 12 · chek 45».
+
+    Qaytarishda boshida «Qaytarish ·». Faqat kassa/nuqta nomi va raqamlar —
+    mijoz yoki kassir ma'lumoti yozilmaydi.
+    """
+    register = sale.shift.register
+    parts = [register.name]
+    point = (register.point_name or "").strip()
+    if point and point != register.name:
+        parts.append(point)
+    parts.append(f"smena {sale.shift.number}")
+    parts.append(f"chek {sale.number}")
+    if sale.kind == Sale.RETURN:
+        parts.insert(0, "Qaytarish")
+    return " · ".join(p for p in parts if p)[:500]
+
+
 def meta(entity_type: str, ms_id) -> dict:
     """MoySklad havolasi. Hamma bog'lanish shu ko'rinishda bo'ladi."""
     return {
@@ -505,6 +523,10 @@ class SaleWriter:
             # Ombor — kassaga biriktirilgani. Busiz MoySklad tovarni
             # hisobdan chiqarmaydi, ya'ni qoldiq yolg'on bo'lib qoladi.
             "store": meta("store", warehouse_id),
+            # Izoh — qaysi kassaning cheki. MoySklad'da hamma kassaning
+            # Отгрузка/Возврат'lari bitta ro'yxatda ko'rinadi; izohsiz
+            # qaysi kassadan kelgani bilinmasdi (2026-09-28).
+            "description": receipt_description(sale),
         }
 
         return payload
