@@ -32,6 +32,13 @@
         </select>
       </label>
       <label>
+        <span>Sotuv narxi <span class="sec">— chakana yoki ulgurji</span></span>
+        <select name="price_type">
+          <option value="">— savdo nuqtasiniki (odatda chakana) —</option>
+          {% for pt in price_types %}<option value="{{ pt.name }}">{{ pt.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>
         <span>Kassa nomi <span class="sec">— ixtiyoriy</span></span>
         <input name="name" placeholder="bo'sh qoldirsangiz: Kassa-1">
       </label>

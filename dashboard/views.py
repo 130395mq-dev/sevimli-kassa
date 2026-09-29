@@ -319,7 +319,7 @@ def registers(request):
     Kassa ilovasi shu login-parol bilan ulanadi va tokenni o'zi oladi.
     Xodim uzun tokenni ko'rmaydi.
     """
-    from catalog.models import RetailStore, Warehouse
+    from catalog.models import PriceType, RetailStore, Warehouse
     from sales.models import RegisterSettings, new_api_token
 
     if request.method == "POST":
@@ -336,6 +336,12 @@ def registers(request):
             name = (request.POST.get("name") or "").strip()
             login = slugify(request.POST.get("login") or "")
             password = (request.POST.get("password") or "").strip()
+            # Sotuv narxi — kassa ochilayotganda tanlanadi (egasining
+            # so'rovi, 2026-09-29). Bo'sh qoldirilsa «Sotuv narxi» sahifasi
+            # bilan bir xil: savdo nuqtasiniki, bo'lmasa chakana.
+            price_type = PriceType.objects.filter(
+                name=(request.POST.get("price_type") or "").strip()
+            ).first()
 
             if warehouse:
                 if not name:
@@ -371,12 +377,16 @@ def registers(request):
                 RegisterSettings.objects.update_or_create(
                     register=register,
                     defaults={"warehouse_ms_id": warehouse.ms_id,
-                              "warehouse": warehouse.name},
+                              "warehouse": warehouse.name,
+                              "price_type": price_type.name if price_type else "",
+                              # Kassir narxni almashtira olmaydi — faqat panel
+                              "allow_price_type_switch": False},
                 )
                 messages.success(
                     request,
-                    f"{name} tayyor — «{warehouse.name}» omboridan sotadi. "
-                    f"Monoblokda: login «{login}», parol «{password}».",
+                    f"{name} tayyor — «{warehouse.name}» omboridan "
+                    + (f"«{price_type.name}» narxida " if price_type else "")
+                    + f"sotadi. Monoblokda: login «{login}», parol «{password}».",
                 )
 
         elif action == "password":
@@ -520,9 +530,12 @@ def registers(request):
         else:
             r.version_state = "ok"
 
+    from catalog.models import PriceType
+
     return render(request, "dashboard/registers.html", {
         "rows": rows,
         "warehouses": warehouses,
+        "price_types": list(PriceType.objects.all()),
         "latest": latest,
         "show_archived": show_archived,
         "archived_count": archived_count,
@@ -560,7 +573,7 @@ def prices(request):
                 changed += 1
         messages.success(
             request,
-            f"{changed} ta kassaning narxi yangilandi. Kassalar bir daqiqada oladi."
+            f"{changed} ta kassaning narxi saqlandi. Ulangan kassada yangi narx keyingi chekdan qo'llanadi."
             if changed else "O'zgarish yo'q.",
         )
         return redirect("dashboard:prices")
