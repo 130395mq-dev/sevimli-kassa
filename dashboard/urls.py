@@ -18,6 +18,7 @@ urlpatterns = [
     path("chek/<int:pk>/", views.receipt, name="receipt"),
     path("tovarlar/", views.top_products, name="top-products"),
     path("tovarlar/tushgan/", views.falling_products, name="falling-products"),
+    path("tovarlar/kochirish/", views.transfer_advice, name="transfer-advice"),
     path("oylik/", views.monthly, name="monthly"),
     path("narxlar/", views.prices, name="prices"),
     path("tolov-turlari/", views.payment_methods, name="payment-methods"),
