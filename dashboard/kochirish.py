@@ -22,8 +22,11 @@ Qoida (sodda, tushuntirsa bo'ladigan):
   * juftlash — eng tez sotadigan oluvchiga eng ko'p ortig'i bor yuboruvchidan;
     arzimas tavsiya (50 000 so'mdan kam) ko'rsatilmaydi;
   * tartib — ko'chirilsa sotilishi mumkin bo'lgan summa bo'yicha.
-Faqat SAVDO QILADIGAN omborlar (30 kunda savdosi bor) orasida — markaziy
-sklad «yotib qolgan» deb hisoblanmaydi.
+Faqat SAVDO QILADIGAN omborlar orasida: 30 kunlik savdosi umumiy savdoning
+kamida 1 % i bo'lgan omborlar do'kon hisoblanadi. Birinchi jonli hisobda
+(2026-09-30) asosiy sklad 30 kunda 550 000 so'm sotgan (0,006 %) — «> 0»
+qoidasi bilan u do'kon bo'lib qolib, skladdagi tovarlar «yotib qolgan» deb
+chiqqan va do'kondan do'konga tavsiyalarni siqib chiqargan edi.
 
 Himoya: MoySklad sekin — hisob FONDA bajariladi (bitta oqim, kesh-qulf),
 sahifa oxirgi natijani ko'rsatadi, hech qachon MoySklad'ni kutib qolmaydi.
@@ -51,12 +54,13 @@ KEEP_DAYS = 30
 LOW_COVER_DAYS = 7
 TARGET_DAYS = 14
 MIN_VALUE = 50_000 * 100          # tiyin
+MIN_SHARE_PCT = 1                 # do'kon: umumiy savdoning kamida 1 % i
 
 FRESH_TTL = 6 * 60 * 60           # 6 soat
 STALE_TTL = 3 * 24 * 60 * 60      # MoySklad javob bermasa — 3 kungacha eski natija
 LOCK_TTL = 15 * 60
 TIMEOUT = 30
-CACHE_KEY = "kochirish:v1"
+CACHE_KEY = "kochirish:v2"         # v2: sklad chiqarildi — eski natija ishlatilmasin
 PAGE = 1000
 
 _thread_lock = threading.Lock()
@@ -200,6 +204,17 @@ def fetch_sales(client, warehouses: dict, start: date, end: date) -> tuple[dict,
     return out, totals
 
 
+def shop_warehouses(all_wh: dict, totals: dict) -> dict:
+    """Do'kon hisoblanadigan omborlar: 30 kunlik savdosi umumiy savdoning
+    kamida MIN_SHARE_PCT % i. Tasodifiy bitta-ikkita sotuvi bor sklad
+    (masalan, asosiy sklad) do'kon emas."""
+    grand = sum(s for s in totals.values() if s > 0)
+    if grand <= 0:
+        return {}
+    return {wh: name for wh, name in all_wh.items()
+            if totals.get(wh, 0) > 0 and totals.get(wh, 0) * 100 >= grand * MIN_SHARE_PCT}
+
+
 def build(now=None, client=None) -> dict:
     """MoySklad savdosi + bazadagi qoldiq → tavsiyalar (sekin: MoySklad)."""
     from catalog.models import Product, Stock, Warehouse
@@ -209,8 +224,7 @@ def build(now=None, client=None) -> dict:
     start = end - timedelta(days=PERIOD_DAYS - 1)
     all_wh = {str(w.ms_id): w.name for w in Warehouse.objects.filter(archived=False)}
     sales_ms, totals = fetch_sales(client, all_wh, start, end)
-    # Savdo qiladigan omborlar — davrda savdosi borlari
-    shops = {wh: name for wh, name in all_wh.items() if totals.get(wh, 0) > 0}
+    shops = shop_warehouses(all_wh, totals)
 
     by_ms = {str(ms): pk for pk, ms in Product.objects.values_list("pk", "ms_id")}
     sales = {}
@@ -232,7 +246,8 @@ def build(now=None, client=None) -> dict:
     rows = recommend(sales, stock, products, shops)
     logger.info(
         "Ko'chirish tavsiyasi: %s ta; savdo 30 kun (MoySklad): %s",
-        len(rows), ", ".join(f"{shops.get(w) or all_wh.get(w)} {s / 100:.0f}" for w, s in totals.items()),
+        len(rows), ", ".join(f"{all_wh.get(w)} {s / 100:.0f}" + ("" if w in shops else " (do'kon emas)")
+                             for w, s in totals.items()),
     )
     return {"ok": True, "rows": rows, "start": start, "end": end,
             "warehouses": [{"id": w, "name": n, "sum": totals.get(w, 0) / 100}
