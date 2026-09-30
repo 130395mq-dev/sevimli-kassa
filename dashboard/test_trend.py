@@ -201,7 +201,8 @@ class TushganTest(TovarlarBase):
         self.yog = Product.objects.create(ms_id=_uuid(), name="Yog' 1L", code="501", uom_name="dona")
         self.tuz = Product.objects.create(ms_id=_uuid(), name="Tuz", code="502", uom_name="dona")
         self.choy = Product.objects.create(ms_id=_uuid(), name="Choy", code="503", uom_name="dona")
-        store = _uuid()
+        # Qoldiq kassa sotadigan omborda (2026-09-30 dan qoldiq omborma-ombor)
+        store = self.wh1.ms_id
         Stock.objects.create(product=self.yog, store_ms_id=store, quantity=0)
         Stock.objects.create(product=self.tuz, store_ms_id=store, quantity=40)
         t = self.today
@@ -260,3 +261,87 @@ class TushganTest(TovarlarBase):
             part = unescape(c.get("/oylik/").content.decode())
             self.assertIn("Oylar kesimida", part)
             self.assertIn("tokeni sozlanmagan", part)
+
+
+class TushganOmborTest(TovarlarBase):
+    """Tushib ketgan tovarlar omborma-ombor (egasining so'rovi, 2026-09-30):
+    savdo — shu ombordan sotadigan kassalarniki, qoldiq — shu omborniki."""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.yog = Product.objects.create(ms_id=_uuid(), name="Yog' 1L", code="501", uom_name="dona")
+        self.tuz = Product.objects.create(ms_id=_uuid(), name="Tuz", code="502", uom_name="dona")
+        Stock.objects.create(product=self.yog, store_ms_id=self.wh1.ms_id, quantity=0)
+        Stock.objects.create(product=self.yog, store_ms_id=self.wh2.ms_id, quantity=50)
+        Stock.objects.create(product=self.tuz, store_ms_id=self.wh1.ms_id, quantity=10)
+        Stock.objects.create(product=self.tuz, store_ms_id=self.wh2.ms_id, quantity=10)
+        t = self.today
+        for back in range(4, 18):
+            d = t - timedelta(days=back)
+            for reg in (self.reg1, self.reg2):
+                self.receipt(day=d, reg=reg, lines=[(self.yog, 3, 2_000_000, ""),
+                                                    (self.tuz, 6, 300_000, "")])
+        # Oxirgi 3 kun: Chilonzor'da yog' to'xtagan, Yunusobod'da odatdagidek
+        for back in range(1, 4):
+            d = t - timedelta(days=back)
+            self.receipt(day=d, reg=self.reg1, lines=[(self.tuz, 6, 300_000, "")])
+            self.receipt(day=d, reg=self.reg2, lines=[(self.yog, 3, 2_000_000, ""),
+                                                      (self.tuz, 6, 300_000, "")])
+
+    def f(self, ombor):
+        return tovarlar.falling_products(now=_now(self.today, 12), warehouse=ombor)
+
+    def test_ombor_boyicha_toxtagan(self):
+        f = self.f(str(self.wh1.ms_id))
+        self.assertEqual(f["warehouse_name"], "Chilonzor")
+        self.assertEqual([r["name"] for r in f["stopped"]], ["Yog' 1L"])
+        yog = f["stopped"][0]
+        self.assertTrue(yog["out"])                       # Chilonzor'da 0
+        self.assertEqual(yog["elsewhere"], 50)            # Yunusobod'da bor — ko'chirsa bo'ladi
+        self.assertEqual(f["dropped"], [])
+
+    def test_boshqa_omborda_hammasi_joyida(self):
+        f = self.f(str(self.wh2.ms_id))
+        self.assertEqual(f["warehouse_name"], "Yunusobod")
+        self.assertEqual((f["stopped"], f["dropped"]), ([], []))
+
+    def test_hamma_omborlar_birga(self):
+        f = self.f("hammasi")
+        self.assertEqual(f["stopped"], [])                # Yunusobod'da sotilyapti
+        self.assertEqual([r["name"] for r in f["dropped"]], ["Yog' 1L"])
+        yog = f["dropped"][0]
+        self.assertEqual(yog["change"], -50)              # 6 → 3 kuniga
+        self.assertEqual(yog["stock"], 50)                # kassa omborlari yig'indisi
+        self.assertFalse(yog["out"])
+
+    def test_standart_tanlov_va_royxat(self):
+        f = self.f(None)
+        self.assertEqual(f["warehouse"], "hammasi")       # ikki ombor — hammasi
+        self.assertEqual([w["name"] for w in f["warehouses"]],
+                         ["Hamma omborlar", "Chilonzor", "Yunusobod"])
+        self.assertEqual(self.f("yo'q-ombor")["warehouse"], "hammasi")   # noto'g'ri qiymat
+
+    def test_bitta_ombor_bolsa_shu_tanlanadi(self):
+        st = self.reg2.settings
+        st.warehouse_ms_id = self.wh1.ms_id
+        st.save()
+        cache.clear()
+        f = self.f(None)
+        self.assertEqual(f["warehouse"], str(self.wh1.ms_id))
+        self.assertEqual([w["name"] for w in f["warehouses"]], ["Chilonzor"])
+
+    def test_sahifa_va_csv(self):
+        User.objects.create_user("egasi", password="x")
+        c = Client()
+        c.login(username="egasi", password="x")
+        html = unescape(c.get(f"/tovarlar/tushgan/?ombor={self.wh1.ms_id}").content.decode())
+        self.assertIn('name="ombor"', html)
+        self.assertIn("Chilonzor", html)
+        self.assertIn("boshqa omborlarda: 50", html)
+        r = c.get(f"/tovarlar/tushgan/?ombor={self.wh1.ms_id}&format=csv")
+        text = r.content.decode("utf-8")
+        self.assertIn("Chilonzor", text.splitlines()[0])
+        self.assertIn("Boshqa omborlarda", text)
+        part = unescape(c.get(f"/tovarlar/tushgan/?qism=1").content.decode())
+        self.assertIn("Hamma omborlar", part)
