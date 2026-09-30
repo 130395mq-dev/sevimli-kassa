@@ -19,7 +19,7 @@ from io import StringIO
 from django.db.models import Count, Q, Sum
 
 from catalog.models import Barcode, Product
-from sales.models import POINT_TIYIN, BonusEntry, Sale, SaleItem
+from sales.models import POINT_TIYIN, BonusEntry, Register, Sale, SaleItem
 
 from .savdo import PRESETS, _bounds, parse_range, period_label
 
@@ -332,7 +332,7 @@ ACTIVE_DAY_SHARE = 0.3
 FALL_CACHE_TTL = 15 * 60
 
 
-def _active_days(start: date, end: date) -> list[date]:
+def _active_days(start: date, end: date, registers=None) -> list[date]:
     """Oynadagi to'liq ishlagan kunlar (yarim kunlik ishga tushish kunlari
     va savdosiz kunlar hisobdan chiqadi — aks holda hamma tovar «muntazam
     emas» bo'lib qolardi)."""
@@ -340,9 +340,12 @@ def _active_days(start: date, end: date) -> list[date]:
     from django.utils import timezone as tz
 
     a, b = _bounds(start, end)
+    sales = Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+    if registers is not None:
+        sales = sales.filter(shift__register_id__in=registers)
     counts = {
         r["day"]: r["n"]
-        for r in Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+        for r in sales
         .annotate(day=TruncDate("created_at", tzinfo=tz.get_current_timezone()))
         .values("day").annotate(n=Count("id")).order_by()
     }
@@ -352,7 +355,32 @@ def _active_days(start: date, end: date) -> list[date]:
     return sorted(d for d, n in counts.items() if n >= top * ACTIVE_DAY_SHARE)
 
 
-def falling_products(now=None) -> dict:
+ALL_WAREHOUSES = "hammasi"
+
+
+def kassa_warehouses() -> list[dict]:
+    """Kassalar sotadigan omborlar: [{"id", "name", "registers": [pk…]}].
+
+    Egasining so'rovi (2026-09-30): tushib ketgan tovarlar omborma-ombor
+    ko'rinsin — keyin boshqa marketlar ham qo'shiladi. Chek omborni o'zida
+    saqlamaydi, shuning uchun kassa → ombor bog'lanishidan olinadi
+    (arxivlangan kassalar ham: ularning eski savdosi o'z omboriga tushadi).
+    """
+    from catalog.models import Warehouse
+
+    groups: dict[str, list[int]] = {}
+    for reg in Register.objects.select_related("store", "settings_row"):
+        ms = reg.warehouse_ms_id
+        if ms:
+            groups.setdefault(str(ms), []).append(reg.pk)
+    names = {str(w.ms_id): w.name for w in Warehouse.objects.filter(ms_id__in=list(groups))}
+    return sorted(
+        ({"id": k, "name": names.get(k) or "Nomsiz ombor", "registers": v} for k, v in groups.items()),
+        key=lambda w: w["name"].lower(),
+    )
+
+
+def falling_products(now=None, warehouse=None) -> dict:
     """Oldin yaxshi sotilgan, lekin hozir kamaygan yoki umuman to'xtagan tovarlar.
 
     Egasining so'rovi (2026-09-27): «sotilishi yaxshi bo'lib birdan to'xtagan
@@ -364,15 +392,35 @@ def falling_products(now=None) -> dict:
       * TO'XTAGAN — muntazam tovar oxirgi 3 kun va bugun umuman sotilmagan;
       * KAMAYGAN — oxirgi 3 kunda kuniga oldingidan 2 barobar (50%) va
         undan ham kam sotilgan (oldin kuniga kamida 2 dona ketgan bo'lsa).
-    Qoldiq (`catalog.Stock`, hamma omborlar) 0 bo'lsa — «tugagan»: demak
-    sabab talab emas, tovar kelmay qolgan.
+    Qoldiq tanlangan omborniki (`catalog.Stock`); 0 bo'lsa — «tugagan»:
+    demak sabab talab emas, tovar kelmay qolgan. «Boshqa omborlarda» —
+    MoySklad'dagi qolgan omborlar qoldig'i (ko'chirib kelish mumkinmi).
+
+    `warehouse` — ombor ms_id yoki «hammasi». Berilmasa: kassalar bitta
+    omborda bo'lsa — o'sha, bir nechta bo'lsa — hammasi.
     """
     from django.core.cache import cache
     from django.db.models.functions import TruncDate
     from django.utils import timezone as tz
 
     today = tz.localdate(now)
-    key = f"tushgan:v1:{today.isoformat()}:{tz.localtime(now).hour}"
+    warehouses = kassa_warehouses()
+    by_id = {w["id"]: w for w in warehouses}
+    if warehouse not in by_id and warehouse != ALL_WAREHOUSES:
+        warehouse = warehouses[0]["id"] if len(warehouses) == 1 else ALL_WAREHOUSES
+    if warehouse == ALL_WAREHOUSES:
+        registers = None
+        stock_ids = list(by_id)
+        wh_name = "Hamma omborlar"
+    else:
+        registers = by_id[warehouse]["registers"]
+        stock_ids = [warehouse]
+        wh_name = by_id[warehouse]["name"]
+    options = [{"id": w["id"], "name": w["name"]} for w in warehouses]
+    if len(warehouses) > 1:
+        options.insert(0, {"id": ALL_WAREHOUSES, "name": "Hamma omborlar"})
+
+    key = f"tushgan:v2:{warehouse}:{today.isoformat()}:{tz.localtime(now).hour}"
     hit = cache.get(key)
     if hit is not None:
         return hit
@@ -381,10 +429,11 @@ def falling_products(now=None) -> dict:
     recent_end = today - timedelta(days=1)
     base_end = recent_start - timedelta(days=1)
     base_start = base_end - timedelta(days=BASE_DAYS - 1)
-    base_days = _active_days(base_start, base_end)
-    recent_days = _active_days(recent_start, recent_end)
+    base_days = _active_days(base_start, base_end, registers)
+    recent_days = _active_days(recent_start, recent_end, registers)
 
-    out = {"stopped": [], "dropped": [], "base_days": len(base_days),
+    out = {"warehouse": warehouse, "warehouse_name": wh_name, "warehouses": options,
+           "stopped": [], "dropped": [], "base_days": len(base_days),
            "recent_days": len(recent_days), "base_start": base_start,
            "base_end": base_end, "recent_start": recent_start,
            "recent_end": recent_end, "ready": len(base_days) >= 5 and len(recent_days) >= 2}
@@ -394,9 +443,12 @@ def falling_products(now=None) -> dict:
 
     a, _ = _bounds(base_start, base_end)
     _, b = _bounds(today, today)
+    items = SaleItem.objects.filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
+                                    sale__created_at__lt=b, product__isnull=False)
+    if registers is not None:
+        items = items.filter(sale__shift__register_id__in=registers)
     rows = (
-        SaleItem.objects.filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
-                                sale__created_at__lt=b, product__isnull=False)
+        items
         .annotate(day=TruncDate("sale__created_at", tzinfo=tz.get_current_timezone()))
         .values("product_id", "day")
         .annotate(qty=Sum("quantity"), total=Sum("total"))
@@ -450,9 +502,15 @@ def falling_products(now=None) -> dict:
     products = {p.pk: p for p in Product.objects.filter(pk__in=ids)}
     codes = main_barcodes(ids)
     from catalog.models import Stock
+    in_stock = Stock.objects.filter(product_id__in=ids)
     stock = {
         r["product_id"]: r["q"]
-        for r in Stock.objects.filter(product_id__in=ids)
+        for r in in_stock.filter(store_ms_id__in=stock_ids)
+        .values("product_id").annotate(q=Sum("quantity")).order_by()
+    }
+    elsewhere = {
+        r["product_id"]: r["q"]
+        for r in in_stock.exclude(store_ms_id__in=stock_ids)
         .values("product_id").annotate(q=Sum("quantity")).order_by()
     }
     for r in stopped + dropped:
@@ -466,6 +524,9 @@ def falling_products(now=None) -> dict:
         })
         r["out"] = r["stock"] is not None and r["stock"] <= 0
         r["stock_text"] = fmt_qty(r["stock"]) if r["stock"] is not None else "—"
+        other = elsewhere.get(r["product_id"])
+        r["elsewhere"] = other if other and other > 0 else None
+        r["elsewhere_text"] = fmt_qty(other) if r["elsewhere"] else ""
         r["days_idle"] = (today - r["last"]).days if r["last"] else None
 
     out.update({
@@ -480,10 +541,12 @@ def falling_products(now=None) -> dict:
 def falling_csv(data: dict) -> tuple[str, str]:
     buf = StringIO()
     w = csv.writer(buf, delimiter=";")
-    w.writerow([f"Tushib ketgan tovarlar — oldin {data['base_start']:%d.%m}–{data['base_end']:%d.%m}, "
+    w.writerow([f"Tushib ketgan tovarlar — {data['warehouse_name']} — oldin "
+                f"{data['base_start']:%d.%m}–{data['base_end']:%d.%m}, "
                 f"hozir {data['recent_start']:%d.%m}–{data['recent_end']:%d.%m}"])
     w.writerow(["Holat", "Kodi", "Shtrix kodi", "Nomi", "O'lchov", "Oldin kuniga",
-                "Hozir kuniga", "Bugun", "Oxirgi sotilgan", "Qoldiq", "Yo'qotish kuniga, so'm"])
+                "Hozir kuniga", "Bugun", "Oxirgi sotilgan", "Qoldiq",
+                "Boshqa omborlarda", "Yo'qotish kuniga, so'm"])
     for kind, rows in (("To'xtagan", data["stopped"]), ("Kamaygan", data["dropped"])):
         for r in rows:
             w.writerow([
@@ -492,6 +555,7 @@ def falling_csv(data: dict) -> tuple[str, str]:
                 _csv_num(r["today_qty"]),
                 r["last"].strftime("%d.%m.%Y") if r["last"] else "",
                 "tugagan" if r["out"] else _csv_num(r["stock"]) if r["stock"] is not None else "",
+                _csv_num(r["elsewhere"]) if r["elsewhere"] else "",
                 f"{r['lost']:.0f}",
             ])
     return f"sevimli-tushgan-{data['recent_end']:%Y%m%d}.csv", buf.getvalue()
