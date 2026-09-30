@@ -1114,7 +1114,8 @@ def transfer_advice(request):
         "keep": _query_without(request.GET, "format", "yangila"),
         "rules": {"days": kochirish.PERIOD_DAYS, "min_sold": kochirish.MIN_SOLD,
                   "slow": kochirish.SLOW_COVER_DAYS, "low": kochirish.LOW_COVER_DAYS,
-                  "target": kochirish.TARGET_DAYS, "keep": kochirish.KEEP_DAYS},
+                  "target": kochirish.TARGET_DAYS, "keep": kochirish.KEEP_DAYS,
+                  "share": kochirish.MIN_SHARE_PCT},
     })
 
 
