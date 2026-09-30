@@ -3,7 +3,7 @@
   Bosh sahifadagi qisqa karta: tushib ketgan tovarlar (views.falling_products,
   ?qism=1). To'liq ro'yxat — /tovarlar/tushgan/.
 {% endcomment %}
-<h3>Tushib ketgan tovarlar</h3>
+<h3>Tushib ketgan tovarlar{% if f.warehouse_name %} <span class="sec" style="font-weight: 400;">— {{ f.warehouse_name }}</span>{% endif %}</h3>
 {% if not f.ready %}
   <div class="sec" style="margin-top: 8px;">
     Hisoblash uchun kamida 5 kunlik to'liq savdo kerak (hozir {{ f.base_days }} kun bor).
