@@ -1081,8 +1081,8 @@ def top_products(request):
 def falling_products(request):
     """Tushib ketgan tovarlar: oldin muntazam sotilgan, hozir to'xtagan yoki
     keskin kamaygan. ?qism=1 — bosh sahifadagi qisqa karta (keyin yuklanadi),
-    ?format=csv — Excel uchun."""
-    data = tovarlar.falling_products()
+    ?format=csv — Excel uchun, ?ombor=<ms_id>|hammasi — qaysi ombor."""
+    data = tovarlar.falling_products(warehouse=request.GET.get("ombor") or None)
     if request.GET.get("format") == "csv":
         name, text = tovarlar.falling_csv(data)
         resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
