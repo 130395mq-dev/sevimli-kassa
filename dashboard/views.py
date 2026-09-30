@@ -1094,6 +1094,31 @@ def falling_products(request):
 
 
 @login_required
+def transfer_advice(request):
+    """Do'konlar o'rtasida ko'chirish tavsiyasi — faqat aytadi, hech narsa
+    ko'chirmaydi (egasining qarori, 2026-09-30). ?dan=/?ga= — ombor filtri,
+    ?format=csv — Excel, ?yangila=1 — MoySklad'dan qayta hisoblash."""
+    from . import kochirish
+
+    data = kochirish.get(refresh=request.GET.get("yangila") == "1")
+    src, dst = request.GET.get("dan", ""), request.GET.get("ga", "")
+    rows = kochirish.filtered(data, src, dst) if data.get("ok") else []
+    if request.GET.get("format") == "csv" and data.get("ok"):
+        name, text = kochirish.to_csv(data, rows)
+        resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="{name}"'
+        return resp
+    return render(request, "dashboard/kochirish.html", {
+        "k": data, "rows": rows, "src": src, "dst": dst,
+        "total": sum(r["value"] for r in rows),
+        "keep": _query_without(request.GET, "format", "yangila"),
+        "rules": {"days": kochirish.PERIOD_DAYS, "min_sold": kochirish.MIN_SOLD,
+                  "slow": kochirish.SLOW_COVER_DAYS, "low": kochirish.LOW_COVER_DAYS,
+                  "target": kochirish.TARGET_DAYS, "keep": kochirish.KEEP_DAYS},
+    })
+
+
+@login_required
 def monthly(request):
     """Oylar kesimida savdo (MoySklad tarixidan) — bosh sahifa bo'lagi.
 
