@@ -1,0 +1,90 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Ko'chirish tavsiyasi — Sevimli Kassa{% endblock %}
+{% block nav_top %}on{% endblock %}
+{% block crumb %}Top tovarlar · Ko'chirish tavsiyasi{% endblock %}
+
+{% block body %}
+  <h1>Ko'chirish tavsiyasi</h1>
+  <div class="sub">Bir do'konda yotib qolgan, boshqasida esa yaxshi sotilayotgan tovarlar — faqat tavsiya, hech narsa avtomatik ko'chirilmaydi</div>
+
+  <nav class="tabs" aria-label="Tovarlar">
+    <a href="{% url 'dashboard:top-products' %}">Eng ko'p sotilgan</a>
+    <a href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
+    <a class="on" href="{% url 'dashboard:transfer-advice' %}">Ko'chirish tavsiyasi</a>
+  </nav>
+
+  {% if k.loading %}
+    <div class="alert warn"><span>…</span><div>
+      <b>MoySklad'dan hisoblanmoqda.</b> Har do'kon savdosi MoySklad'dan olinadi — bu 1–2 daqiqa oladi.
+      {% if k.ok %}Hozir oldingi hisob ko'rsatilyapti.{% endif %}
+      <a href="{% url 'dashboard:transfer-advice' %}">Sahifani yangilang</a>.
+    </div></div>
+  {% endif %}
+  {% if k.error and not k.ok %}
+    <div class="alert err"><span>✕</span><div><b>Hisoblab bo'lmadi.</b> {{ k.error }}</div></div>
+  {% endif %}
+
+  {% if k.ok %}
+    <form method="get" class="davr">
+      <label>Qayerdan
+        <select name="dan">
+          <option value="">— hamma do'konlar —</option>
+          {% for w in k.warehouses %}<option value="{{ w.id }}" {% if src == w.id %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Qayerga
+        <select name="ga">
+          <option value="">— hamma do'konlar —</option>
+          {% for w in k.warehouses %}<option value="{{ w.id }}" {% if dst == w.id %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="small">Ko'rsatish</button>
+      <a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>
+    </form>
+
+    <div class="card">
+      <div class="kv">
+        <div><div class="k">Savdo davri</div><div class="v">{{ k.start|date:"d.m" }}–{{ k.end|date:"d.m" }} <span class="sec">({{ rules.days }} kun, MoySklad)</span></div></div>
+        <div><div class="k">Tavsiyalar</div><div class="v"><b>{{ rows|length }}</b> ta</div></div>
+        <div><div class="k">Ko'chirilsa sotiladi</div><div class="v num">≈ {{ total|som }} so'm</div></div>
+        <div><div class="k">Hisoblangan</div><div class="v">{{ k.fetched_at|date:"d.m H:i" }}{% if k.stale %} <span class="sec">(eski)</span>{% endif %} <a class="sec" href="?yangila=1">qayta hisoblash</a></div></div>
+      </div>
+      <div class="sec" style="margin-top: 12px;">
+        <b>Yotib qolgan</b> — qoldiq oxirgi {{ rules.days }} kunlik sotuv sur'atida {{ rules.slow }} kundan ko'proqqa yetadi
+        (yoki umuman sotilmagan); u yerda {{ rules.keep }} kunlik savdo qoladi, ortig'i tavsiya qilinadi.
+        <b>Yetmayapti</b> — {{ rules.days }} kunda kamida {{ rules.min_sold }} ta sotilgan, qoldig'i esa {{ rules.low }} kunga ham yetmaydi;
+        unga {{ rules.target }} kunlik savdo yetkaziladi. Summa — ko'chirilgan miqdor sotuv narxida.
+      </div>
+    </div>
+
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="tight">#</th><th class="tight">Kodi</th><th>Nomi</th>
+        <th>Qayerdan <span class="sec">(yotib qolgan)</span></th>
+        <th>Qayerga <span class="sec">(yetmayapti)</span></th>
+        <th class="right">Tavsiya</th><th class="right">Summa</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="num tight">{{ forloop.counter }}</td>
+          <td class="code">{{ r.code|default:"—" }}</td>
+          <td><b>{{ r.name }}</b></td>
+          <td><b>{{ r.from }}</b>
+            <div class="sec">qoldiq {{ r.from_stock|floatformat:"-1" }} · {{ rules.days }} kunda {{ r.from_sold|floatformat:"-1" }} sotildi{% if r.from_cover %} · {{ r.from_cover }} kunga yetadi{% else %} · sotilmayapti{% endif %}</div></td>
+          <td><b>{{ r.to }}</b>
+            <div class="sec">{{ rules.days }} kunda {{ r.to_sold|floatformat:"-1" }} sotildi · qoldiq {{ r.to_stock|floatformat:"-1" }}{% if r.to_stock <= 0 %} <span class="badge err">tugagan</span>{% else %} · {{ r.to_cover }} kunga yetadi{% endif %}</div></td>
+          <td class="right num tight"><b>{{ r.qty|floatformat:"-1" }}</b> <span class="sec">{{ r.uom }}</span>{% if r.sell_days %}<div class="sec">≈ {{ r.sell_days }} kunda sotiladi</div>{% endif %}</td>
+          <td class="right num tight">{{ r.value|som }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">Hozircha tavsiya yo'q — yotib qolgan tovar boshqa do'konda yetishmayotgan holat topilmadi.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  {% endif %}
+{% endblock %}
