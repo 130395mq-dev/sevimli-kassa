@@ -213,3 +213,38 @@ class BuildTest(TestCase):
         self.assertEqual([w["name"] for w in data["warehouses"]], ["Shaxar 1", "Shaxar 3"])  # sklad emas
         self.assertEqual([(r["from"], r["to"], r["qty"]) for r in data["rows"]],
                          [("Shaxar 1", "Shaxar 3", 26)])
+
+
+class ShopTest(TestCase):
+    """Birinchi jonli hisob (2026-09-30): asosiy sklad 30 kunda 550 000 so'm
+    sotgan — u do'kon emas, tavsiyalarda qatnashmasligi kerak."""
+
+    def test_arzimas_savdoli_sklad_dokon_emas(self):
+        wh = {"shaxar": "Sevimli shaxar", "ulg": "Sevimli Ulgurji", "sklad": "Asosiy sklad", "xoj": "Xo'jalik"}
+        totals = {"shaxar": 421_670_898_300, "ulg": 293_116_868_100, "sklad": 55_000_000, "xoj": 0}
+        self.assertEqual(set(kochirish.shop_warehouses(wh, totals)), {"shaxar", "ulg"})
+
+    def test_savdo_yoq(self):
+        self.assertEqual(kochirish.shop_warehouses({"a": "A"}, {"a": 0}), {})
+
+    def test_sklad_tavsiyada_qatnashmaydi(self):
+        import uuid
+
+        from catalog.models import Product, Stock, Warehouse
+
+        w1 = Warehouse.objects.create(ms_id=uuid.uuid4(), name="Shaxar 1")
+        w2 = Warehouse.objects.create(ms_id=uuid.uuid4(), name="Shaxar 3")
+        sk = Warehouse.objects.create(ms_id=uuid.uuid4(), name="Asosiy sklad")
+        p = Product.objects.create(ms_id=uuid.uuid4(), name="Persil 1.5", code="S5101",
+                                   uom_name="шт", sale_price=55_000_00)
+        Stock.objects.create(product=p, store_ms_id=w1.ms_id, quantity=40)
+        Stock.objects.create(product=p, store_ms_id=w2.ms_id, quantity=2)
+        Stock.objects.create(product=p, store_ms_id=sk.ms_id, quantity=900)
+        sales = {(str(w2.ms_id), str(p.ms_id)): Decimal(60)}
+        totals = {str(w1.ms_id): 10_000_000_000, str(w2.ms_id): 20_000_000_000, str(sk.ms_id): 55_000_000}
+        with mock.patch.object(kochirish, "fetch_sales", return_value=(sales, totals)):
+            data = kochirish.build(client=mock.Mock())
+        self.assertEqual([w["name"] for w in data["warehouses"]], ["Shaxar 1", "Shaxar 3"])
+        # sklad birinchi bo'lib tanlanmaydi — tavsiya do'kondan do'konga
+        self.assertEqual([(r["from"], r["to"], r["qty"]) for r in data["rows"]],
+                         [("Shaxar 1", "Shaxar 3", 26)])
