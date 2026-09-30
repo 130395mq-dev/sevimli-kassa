@@ -14,6 +14,18 @@
     <a class="on" href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
   </nav>
 
+  {% if f.warehouses %}
+  <form method="get" class="davr">
+    <label>Ombor
+      <select name="ombor" onchange="this.form.submit()">
+        {% for w in f.warehouses %}<option value="{{ w.id }}" {% if f.warehouse == w.id %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="small">Ko'rsatish</button></noscript>
+    <span class="sec">Savdo — shu ombordan sotadigan kassalarniki, qoldiq — shu omborniki.</span>
+  </form>
+  {% endif %}
+
   {% if not f.ready %}
     <div class="alert warn"><span>!</span><div>
       <b>Hali erta.</b> Solishtirish uchun kamida 5 kunlik to'liq savdo kerak — hozir
@@ -32,8 +44,9 @@
         Muntazam tovar — «oldin» kunlarning kamida yarmida sotilgan va kuniga o'rtacha 1 donadan
         ko'p ketgan tovar. <b>To'xtagan</b> — oxirgi 3 kun va bugun bironta ham sotilmagan.
         <b>Kamaygan</b> — oxirgi 3 kunda kuniga oldingidan 2 barobar va undan ham kam sotilgan.
-        Qoldiq 0 bo'lsa «tugagan» — demak tovar kelmay qolgan, talab emas.
-        <a href="?format=csv">⤓ Excel (CSV)</a>
+        Qoldiq — <b>{{ f.warehouse_name }}</b> bo'yicha; 0 bo'lsa «tugagan» — demak tovar kelmay
+        qolgan, talab emas. «Boshqa omborlarda» — ko'chirib keltirish mumkin bo'lgan qoldiq.
+        <a href="?ombor={{ f.warehouse|urlencode }}&amp;format=csv">⤓ Excel (CSV)</a>
       </div>
     </div>
 
@@ -54,7 +67,7 @@
           <td><b>{{ r.name }}</b></td>
           <td class="right num tight">{{ r.before_text }} <span class="sec">{{ r.uom }}</span></td>
           <td class="right num tight">{% if r.last %}{{ r.last|date:"d.m" }} <span class="sec">({{ r.days_idle }} kun)</span>{% else %}—{% endif %}</td>
-          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}{% if r.elsewhere %}<div class="sec">boshqa omborlarda: {{ r.elsewhere_text }}</div>{% endif %}</td>
           <td class="right num tight">{{ r.lost|som }}</td>
         </tr>
       {% empty %}
@@ -83,7 +96,7 @@
           <td class="right num tight">{{ r.now_text }}</td>
           <td class="right num tight"><span class="minus">{{ r.change }}%</span></td>
           <td class="right num tight">{{ r.today_qty|floatformat:"-3" }}</td>
-          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}</td>
+          <td class="right num tight">{% if r.out %}<span class="badge err">tugagan</span>{% else %}{{ r.stock_text }}{% endif %}{% if r.elsewhere %}<div class="sec">boshqa omborlarda: {{ r.elsewhere_text }}</div>{% endif %}</td>
           <td class="right num tight">{{ r.lost|som }}</td>
         </tr>
       {% empty %}
