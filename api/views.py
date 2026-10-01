@@ -1283,6 +1283,11 @@ def create_sale(request):
     if not shift:
         return error("Ochiq smena yo'q", status=409)
 
+    # Bir martalik tuzatish (api/corrections.py): faqat ro'yxatdagi aniq
+    # chek va faqat qator aynan kutilgandek bo'lsa. Boshqa cheklarga tegmaydi.
+    from . import corrections
+    corrections.apply(local_uuid, data)
+
     items = data.get("items") or []
     if not items:
         return error("Chek bo'sh")
