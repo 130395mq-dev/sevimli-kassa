@@ -42,7 +42,7 @@ from decimal import ROUND_DOWN, Decimal
 from io import StringIO
 
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ MIN_VALUE = 50_000 * 100          # tiyin
 MIN_SHARE_PCT = 1                 # do'kon: umumiy savdoning kamida 1 % i
 
 FRESH_TTL = 6 * 60 * 60           # 6 soat
-STALE_TTL = 3 * 24 * 60 * 60      # MoySklad javob bermasa — 3 kungacha eski natija
+STALE_TTL = 7 * 24 * 60 * 60      # oxirgi tayyor natija — yangisi tayyorlanguncha ko'rsatiladi
 LOCK_TTL = 15 * 60
 TIMEOUT = 30
 CACHE_KEY = "kochirish:v2"         # v2: sklad chiqarildi — eski natija ishlatilmasin
@@ -204,6 +204,13 @@ def fetch_sales(client, warehouses: dict, start: date, end: date) -> tuple[dict,
     return out, totals
 
 
+def _cache():
+    """Umumiy kesh (bazada): 4 ta ishchi bitta natijani ko'radi, deploydan
+    keyin ham saqlanadi. Ilgari har ishchi o'z xotirasida hisoblardi —
+    sahifa tez-tez «hisoblanmoqda» ko'rsatardi (2026-10-01)."""
+    return caches["shared"]
+
+
 def shop_warehouses(all_wh: dict, totals: dict) -> dict:
     """Do'kon hisoblanadigan omborlar: 30 kunlik savdosi umumiy savdoning
     kamida MIN_SHARE_PCT % i. Tasodifiy bitta-ikkita sotuvi bor sklad
@@ -262,13 +269,13 @@ def _run(token: str, key: str) -> None:
 
     try:
         data = build(client=MoySkladClient(token=token, timeout=TIMEOUT))
-        cache.set(key, data, FRESH_TTL)
-        cache.set(f"{CACHE_KEY}:stale", {**data, "stale": True}, STALE_TTL)
+        _cache().set(key, data, FRESH_TTL)
+        _cache().set(f"{CACHE_KEY}:stale", {**data, "stale": True}, STALE_TTL)
     except Exception as exc:  # noqa: BLE001 — fon oqimi yiqilmasin
         logger.warning("Ko'chirish tavsiyasi hisoblanmadi: %s", exc)
-        cache.set(f"{CACHE_KEY}:error", str(exc)[:200], 10 * 60)
+        _cache().set(f"{CACHE_KEY}:error", str(exc)[:200], 10 * 60)
     finally:
-        cache.delete(f"{CACHE_KEY}:lock")
+        _cache().delete(f"{CACHE_KEY}:lock")
         _thread_lock.release()
         connections.close_all()
 
@@ -278,6 +285,7 @@ def get(now=None, refresh=False) -> dict:
     natijani (yoki «hisoblanmoqda») qaytaradi. Hech qachon kutmaydi."""
     today = timezone.localdate(now)
     key = f"{CACHE_KEY}:{today.isoformat()}"
+    cache = _cache()
     fresh = None if refresh else cache.get(key)
     if fresh:
         return fresh
