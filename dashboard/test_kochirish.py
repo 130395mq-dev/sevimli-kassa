@@ -9,7 +9,7 @@ from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth.models import User
-from django.core.cache import cache
+from django.core.cache import caches
 from django.test import Client, TestCase, override_settings
 
 from dashboard import kochirish
@@ -128,9 +128,16 @@ SAMPLE = {
 }
 
 
+LOCAL_CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "shared": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "shared-test"},
+}
+
+
+@override_settings(CACHES=LOCAL_CACHES)
 class GetTest(TestCase):
     def setUp(self):
-        cache.clear()
+        caches["shared"].clear()
 
     @override_settings(MOYSKLAD_TOKEN="")
     def test_tokensiz(self):
@@ -184,6 +191,42 @@ class PageTest(TestCase):
         with mock.patch.object(kochirish, "get", return_value={"ok": False, "loading": True}):
             html = self.c.get("/tovarlar/kochirish/").content.decode()
         self.assertIn("hisoblanmoqda", html)
+
+    def test_hisoblanayotgani_korinadi_va_sahifa_ozi_yangilanadi(self):
+        """2026-10-04: «birdan ko'rsatmayapti, yuklanayotgani bilinmaydi» —
+        aylanuvchi belgi, o'tgan vaqt va o'zi yangilanish; hech narsa bosilmaydi."""
+        with mock.patch.object(kochirish, "get", return_value={"ok": False, "loading": True}):
+            html = self.c.get("/tovarlar/kochirish/?yangila=1").content.decode()
+        self.assertIn("data-kochirish-loading", html)
+        self.assertIn('class="aylana"', html)
+        self.assertIn("data-otgan", html)
+        self.assertIn("o'zi ochiladi", html)
+        self.assertNotIn("Sahifani yangilang", html)
+        self.assertIn("setTimeout(tekshir, 5000)", html)
+        # Tekshiruv «yangila=1» siz ketadi — aks holda hisob har 5 soniyada qaytadan boshlanardi
+        self.assertIn('searchParams.delete("yangila")', html)
+
+    def test_tayyor_sahifada_yuklanish_belgisi_ham_skript_ham_yoq(self):
+        # Belgi tayyor sahifada bir marta ham uchramasligi shart: skript aynan
+        # shu so'z yo'qolganini ko'rib sahifani ochadi.
+        with mock.patch.object(kochirish, "get", return_value=SAMPLE):
+            html = self.c.get("/tovarlar/kochirish/").content.decode()
+        self.assertIn("Persil 1.5", html)
+        self.assertNotIn("data-kochirish-loading", html)
+        self.assertNotIn("setTimeout(tekshir", html)
+
+    def test_eski_natija_ustida_yangisi_tayyorlanayotgani_korinadi(self):
+        with mock.patch.object(kochirish, "get", return_value={**SAMPLE, "loading": True, "stale": True}):
+            html = self.c.get("/tovarlar/kochirish/").content.decode()
+        self.assertIn("Persil 1.5", html)
+        self.assertIn('class="aylana kichik"', html)
+        self.assertIn("setTimeout(tekshir, 5000)", html)
+
+    def test_xato_bolsa_yuklanish_belgisi_yoq(self):
+        with mock.patch.object(kochirish, "get", return_value={"ok": False, "loading": False, "error": "MoySklad javob bermadi"}):
+            html = self.c.get("/tovarlar/kochirish/").content.decode()
+        self.assertIn("Hisoblab bo'lmadi", html)
+        self.assertNotIn("data-kochirish-loading", html)
 
     def test_tovarlar_sahifasida_yorliq(self):
         html = self.c.get("/tovarlar/").content.decode()
@@ -248,3 +291,67 @@ class ShopTest(TestCase):
         # sklad birinchi bo'lib tanlanmaydi — tavsiya do'kondan do'konga
         self.assertEqual([(r["from"], r["to"], r["qty"]) for r in data["rows"]],
                          [("Shaxar 1", "Shaxar 3", 26)])
+
+
+@override_settings(CACHES=LOCAL_CACHES)
+class SharedCacheTest(TestCase):
+    """2026-10-01: sahifa har safar «hisoblanmoqda» ko'rsatardi — natija har
+    ishchining o'z xotirasida edi (4 ta ishchi) va deployda o'chardi."""
+
+    def setUp(self):
+        caches["shared"].clear()
+        caches["default"].clear()
+
+    @override_settings(MOYSKLAD_TOKEN="x")
+    def test_natija_umumiy_keshdan_darhol(self):
+        today = kochirish.timezone.localdate()
+        caches["shared"].set(f"{kochirish.CACHE_KEY}:{today.isoformat()}", SAMPLE, 60)
+        with mock.patch.object(kochirish, "build") as build:
+            data = kochirish.get()
+        build.assert_not_called()
+        self.assertTrue(data["ok"])
+        self.assertNotIn("loading", data)
+
+    @override_settings(MOYSKLAD_TOKEN="x")
+    def test_yangi_kunda_eskisi_darhol_yangisi_fonda(self):
+        caches["shared"].set(f"{kochirish.CACHE_KEY}:stale", {**SAMPLE, "stale": True}, 60)
+        done = threading.Event()
+
+        def fake_build(now=None, client=None):
+            done.set()
+            return SAMPLE
+
+        with mock.patch.object(kochirish, "build", fake_build):
+            data = kochirish.get()
+            self.assertTrue(done.wait(5))
+            for _ in range(50):                          # fon oqimi tugasin
+                if kochirish._thread_lock.acquire(blocking=False):
+                    kochirish._thread_lock.release()
+                    break
+                threading.Event().wait(0.1)
+        self.assertTrue(data["ok"])                      # eski natija bor — bo'sh sahifa emas
+        self.assertTrue(data["loading"])
+        self.assertEqual(len(data["rows"]), 1)
+
+    def test_sahifada_katta_ogohlantirish_yoq_kichik_yozuv_bor(self):
+        User.objects.create_user("egasi", password="x")
+        c = Client()
+        c.login(username="egasi", password="x")
+        with mock.patch.object(kochirish, "get", return_value={**SAMPLE, "loading": True, "stale": True}):
+            html = c.get("/tovarlar/kochirish/").content.decode()
+        self.assertIn("Persil 1.5", html)
+        self.assertIn("yangisi tayyorlanmoqda", html)
+        self.assertNotIn("MoySklad'dan hisoblanmoqda", html)
+
+
+class RealSharedCacheTest(TestCase):
+    """Haqiqiy sozlama: shared — bazadagi kesh, jadval migratsiyada yaratilgan."""
+
+    def test_baza_keshi_ishlaydi(self):
+        from django.conf import settings
+
+        self.assertEqual(settings.CACHES["shared"]["BACKEND"],
+                         "django.core.cache.backends.db.DatabaseCache")
+        caches["shared"].set("sinov:kalit", {"a": 1}, 60)
+        self.assertEqual(caches["shared"].get("sinov:kalit"), {"a": 1})
+        self.assertIs(kochirish._cache(), caches["shared"])
