@@ -120,6 +120,23 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# ------------------------------------------------------------------- kesh
+#
+# default — har jarayonning o'z xotirasi (oldingidek; kassa yo'llari shunga
+# tayanadi, o'zgartirilmaydi). shared — bazadagi umumiy kesh: 4 ta gunicorn
+# ishchisi bitta natijani ko'radi va u deploydan keyin ham saqlanadi. Panelning
+# sekin MoySklad hisoblari uchun (ko'chirish tavsiyasi, 2026-10-01): ilgari har
+# ishchi o'zi hisoblardi va sahifa tez-tez «hisoblanmoqda» ko'rsatardi.
+# Jadval sales/0027 migratsiyasida yaratiladi.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "shared": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "panel_cache",
+        "OPTIONS": {"MAX_ENTRIES": 2000},
+    },
+}
+
 # ------------------------------------------------------------------ statik
 
 STATIC_URL = "/static/"
