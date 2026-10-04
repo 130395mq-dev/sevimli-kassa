@@ -1,0 +1,108 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Tugayotgan tovarlar — Sevimli Kassa{% endblock %}
+{% block nav_top %}on{% endblock %}
+{% block crumb %}Top tovarlar · Tugayotganlar{% endblock %}
+
+{% block body %}
+  <h1>Tugayotgan va tugagan tovarlar</h1>
+  <div class="sub">Yaxshi sotiladigan, lekin qoldig'i kam qolgan yoki tugagan tovarlar — buyurtma berish yoki skladdan keltirish kerak</div>
+
+  <nav class="tabs" aria-label="Tovarlar">
+    <a href="{% url 'dashboard:top-products' %}">Eng ko'p sotilgan</a>
+    <a href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
+    <a class="on" href="{% url 'dashboard:running-out' %}">Tugayotganlar</a>
+    <a href="{% url 'dashboard:transfer-advice' %}">Ko'chirish tavsiyasi</a>
+  </nav>
+
+  {% if k.loading and not ready %}
+    <div class="alert warn" data-kochirish-loading role="status"><span><i class="aylana" aria-hidden="true"></i></span><div>
+      <b>MoySklad'dan hisoblanmoqda…</b> <span class="sec" data-otgan></span><br>
+      Har do'kon savdosi MoySklad'dan olinadi — bu bir necha daqiqa oladi.
+      Sahifa tayyor bo'lgach <b>o'zi ochiladi</b>, hech narsa bosish shart emas.
+    </div></div>
+  {% endif %}
+  {% if k.error and not ready %}
+    <div class="alert err"><span>✕</span><div><b>Hisoblab bo'lmadi.</b> {{ k.error }}</div></div>
+  {% endif %}
+
+  {% if ready %}
+    <form method="get" class="davr">
+      <label>Do'kon
+        <select name="dokon">
+          <option value="">— hamma do'konlar —</option>
+          {% for w in k.warehouses %}<option value="{{ w.id }}" {% if shop == w.id %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Holat
+        <select name="holat">
+          <option value="">— hammasi —</option>
+          <option value="out" {% if state == "out" %}selected{% endif %}>Tugagan</option>
+          <option value="low" {% if state == "low" %}selected{% endif %}>Kam qolgan</option>
+        </select>
+      </label>
+      <label>Qidirish
+        <input type="search" name="q" value="{{ query }}" placeholder="nomi yoki kodi" style="padding: 6px 10px; font-size: 13px; margin: 0;">
+      </label>
+      <button type="submit" class="small">Ko'rsatish</button>
+      <a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>
+    </form>
+
+    <div class="card">
+      <div class="kv">
+        <div><div class="k">Savdo davri</div><div class="v">{{ k.start|date:"d.m" }}–{{ k.end|date:"d.m" }} <span class="sec">({{ rules.days }} kun, MoySklad)</span></div></div>
+        <div><div class="k">Tugagan</div><div class="v"><b class="minus">{{ out_count }}</b> ta</div></div>
+        <div><div class="k">Kam qolgan</div><div class="v"><b>{{ low_count }}</b> ta</div></div>
+        <div><div class="k">Tugaganlar savdosi</div><div class="v num">≈ {{ lost|som }} so'm/kun</div></div>
+        <div><div class="k">Hisoblangan</div><div class="v">{{ k.fetched_at|date:"d.m H:i" }}{% if k.loading %} <span class="sec" data-kochirish-loading role="status">· <i class="aylana kichik" aria-hidden="true"></i> yangisi tayyorlanmoqda</span>{% elif k.stale %} <span class="sec">(eski)</span>{% endif %} <a class="sec" href="?yangila=1">qayta hisoblash</a></div></div>
+      </div>
+      <div class="sec" style="margin-top: 12px;">
+        <b>Yaxshi sotiladi</b> — shu do'konda {{ rules.days }} kunda kamida {{ rules.min_sold }} ta sotilgan.
+        <b>Tugagan</b> — do'konda qoldiq 0. <b>Kam qolgan</b> — qoldiq hozirgi sur'atda {{ rules.low }} kunga ham yetmaydi.
+        <b>Kerak</b> — {{ rules.target }} kunlik savdoga yetishi uchun keltirish kerak bo'lgan miqdor.
+        <b>Boshqa joyda</b> — shu tovarning boshqa omborlardagi qoldig'i: bor bo'lsa keltirish mumkin, yo'q bo'lsa buyurtma kerak.
+        «Tugaganlar savdosi» — tugagan tovarlar odatda kuniga shuncha sotilardi.
+        Qoldiq — MoySklad hisobidagi; hisobda bor, javonda yo'q tovar bu ro'yxatda chiqmaydi.
+      </div>
+    </div>
+
+    <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="tight">#</th><th class="tight">Kodi</th><th>Nomi</th><th>Do'kon</th>
+        <th class="right">{{ rules.days }} kunda sotildi</th>
+        <th class="right">Qoldiq</th>
+        <th>Boshqa joyda</th>
+        <th class="right">Kerak</th>
+        <th class="right">Kunlik savdo</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="num tight">{{ forloop.counter }}</td>
+          <td class="code">{{ r.code|default:"—" }}</td>
+          <td><b>{{ r.name }}</b></td>
+          <td>{{ r.wh }}</td>
+          <td class="right num tight">{{ r.sold|floatformat:"-1" }} <span class="sec">{{ r.uom }}</span>
+            <div class="sec">kuniga {{ r.rate|floatformat:"-1" }}</div></td>
+          <td class="right num tight">{% if r.state == "out" %}<span class="badge err">tugagan</span>{% if r.stock < 0 %}<div class="sec">hisobda {{ r.stock|floatformat:"-1" }}</div>{% endif %}{% else %}<b>{{ r.stock|floatformat:"-1" }}</b>
+            <div class="sec">{{ r.days|floatformat:"-1" }} kunga yetadi</div>{% endif %}</td>
+          <td>{% for e in r.elsewhere %}<div>{{ e.name }}: <b>{{ e.qty|floatformat:"-1" }}</b></div>{% empty %}<span class="sec">yo'q — buyurtma kerak</span>{% endfor %}</td>
+          <td class="right num tight"><b>{{ r.need|floatformat:"-1" }}</b> <span class="sec">{{ r.uom }}</span></td>
+          <td class="right num tight">{{ r.per_day|som }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="9" class="empty">Bunday tovar topilmadi — yaxshi sotiladigan tovarlarning qoldig'i yetarli.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if hidden %}
+      <div class="sec" style="margin-top: 10px;">Yana {{ hidden }} ta tovar ko'rsatilmadi (jami {{ total }}). Hammasi —
+        <a href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">Excel (CSV) faylida</a>; yoki do'kon / holat bo'yicha toraytiring.</div>
+    {% endif %}
+  {% endif %}
+
+  {% if k.loading %}{% include "dashboard/_fon_hisob.html" %}{% endif %}
+{% endblock %}
