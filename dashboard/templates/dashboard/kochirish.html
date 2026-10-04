@@ -15,11 +15,11 @@
     <a class="on" href="{% url 'dashboard:transfer-advice' %}">Ko'chirish tavsiyasi</a>
   </nav>
 
-  {% if k.loading %}
-    <div class="alert warn"><span>…</span><div>
-      <b>MoySklad'dan hisoblanmoqda.</b> Har do'kon savdosi MoySklad'dan olinadi — bu 1–2 daqiqa oladi.
-      {% if k.ok %}Hozir oldingi hisob ko'rsatilyapti.{% endif %}
-      <a href="{% url 'dashboard:transfer-advice' %}">Sahifani yangilang</a>.
+  {% if k.loading and not k.ok %}
+    <div class="alert warn" data-kochirish-loading role="status"><span><i class="aylana" aria-hidden="true"></i></span><div>
+      <b>MoySklad'dan hisoblanmoqda…</b> <span class="sec" data-otgan></span><br>
+      Har do'kon savdosi MoySklad'dan olinadi — bu 1–2 daqiqa oladi.
+      Sahifa tayyor bo'lgach <b>o'zi ochiladi</b>, hech narsa bosish shart emas.
     </div></div>
   {% endif %}
   {% if k.error and not k.ok %}
@@ -49,7 +49,7 @@
         <div><div class="k">Savdo davri</div><div class="v">{{ k.start|date:"d.m" }}–{{ k.end|date:"d.m" }} <span class="sec">({{ rules.days }} kun, MoySklad)</span></div></div>
         <div><div class="k">Tavsiyalar</div><div class="v"><b>{{ rows|length }}</b> ta</div></div>
         <div><div class="k">Ko'chirilsa sotiladi</div><div class="v num">≈ {{ total|som }} so'm</div></div>
-        <div><div class="k">Hisoblangan</div><div class="v">{{ k.fetched_at|date:"d.m H:i" }}{% if k.stale %} <span class="sec">(eski)</span>{% endif %} <a class="sec" href="?yangila=1">qayta hisoblash</a></div></div>
+        <div><div class="k">Hisoblangan</div><div class="v">{{ k.fetched_at|date:"d.m H:i" }}{% if k.loading %} <span class="sec" data-kochirish-loading role="status">· <i class="aylana kichik" aria-hidden="true"></i> yangisi tayyorlanmoqda</span>{% elif k.stale %} <span class="sec">(eski)</span>{% endif %} <a class="sec" href="?yangila=1">qayta hisoblash</a></div></div>
       </div>
       <div class="sec" style="margin-top: 12px;">
         <b>Yotib qolgan</b> — qoldiq oxirgi {{ rules.days }} kunlik sotuv sur'atida {{ rules.slow }} kundan ko'proqqa yetadi
@@ -88,5 +88,44 @@
       </tbody>
     </table>
     </div>
+  {% endif %}
+
+  {% if k.loading %}
+    {# Hisob fonda ketyapti: aylanib turgan belgi + sahifa o'zi yangilanadi (egasining so'rovi, 2026-10-04). #}
+    <style>
+      .aylana {
+        display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid currentColor; border-right-color: transparent;
+        animation: aylana .8s linear infinite; vertical-align: -2px;
+      }
+      .aylana.kichik { width: 10px; height: 10px; vertical-align: -1px; }
+      @keyframes aylana { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .aylana { animation-duration: 3s; } }
+    </style>
+    <script>
+    (function () {
+      var boshi = Date.now(), otgan = document.querySelector("[data-otgan]");
+      function soat() {
+        if (!otgan) return;
+        var s = Math.round((Date.now() - boshi) / 1000);
+        otgan.textContent = s < 60 ? s + " soniya" : Math.floor(s / 60) + " daqiqa " + (s % 60) + " soniya";
+      }
+      soat(); setInterval(soat, 1000);
+      // «?yangila=1» ni olib tashlaymiz: aks holda har tekshiruv hisobni qaytadan boshlardi.
+      var u = new URL(location.href); u.searchParams.delete("yangila");
+      var manzil = u.pathname + u.search, urinish = 0;
+      function tekshir() {
+        urinish += 1;
+        fetch(manzil, {credentials: "same-origin"})
+          .then(function (r) { return r.ok ? r.text() : ""; })
+          .then(function (t) {
+            if (t && t.indexOf("data-kochirish-loading") === -1) { location.replace(manzil); }
+            else if (urinish < 120) { setTimeout(tekshir, 5000); }
+          })
+          .catch(function () { if (urinish < 120) setTimeout(tekshir, 5000); });
+      }
+      setTimeout(tekshir, 5000);
+    })();
+    </script>
   {% endif %}
 {% endblock %}
