@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import tugayotgan, views
 
 app_name = "dashboard"
 
@@ -18,6 +18,7 @@ urlpatterns = [
     path("chek/<int:pk>/", views.receipt, name="receipt"),
     path("tovarlar/", views.top_products, name="top-products"),
     path("tovarlar/tushgan/", views.falling_products, name="falling-products"),
+    path("tovarlar/tugayotgan/", tugayotgan.page, name="running-out"),
     path("tovarlar/kochirish/", views.transfer_advice, name="transfer-advice"),
     path("oylik/", views.monthly, name="monthly"),
     path("narxlar/", views.prices, name="prices"),
