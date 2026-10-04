@@ -60,7 +60,7 @@ FRESH_TTL = 6 * 60 * 60           # 6 soat
 STALE_TTL = 7 * 24 * 60 * 60      # oxirgi tayyor natija — yangisi tayyorlanguncha ko'rsatiladi
 LOCK_TTL = 15 * 60
 TIMEOUT = 30
-CACHE_KEY = "kochirish:v2"         # v2: sklad chiqarildi — eski natija ishlatilmasin
+CACHE_KEY = "kochirish:v3"         # v3: «short» (tugayotganlar) qo'shildi — eski natijada u yo'q
 PAGE = 1000
 
 _thread_lock = threading.Lock()
@@ -251,12 +251,17 @@ def build(now=None, client=None) -> dict:
         for p in Product.objects.filter(pk__in=pids)
     }
     rows = recommend(sales, stock, products, shops)
+    # Xuddi shu ma'lumotdan — yaxshi sotilib, kam qolgan/tugagan tovarlar
+    # («Tugayotganlar» sahifasi). MoySklad'ga qo'shimcha so'rov ketmaydi.
+    from .tugayotgan import shortage
+
+    short = shortage(sales, stock, products, shops, all_wh)
     logger.info(
-        "Ko'chirish tavsiyasi: %s ta; savdo 30 kun (MoySklad): %s",
-        len(rows), ", ".join(f"{all_wh.get(w)} {s / 100:.0f}" + ("" if w in shops else " (do'kon emas)")
+        "Ko'chirish tavsiyasi: %s ta, tugayotgan/tugagan: %s ta; savdo 30 kun (MoySklad): %s",
+        len(rows), len(short), ", ".join(f"{all_wh.get(w)} {s / 100:.0f}" + ("" if w in shops else " (do'kon emas)")
                              for w, s in totals.items()),
     )
-    return {"ok": True, "rows": rows, "start": start, "end": end,
+    return {"ok": True, "rows": rows, "short": short, "start": start, "end": end,
             "warehouses": [{"id": w, "name": n, "sum": totals.get(w, 0) / 100}
                            for w, n in sorted(shops.items(), key=lambda x: x[1].lower())],
             "fetched_at": timezone.localtime(now)}
