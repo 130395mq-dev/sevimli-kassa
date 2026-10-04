@@ -1,0 +1,41 @@
+{% comment %}
+  Hisob fonda ketyapti: aylanib turgan belgi + sahifa o'zi yangilanadi
+  (egasining so'rovi, 2026-10-04). Sahifada `data-kochirish-loading` belgisi
+  bor ekan, har 5 soniyada tekshiradi; belgi yo'qolsa — sahifani ochadi.
+  Ko'chirish tavsiyasi va «Tugayotganlar» sahifalari ishlatadi.
+{% endcomment %}
+<style>
+  .aylana {
+    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: aylana .8s linear infinite; vertical-align: -2px;
+  }
+  .aylana.kichik { width: 10px; height: 10px; vertical-align: -1px; }
+  @keyframes aylana { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .aylana { animation-duration: 3s; } }
+</style>
+<script>
+(function () {
+  var boshi = Date.now(), otgan = document.querySelector("[data-otgan]");
+  function soat() {
+    if (!otgan) return;
+    var s = Math.round((Date.now() - boshi) / 1000);
+    otgan.textContent = s < 60 ? s + " soniya" : Math.floor(s / 60) + " daqiqa " + (s % 60) + " soniya";
+  }
+  soat(); setInterval(soat, 1000);
+  // «?yangila=1» ni olib tashlaymiz: aks holda har tekshiruv hisobni qaytadan boshlardi.
+  var u = new URL(location.href); u.searchParams.delete("yangila");
+  var manzil = u.pathname + u.search, urinish = 0;
+  function tekshir() {
+    urinish += 1;
+    fetch(manzil, {credentials: "same-origin"})
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) {
+        if (t && t.indexOf("data-kochirish-loading") === -1) { location.replace(manzil); }
+        else if (urinish < 120) { setTimeout(tekshir, 5000); }
+      })
+      .catch(function () { if (urinish < 120) setTimeout(tekshir, 5000); });
+  }
+  setTimeout(tekshir, 5000);
+})();
+</script>
