@@ -1,0 +1,116 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Boshqaruvchilar — Sevimli Kassa{% endblock %}
+{% block crumb %}Boshqaruvchilar{% endblock %}
+{% block nav_managers %}on{% endblock %}
+
+{% block body %}
+  <h1>Market boshqaruvchilari</h1>
+  <div class="sub">Boshqa market boshqaruvchisi panelga o'z login-paroli bilan kiradi va faqat o'z marketini ko'radi</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}">
+        <span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span>
+        <div>{{ m }}</div>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <h2>Yangi boshqaruvchi</h2>
+  <form method="post" class="card" autocomplete="off">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <div class="fields">
+      <label>
+        <span>Market</span>
+        <select name="warehouse" required>
+          <option value="">— tanlang —</option>
+          {% for m in markets %}
+            <option value="{{ m.id }}">{{ m.name }}{% if not m.kassa %} (Sevimli Kassa yo'q){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Ismi <span class="sec">— ixtiyoriy, ro'yxatda ko'rinadi</span></span>
+        <input name="name" placeholder="masalan: Aziz aka" maxlength="150">
+      </label>
+      <label>
+        <span>Login <span class="sec">— lotin harf va raqam, masalan: unzavod</span></span>
+        <input name="username" required pattern="[A-Za-z0-9_.\-]{3,30}" autocomplete="off">
+      </label>
+      <label>
+        <span>Parol <span class="sec">— kamida {{ min_password }} belgi</span></span>
+        <input name="password1" type="password" required minlength="{{ min_password }}" autocomplete="new-password">
+      </label>
+      <label>
+        <span>Parol yana bir marta</span>
+        <input name="password2" type="password" required minlength="{{ min_password }}" autocomplete="new-password">
+      </label>
+    </div>
+    <button type="submit">Qo'shish</button>
+  </form>
+
+  <h2>Ro'yxat</h2>
+  <div class="tablewrap">
+  <table>
+    <tr>
+      <th>Login</th><th>Market</th><th class="tight">Oxirgi kirish</th>
+      <th class="tight">Holat</th><th></th>
+    </tr>
+    {% for r in rows %}
+      <tr>
+        <td><b>{{ r.user.username }}</b>{% if r.user.first_name %}<div class="sec">{{ r.user.first_name }}</div>{% endif %}</td>
+        <td>{{ r.warehouse_name|default:r.warehouse_ms_id }}</td>
+        <td class="tight num">{{ r.user.last_login|date:"d.m.Y H:i"|default:"hali kirmagan" }}</td>
+        <td class="tight">
+          {% if r.user.is_active %}<span class="badge ok">kira oladi</span>
+          {% else %}<span class="badge off">to'xtatilgan</span>{% endif %}
+        </td>
+        <td class="actions" style="white-space: normal;">
+          <form method="post" class="inline" autocomplete="off" style="margin-bottom: 6px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="password">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <input name="password1" type="password" placeholder="yangi parol" size="10"
+                   required minlength="{{ min_password }}" autocomplete="new-password">
+            <input name="password2" type="password" placeholder="yana bir marta" size="10"
+                   required minlength="{{ min_password }}" autocomplete="new-password">
+            <button type="submit" class="small">Parolni almashtirish</button>
+          </form>
+          <form method="post" class="inline"
+                onsubmit="return confirm('«{{ r.user.username }}» {% if r.user.is_active %}panelga kirishi to\'xtatilsinmi?{% else %}yana kira oladigan qilinsinmi?{% endif %}');">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="toggle">
+            <input type="hidden" name="id" value="{{ r.pk }}">
+            <button type="submit" class="small ghost"
+                    {% if r.user.is_active %}style="color: var(--danger);"{% endif %}>
+              {% if r.user.is_active %}Kirishni to'xtatish{% else %}Qaytarish{% endif %}
+            </button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">Hali boshqaruvchi yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <div class="alert warn" style="margin-top: 22px;">
+    <span>i</span>
+    <div>
+      <b>Boshqaruvchi nimani ko'radi</b>
+      Faqat o'z marketini: bugungi savdo, smenalar, cheklar, top tovarlar,
+      tushib ketgan va tugayotgan tovarlar. Boshqa marketlarni, sozlamalarni
+      (kassalar, narxlar, bonus, to'lov turlari, versiyalar) va bu sahifani
+      ko'rmaydi, hech narsani o'zgartira olmaydi.
+      <br><br>
+      Savdo raqamlari Sevimli Kassa kassalaridan olinadi. Marketda hali
+      Sevimli Kassa bo'lmasa, savdo bo'limlari bo'sh turadi — «Tugayotganlar»
+      esa MoySklad'dan ishlaydi.
+      <br><br>
+      <b>«Kirishni to'xtatish»</b> hech narsani o'chirmaydi — faqat u panelga
+      kira olmaydi. Kerak bo'lsa «Qaytarish» bilan tiklanadi.
+    </div>
+  </div>
+{% endblock %}
