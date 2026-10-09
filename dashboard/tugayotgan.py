@@ -34,7 +34,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
 
-from . import kochirish
+from . import access, kochirish
 
 OUT, LOW = "out", "low"
 PAGE_LIMIT = 300           # sahifada ko'rsatiladigan qatorlar; hammasi — CSV'da
@@ -131,10 +131,20 @@ def to_csv(data: dict, rows: list[dict]) -> tuple[str, str]:
 def page(request):
     """?dokon= / ?holat=out|low / ?q= — filtr, ?format=csv — Excel,
     ?yangila=1 — MoySklad'dan qayta hisoblash."""
-    data = kochirish.get(refresh=request.GET.get("yangila") == "1")
+    manager = access.manager_of(request.user)
+    # Boshqaruvchi MoySklad'dan qayta hisoblatmaydi (og'ir so'rov — egasining ishi)
+    data = kochirish.get(refresh=request.GET.get("yangila") == "1" and not manager)
     ready = bool(data.get("ok")) and "short" in data
     shop, state, query = (request.GET.get(k, "") for k in ("dokon", "holat", "q"))
     all_rows = data.get("short") or []
+    if manager:
+        # Faqat o'z marketi; boshqa omborlardagi qoldiq ko'rsatilmaydi.
+        # Keshdagi asl ma'lumotga tegilmaydi — nusxa olinadi.
+        shop = str(manager.warehouse_ms_id)
+        all_rows = [{**r, "elsewhere": [], "elsewhere_total": 0}
+                    for r in all_rows if str(r["wh_id"]) == shop]
+        data = {**data, "rows": [], "short": all_rows,
+                "warehouses": [w for w in data.get("warehouses") or [] if str(w["id"]) == shop]}
     rows = filtered(all_rows, shop, state, query) if ready else []
     if request.GET.get("format") == "csv" and ready:
         name, text = to_csv(data, rows)
