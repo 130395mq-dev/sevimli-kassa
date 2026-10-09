@@ -22,7 +22,7 @@
         <span class="sec">· smenadagi chek №{{ sale.number }}</span></div></div>
       <div><div class="k">Mijoz</div><div class="v">
         {% if sale.customer %}
-          <a href="{% url 'dashboard:customer-bonus' sale.customer.pk %}">{{ sale.customer.name }}</a>
+          {% if panel_manager %}{{ sale.customer.name }}{% else %}<a href="{% url 'dashboard:customer-bonus' sale.customer.pk %}">{{ sale.customer.name }}</a>{% endif %}
           <div class="sec">{{ sale.customer.phone|default:"" }}{% if sale.customer.discount_card %} · karta {{ sale.customer.discount_card }}{% endif %}</div>
         {% else %}<span class="sec">bonus kartasiz</span>{% endif %}</div></div>
       <div><div class="k">MoySklad</div><div class="v">
