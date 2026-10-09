@@ -30,6 +30,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from catalog.models import Customer, Product, SyncState
+from dashboard import access
 from dashboard import batafsil as batafsil_mod
 from sales import aloqa, healer, selftest, sender
 from dashboard import grafik
@@ -80,7 +81,7 @@ def aloqa_json(request):
     chiroqlarning rangi, izohi va navbat sonlari yangilanadi.
     """
     healer.tick()
-    snap = aloqa.snapshot()
+    snap = aloqa.snapshot(register_ids=access.register_ids())
     if request.GET.get("queue") == "1":
         snap["queue"] = savdo.queue_snapshot(request.GET)
     response = JsonResponse(snap)
@@ -137,21 +138,27 @@ def points(request):
         })
 
     # --- diqqat talab qiladiganlar
+    # Market boshqaruvchisi (dashboard/access.py) faqat o'z marketini
+    # ko'radi: tiqilgan cheklar, MoySklad sinovi, bonus va katalog — egasining
+    # ishi, unga ko'rsatilmaydi (tuzatish tugmalari ham faqat egasida).
+    manager = access.manager_of(request.user)
     stuck = (
-        Sale.objects.filter(sync_status=Sale.STUCK)
+        access.sales().filter(sync_status=Sale.STUCK)
         .select_related("shift__register__store")
         .order_by("-created_at")[:20]
     )
-    stuck_count = Sale.objects.filter(sync_status=Sale.STUCK).count()
-    queued = Sale.objects.filter(
+    stuck_count = access.sales().filter(sync_status=Sale.STUCK).count()
+    queued = access.sales().filter(
         sync_status__in=[Sale.NEW, Sale.FAILED]
     ).count()
-    check = MoySkladCheck.latest()
+    check = None if manager else MoySkladCheck.latest()
+    if manager:
+        stuck, stuck_count = [], 0
 
     # Ogohlantirishlar — har biri «nima bo'ldi» + «nima qilish kerak».
     # Tizim o'zi hal qiladiganini o'zi qiladi (healer/selftest); bu yerda
     # odam nimani bilishi va (kerak bo'lsa) qilishi yoziladi.
-    snap = aloqa.snapshot(now)
+    snap = aloqa.snapshot(now, register_ids=access.register_ids())
     alerts = []
     if stuck_count:
         alerts.append({
@@ -168,7 +175,8 @@ def points(request):
             "fix": aloqa._fix_for_step(check.failed_steps[0]),
         })
     ms = snap["moysklad"]
-    if ms["state"] != "ok" and not ms["text"].startswith("sinov o'tmadi") and "tiqilib" not in ms["text"]:
+    if (not manager and ms["state"] != "ok"
+            and not ms["text"].startswith("sinov o'tmadi") and "tiqilib" not in ms["text"]):
         alerts.append({
             "level": "err" if ms["state"] == "bad" else "warn",
             "title": "MoySklad — " + ms["text"], "text": "", "fix": ms.get("fix", ""),
@@ -180,7 +188,7 @@ def points(request):
                 "title": f"{r['name']} — {r['text']}", "text": "", "fix": r.get("fix", ""),
             })
 
-    bonus_total = (
+    bonus_total = 0 if manager else (
         Customer.objects.filter(archived=False)
         .aggregate(t=Sum("bonus_points"))["t"] or 0
     )
@@ -188,7 +196,7 @@ def points(request):
     # So'nggi cheklar — «hozir savdo ketyaptimi?» degan savolga bir qarashda
     # javob beradi. Davr filtriga bog'liq emas: doim eng oxirgi 10 tasi.
     last_sales = (
-        Sale.objects.filter(kind=Sale.SALE)
+        access.sales().filter(kind=Sale.SALE)
         .select_related("shift__register__store")
         .order_by("-created_at")[:10]
     )
@@ -218,9 +226,9 @@ def points(request):
         # MoySklad o'z-o'zini tekshirish — oxirgi natija
         "check": check,
         "queued": queued,
-        "sync_rows": SyncState.objects.order_by("entity"),
-        "products": Product.objects.filter(archived=False).count(),
-        "customers": Customer.objects.filter(archived=False).count(),
+        "sync_rows": [] if manager else SyncState.objects.order_by("entity"),
+        "products": 0 if manager else Product.objects.filter(archived=False).count(),
+        "customers": 0 if manager else Customer.objects.filter(archived=False).count(),
         "bonus_total": bonus_total,
         "today": timezone.localdate(),
     })
@@ -278,7 +286,7 @@ def shifts(request):
     hammasini bitta sahifada ko'rsatish sekin va o'qib bo'lmas edi.
     """
     qs = (
-        Shift.objects.select_related("register__store")
+        access.shifts().select_related("register__store")
         .annotate(
             receipts=Count("sales", filter=Q(sales__kind=Sale.SALE)),
             total=Sum("sales__net_total", filter=Q(sales__kind=Sale.SALE)),
@@ -300,7 +308,7 @@ def shifts(request):
 def shift_detail(request, pk: int):
     """Bitta smena — kassirning ko'rgan chekining aynan o'zi."""
     try:
-        shift = Shift.objects.select_related("register__store").get(pk=pk)
+        shift = access.shifts().select_related("register__store").get(pk=pk)
     except Shift.DoesNotExist:
         raise Http404("Smena topilmadi")
 
@@ -1040,7 +1048,7 @@ def _query_without(params, *names) -> str:
 def receipt(request, pk: int):
     """Bitta chek: ichidagi tovarlar, to'lovlar va ball harakati."""
     sale = (
-        Sale.objects.select_related("customer", "shift__register__store", "origin")
+        access.sales().select_related("customer", "shift__register__store", "origin")
         .filter(pk=pk).first()
     )
     if not sale:
@@ -1082,7 +1090,13 @@ def falling_products(request):
     """Tushib ketgan tovarlar: oldin muntazam sotilgan, hozir to'xtagan yoki
     keskin kamaygan. ?qism=1 — bosh sahifadagi qisqa karta (keyin yuklanadi),
     ?format=csv — Excel uchun, ?ombor=<ms_id>|hammasi — qaysi ombor."""
-    data = tovarlar.falling_products(warehouse=request.GET.get("ombor") or None)
+    manager = access.manager_of(request.user)
+    if manager:
+        # Boshqaruvchi — faqat o'z marketi; boshqa omborlar qoldig'i ko'rsatilmaydi
+        data = tovarlar.manager_view(tovarlar.falling_products(
+            warehouse=str(manager.warehouse_ms_id), strict=True))
+    else:
+        data = tovarlar.falling_products(warehouse=request.GET.get("ombor") or None)
     if request.GET.get("format") == "csv":
         name, text = tovarlar.falling_csv(data)
         resp = HttpResponse("\ufeff" + text, content_type="text/csv; charset=utf-8")
@@ -1215,4 +1229,126 @@ def payment_methods(request):
     return render(request, "dashboard/payment_methods.html", {
         "rows": rows,
         "active_count": sum(1 for m in rows if m.active),
+    })
+
+
+# ======================================================= MARKET BOSHQARUVCHILARI
+
+
+#: Login: lotin harf, raqam, nuqta, chiziqcha — 3–30 belgi
+_LOGIN_RE = r"[A-Za-z0-9_.-]{3,30}"
+_MIN_PASSWORD = 8
+
+
+def _password_problem(password: str, again: str, username: str) -> str:
+    if password != again:
+        return "Parollar bir xil emas — qaytadan yozing."
+    if len(password) < _MIN_PASSWORD:
+        return f"Parol kamida {_MIN_PASSWORD} belgi bo'lsin."
+    if password.lower() == (username or "").lower():
+        return "Parol login bilan bir xil bo'lmasin."
+    return ""
+
+
+def _markets() -> list[dict]:
+    """Tanlash uchun marketlar: MoySklad omborlari, kassasi borlari tepada."""
+    from catalog.models import Warehouse
+
+    with_kassa = {w["id"] for w in tovarlar.kassa_warehouses()}
+    rows = [
+        {"id": str(w.ms_id), "name": w.name, "kassa": str(w.ms_id) in with_kassa}
+        for w in Warehouse.objects.filter(archived=False).order_by("name")
+    ]
+    return sorted(rows, key=lambda r: (not r["kassa"], r["name"].lower()))
+
+
+@login_required
+def managers(request):
+    """Market boshqaruvchilari: login, parol va qaysi market.
+
+    Egasining so'rovi (2026-10-09): boshqa market boshqaruvchisi panelga o'z
+    login-paroli bilan kirsin va faqat o'z marketini ko'rsin. Bu sahifani
+    faqat egasi ochadi — boshqaruvchiga u yopiq (dashboard/access.py).
+    Parolni egasi o'zi qo'yadi va boshqaruvchiga o'zi aytadi; panel parolni
+    hech qayerda ko'rsatmaydi va saqlamaydi (faqat xeshi).
+    """
+    import re
+
+    from django.contrib.auth import get_user_model
+    from django.db import transaction
+
+    from sales.models import PanelManager
+
+    User = get_user_model()
+    markets = _markets()
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "create":
+            username = (request.POST.get("username") or "").strip()
+            name = (request.POST.get("name") or "").strip()[:150]
+            password = request.POST.get("password1") or ""
+            market = next((m for m in markets if m["id"] == request.POST.get("warehouse")), None)
+            problem = ""
+            if not re.fullmatch(_LOGIN_RE, username):
+                problem = ("Login 3–30 belgi bo'lsin: lotin harflar, raqamlar, "
+                           "nuqta, chiziqcha (masalan: unzavod).")
+            elif User.objects.filter(username__iexact=username).exists():
+                problem = f"«{username}» logini band — boshqasini yozing."
+            elif market is None:
+                problem = "Marketni tanlang."
+            else:
+                problem = _password_problem(password, request.POST.get("password2") or "", username)
+            if problem:
+                messages.error(request, problem)
+            else:
+                with transaction.atomic():
+                    user = User.objects.create_user(
+                        username=username, password=password, first_name=name,
+                    )
+                    PanelManager.objects.create(
+                        user=user, warehouse_ms_id=market["id"], warehouse_name=market["name"],
+                    )
+                messages.success(
+                    request,
+                    f"«{username}» qo'shildi — {market['name']}. Login va parolni "
+                    "boshqaruvchiga o'zingiz ayting; u panelga shu bilan kiradi.",
+                )
+            return redirect("dashboard:managers")
+
+        manager = (
+            PanelManager.objects.select_related("user")
+            .filter(pk=request.POST.get("id")).first()
+        )
+        if manager is None:
+            messages.error(request, "Boshqaruvchi topilmadi.")
+        elif action == "password":
+            problem = _password_problem(
+                request.POST.get("password1") or "", request.POST.get("password2") or "",
+                manager.user.username,
+            )
+            if problem:
+                messages.error(request, problem)
+            else:
+                manager.user.set_password(request.POST.get("password1"))
+                manager.user.save(update_fields=["password"])
+                messages.success(request, f"«{manager.user.username}» paroli almashtirildi.")
+        elif action == "toggle":
+            manager.user.is_active = not manager.user.is_active
+            manager.user.save(update_fields=["is_active"])
+            messages.success(
+                request,
+                f"«{manager.user.username}»: " + (
+                    "yana kira oladi" if manager.user.is_active
+                    else "kirishi to'xtatildi (ma'lumotlarga tegilmadi)"
+                ),
+            )
+        return redirect("dashboard:managers")
+
+    rows = list(PanelManager.objects.select_related("user").order_by("warehouse_name", "user__username"))
+    return render(request, "dashboard/managers.html", {
+        "rows": rows,
+        "markets": markets,
+        "min_password": _MIN_PASSWORD,
     })
