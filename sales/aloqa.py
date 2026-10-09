@@ -241,20 +241,25 @@ def register_state(reg: Register, now=None, shift_open: bool | None = None) -> d
     }
 
 
-def registers_health(now=None) -> list[dict]:
-    """Ro'yxatdagi (arxivlanmagan, faol) kassalar holati."""
+def registers_health(now=None, register_ids=None) -> list[dict]:
+    """Ro'yxatdagi (arxivlanmagan, faol) kassalar holati.
+
+    `register_ids` — faqat shu kassalar (market boshqaruvchisi o'z
+    marketini ko'radi); None — hammasi."""
     now = now or timezone.now()
     regs = Register.objects.filter(active=True, archived=False).order_by("name")
+    if register_ids is not None:
+        regs = regs.filter(pk__in=register_ids)
     open_ids = set(
         Shift.objects.filter(status=Shift.OPEN, register__in=regs).values_list("register_id", flat=True)
     )
     return [register_state(r, now, shift_open=r.pk in open_ids) for r in regs]
 
 
-def snapshot(now=None) -> dict:
+def snapshot(now=None, register_ids=None) -> dict:
     """Panel uchun to'liq surat — tepadagi chiroqlar qatori shundan chiziladi."""
     now = now or timezone.now()
-    regs = registers_health(now)
+    regs = registers_health(now, register_ids)
     ms = moysklad_health(now)
     states = [ms["state"]] + [r["state"] for r in regs]
     overall = "bad" if "bad" in states else ("warn" if "warn" in states else "ok")
