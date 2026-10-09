@@ -943,3 +943,31 @@ class PanelSettings(models.Model):
         if obj is None:
             obj = cls.objects.create()
         return obj
+
+
+class PanelManager(models.Model):
+    """Market boshqaruvchisi — panelga faqat o'z marketini ko'rib kiradi.
+
+    Egasining so'rovi (2026-10-09): boshqa market boshqaruvchisi panelga
+    o'z login-paroli bilan kirsin, faqat o'z marketining savdosi,
+    smenalari, cheklari va tovarlarini ko'rsin, boshqa marketlarni
+    ko'rmasin va sozlamalarni o'zgartira olmasin.
+
+    Market — kassalar sotadigan MoySklad ombori (`Register.warehouse_ms_id`).
+    Shu yozuvi bor foydalanuvchi — boshqaruvchi; yozuvi yo'q foydalanuvchi —
+    avvalgidek to'liq huquqli (egasi). Qoidalar `dashboard/access.py` da.
+    """
+
+    user = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE, related_name="panel_manager",
+    )
+    warehouse_ms_id = models.UUIDField("Market (MoySklad ombori)")
+    warehouse_name = models.CharField("Market nomi", max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Market boshqaruvchisi"
+        verbose_name_plural = "Market boshqaruvchilari"
+
+    def __str__(self) -> str:
+        return f"{self.user.username} — {self.warehouse_name or self.warehouse_ms_id}"
