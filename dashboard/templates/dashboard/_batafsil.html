@@ -95,7 +95,7 @@
     </div>
   {% endlocalize %}{% endif %}
 
-  {% if d.show_target_form %}
+  {% if d.show_target_form and not panel_manager %}
     <div class="bx-block">
       <div class="bx-title">O'rtacha chek maqsadi</div>
       <form method="post" action="/maqsad/" class="bx-target">

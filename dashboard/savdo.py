@@ -29,8 +29,8 @@ from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
-from dashboard import grafik
-from sales.models import Payment, PanelSettings, Register, Sale, SaleItem, Shift
+from dashboard import access, grafik
+from sales.models import PanelSettings, Sale, Shift
 
 #: Bir so'rovda eng ko'pi shuncha kun (jadval o'qiladigan bo'lsin)
 MAX_DAYS = 92
@@ -104,7 +104,7 @@ def _totals(qs) -> dict:
     agg = sales.aggregate(n=Count("id"), total=Sum("net_total"))
     ret = qs.filter(kind=Sale.RETURN).aggregate(n=Count("id"), total=Sum("net_total"))
     cash = (
-        Payment.objects.filter(sale__in=sales, method__is_cash=True)
+        access.payments().filter(sale__in=sales, method__is_cash=True)
         .aggregate(t=Sum("amount"))["t"] or 0
     )
     total = agg["total"] or 0
@@ -124,7 +124,7 @@ def queue_snapshot(params) -> dict:
     """Jonli navbat sonlari; kassa belgilari tanlangan davrga mos keladi."""
     start, end, _ = parse_range(params)
     a, b = _bounds(start, end)
-    pending = Sale.objects.filter(sync_status__in=[Sale.NEW, Sale.FAILED, Sale.STUCK])
+    pending = access.sales().filter(sync_status__in=[Sale.NEW, Sale.FAILED, Sale.STUCK])
     counts = pending.aggregate(
         queued=Count("pk", filter=Q(sync_status__in=[Sale.NEW, Sale.FAILED])),
         stuck=Count("pk", filter=Q(sync_status=Sale.STUCK)),
@@ -145,8 +145,8 @@ def build(params, now=None) -> dict:
     prev_start, prev_end = start - timedelta(days=span), start - timedelta(days=1)
     pa, pb = _bounds(prev_start, prev_end)
 
-    period_qs = Sale.objects.filter(created_at__gte=a, created_at__lt=b)
-    prev_qs = Sale.objects.filter(created_at__gte=pa, created_at__lt=pb)
+    period_qs = access.sales().filter(created_at__gte=a, created_at__lt=b)
+    prev_qs = access.sales().filter(created_at__gte=pa, created_at__lt=pb)
 
     # ---- umumiy
     cur = _totals(period_qs)
@@ -159,10 +159,10 @@ def build(params, now=None) -> dict:
 
     # ---- kassalar (davr bo'yicha) va nuqtalar
     registers = list(
-        Register.objects.filter(active=True, archived=False).select_related("store")
+        access.registers().filter(active=True, archived=False).select_related("store")
     )
     open_ids = set(
-        Shift.objects.filter(status=Shift.OPEN, register__in=registers)
+        access.shifts().filter(status=Shift.OPEN, register__in=registers)
         .values_list("register_id", flat=True)
     )
     kassas = []
@@ -200,7 +200,7 @@ def build(params, now=None) -> dict:
 
     # ---- to'lov turlari (davr)
     by_method = (
-        Payment.objects.filter(sale__in=period_qs.filter(kind=Sale.SALE))
+        access.payments().filter(sale__in=period_qs.filter(kind=Sale.SALE))
         .values("method__name", "method__is_cash")
         .annotate(total=Sum("amount"), n=Count("id"))
         .order_by("-total")
@@ -276,14 +276,14 @@ def _daily(c_start: date, c_end: date, ranking: list[dict], sel_start: date, sel
     a, b = _bounds(c_start, c_end)
     tz = timezone.get_current_timezone()
     rows_qs = (
-        Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+        access.sales().filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
         .annotate(day=TruncDate("created_at", tzinfo=tz))
         .values("day", "shift__register")
         .annotate(total=Sum("net_total"), n=Count("id"))
     )
     reg_point = {
         r.pk: r.point_name
-        for r in Register.objects.filter(active=True).select_related("store")
+        for r in access.registers().filter(active=True).select_related("store")
     }
     per_day: dict[date, dict] = defaultdict(lambda: {"total": 0.0, "n": 0, "points": defaultdict(float)})
     for r in rows_qs:
@@ -334,7 +334,7 @@ def _spark(end: date, days: int = SPARK_DAYS) -> list[dict]:
     a, b = _bounds(start, end)
     tz = timezone.get_current_timezone()
     rows = (
-        Sale.objects.filter(created_at__gte=a, created_at__lt=b)
+        access.sales().filter(created_at__gte=a, created_at__lt=b)
         .annotate(day=TruncDate("created_at", tzinfo=tz))
         .values("day", "kind")
         .annotate(total=Sum("net_total"), n=Count("id"))
@@ -398,7 +398,7 @@ def top_products(start: date, end: date, limit: int = 10,
     """
     a, b = _bounds(start, end)
     rows = (
-        SaleItem.objects.filter(
+        access.items().filter(
             sale__kind=kind, sale__created_at__gte=a, sale__created_at__lt=b
         )
         .values("name")
@@ -415,10 +415,10 @@ def top_products(start: date, end: date, limit: int = 10,
 def items_per_receipt(start: date, end: date) -> float:
     """Bir chekdagi o'rtacha mahsulot soni (qator emas, dona)."""
     a, b = _bounds(start, end)
-    agg = SaleItem.objects.filter(
+    agg = access.items().filter(
         sale__kind=Sale.SALE, sale__created_at__gte=a, sale__created_at__lt=b
     ).aggregate(q=Sum("quantity"))
-    n = Sale.objects.filter(
+    n = access.sales().filter(
         kind=Sale.SALE, created_at__gte=a, created_at__lt=b
     ).count()
     return (float(agg["q"] or 0) / n) if n else 0
@@ -437,7 +437,7 @@ def _hourly(start: date, end: date) -> dict:
     a, b = _bounds(start, end)
     tz = timezone.get_current_timezone()
     rows = (
-        Sale.objects.filter(created_at__gte=a, created_at__lt=b)
+        access.sales().filter(created_at__gte=a, created_at__lt=b)
         .annotate(hh=ExtractHour("created_at", tzinfo=tz))
         .values("hh", "kind")
         .annotate(total=Sum("net_total"), n=Count("id"))
@@ -516,7 +516,7 @@ def _trend(start: date, end: date, now=None) -> dict:
             pa, _ = _bounds(prev_start, prev_end)
             cutoff = pa + (now - a)
             prev_same = (
-                Sale.objects.filter(kind=Sale.SALE, created_at__gte=pa, created_at__lt=cutoff)
+                access.sales().filter(kind=Sale.SALE, created_at__gte=pa, created_at__lt=cutoff)
                 .aggregate(t=Sum("net_total"))["t"] or 0
             ) / 100
         cur_name = ("Bugun" if start == now.date() else

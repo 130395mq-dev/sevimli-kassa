@@ -841,7 +841,7 @@
       <div class="mark" aria-hidden="true">S</div>
       <div class="txt">
         <div class="name">SEVIMLI</div>
-        <div class="sub">boshqaruv paneli</div>
+        <div class="sub">{% if panel_manager %}{{ panel_manager.warehouse_name|default:"market paneli" }}{% else %}boshqaruv paneli{% endif %}</div>
       </div>
     </div>
 
@@ -858,6 +858,7 @@
         <span class="txt">Top tovarlar</span></a>
     </nav>
 
+    {% if not panel_manager %}{# boshqaruvchi sozlamalarni ko'rmaydi (dashboard/access.py) #}
     <nav aria-label="Sozlash">
       <div class="group">Sozlash</div>
       <a class="item {% block nav_registers %}{% endblock %}" href="/kassalar/">
@@ -875,7 +876,11 @@
       <a class="item {% block nav_releases %}{% endblock %}" href="/versiyalar/">
         <svg class="icon" aria-hidden="true"><use href="#i-down"/></svg>
         <span class="txt">Versiyalar</span></a>
+      <a class="item {% block nav_managers %}{% endblock %}" href="/boshqaruvchilar/">
+        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+        <span class="txt">Boshqaruvchilar</span></a>
     </nav>
+    {% endif %}
 
     <div class="spacer"></div>
     <div class="foot">

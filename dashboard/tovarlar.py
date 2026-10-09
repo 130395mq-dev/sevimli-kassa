@@ -19,8 +19,9 @@ from io import StringIO
 from django.db.models import Count, Q, Sum
 
 from catalog.models import Barcode, Product
-from sales.models import POINT_TIYIN, BonusEntry, Register, Sale, SaleItem
+from sales.models import POINT_TIYIN, BonusEntry, Register, Sale
 
+from . import access
 from .savdo import PRESETS, _bounds, parse_range, period_label
 
 TOP_SIZES = (50, 100, 200)
@@ -200,7 +201,7 @@ def top_products(params) -> dict:
         size = TOP_DEFAULT
     bonus_only = params.get("bonus") == "1"
 
-    base = SaleItem.objects.filter(sale__created_at__gte=a, sale__created_at__lt=b)
+    base = access.items().filter(sale__created_at__gte=a, sale__created_at__lt=b)
     if bonus_only:
         base = base.filter(sale__customer__isnull=False)
     sold = base.filter(sale__kind=Sale.SALE)
@@ -340,7 +341,7 @@ def _active_days(start: date, end: date, registers=None) -> list[date]:
     from django.utils import timezone as tz
 
     a, b = _bounds(start, end)
-    sales = Sale.objects.filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
+    sales = access.sales().filter(kind=Sale.SALE, created_at__gte=a, created_at__lt=b)
     if registers is not None:
         sales = sales.filter(shift__register_id__in=registers)
     counts = {
@@ -380,7 +381,7 @@ def kassa_warehouses() -> list[dict]:
     )
 
 
-def falling_products(now=None, warehouse=None) -> dict:
+def falling_products(now=None, warehouse=None, strict=False) -> dict:
     """Oldin yaxshi sotilgan, lekin hozir kamaygan yoki umuman to'xtagan tovarlar.
 
     Egasining so'rovi (2026-09-27): «sotilishi yaxshi bo'lib birdan to'xtagan
@@ -398,6 +399,8 @@ def falling_products(now=None, warehouse=None) -> dict:
 
     `warehouse` — ombor ms_id yoki «hammasi». Berilmasa: kassalar bitta
     omborda bo'lsa — o'sha, bir nechta bo'lsa — hammasi.
+    `strict` — faqat aynan shu ombor (market boshqaruvchisi): ombor
+    ro'yxatda bo'lmasa bo'sh natija, hech qachon «hammasi» emas.
     """
     from django.core.cache import cache
     from django.db.models.functions import TruncDate
@@ -406,6 +409,14 @@ def falling_products(now=None, warehouse=None) -> dict:
     today = tz.localdate(now)
     warehouses = kassa_warehouses()
     by_id = {w["id"]: w for w in warehouses}
+    if strict and warehouse not in by_id:
+        recent_start = today - timedelta(days=RECENT_DAYS)
+        base_end = recent_start - timedelta(days=1)
+        return {"warehouse": warehouse, "warehouse_name": "", "warehouses": [],
+                "stopped": [], "dropped": [], "base_days": 0, "recent_days": 0,
+                "base_start": base_end - timedelta(days=BASE_DAYS - 1),
+                "base_end": base_end, "recent_start": recent_start,
+                "recent_end": today - timedelta(days=1), "ready": False}
     if warehouse not in by_id and warehouse != ALL_WAREHOUSES:
         warehouse = warehouses[0]["id"] if len(warehouses) == 1 else ALL_WAREHOUSES
     if warehouse == ALL_WAREHOUSES:
@@ -443,7 +454,7 @@ def falling_products(now=None, warehouse=None) -> dict:
 
     a, _ = _bounds(base_start, base_end)
     _, b = _bounds(today, today)
-    items = SaleItem.objects.filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
+    items = access.items().filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
                                     sale__created_at__lt=b, product__isnull=False)
     if registers is not None:
         items = items.filter(sale__shift__register_id__in=registers)
@@ -535,6 +546,19 @@ def falling_products(now=None, warehouse=None) -> dict:
         "lost_per_day": sum(r["lost"] for r in stopped + dropped),
     })
     cache.set(key, out, FALL_CACHE_TTL)
+    return out
+
+
+def manager_view(data: dict) -> dict:
+    """Market boshqaruvchisi uchun nusxa: ombor tanlovida faqat o'z marketi,
+    boshqa omborlardagi qoldiq olib tashlanadi. Keshdagi asl lug'atga
+    tegilmaydi (u egasiniki ham)."""
+    out = dict(data)
+    out["warehouses"] = [w for w in data.get("warehouses") or []
+                         if w["id"] == data.get("warehouse")]
+    for key in ("stopped", "dropped"):
+        out[key] = [{**r, "elsewhere": None, "elsewhere_text": ""}
+                    for r in data.get(key) or []]
     return out
 
 

@@ -13,7 +13,7 @@
     <a href="{% url 'dashboard:top-products' %}">Eng ko'p sotilgan</a>
     <a class="on" href="{% url 'dashboard:falling-products' %}">Tushib ketganlar</a>
     <a href="{% url 'dashboard:running-out' %}">Tugayotganlar</a>
-    <a href="{% url 'dashboard:transfer-advice' %}">Ko'chirish tavsiyasi</a>
+    {% if not panel_manager %}<a href="{% url 'dashboard:transfer-advice' %}">Ko'chirish tavsiyasi</a>{% endif %}
   </nav>
 
   {% if f.warehouses %}
@@ -47,7 +47,7 @@
         ko'p ketgan tovar. <b>To'xtagan</b> — oxirgi 3 kun va bugun bironta ham sotilmagan.
         <b>Kamaygan</b> — oxirgi 3 kunda kuniga oldingidan 2 barobar va undan ham kam sotilgan.
         Qoldiq — <b>{{ f.warehouse_name }}</b> bo'yicha; 0 bo'lsa «tugagan» — demak tovar kelmay
-        qolgan, talab emas. «Boshqa omborlarda» — ko'chirib keltirish mumkin bo'lgan qoldiq.
+        qolgan, talab emas.{% if not panel_manager %} «Boshqa omborlarda» — ko'chirib keltirish mumkin bo'lgan qoldiq.{% endif %}
         <a href="?ombor={{ f.warehouse|urlencode }}&amp;format=csv">⤓ Excel (CSV)</a>
       </div>
     </div>

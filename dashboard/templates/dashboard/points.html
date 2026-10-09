@@ -117,7 +117,7 @@
     </div>
     {% endlocalize %}
 
-    <div class="sec" style="margin-top: 4px;">Manba: Sevimli Kassa kassalari (server bazasi). Oylik karta esa MoySklad'dagi butun tarmoq savdosi — shuning uchun summalar farq qiladi.</div>
+    <div class="sec" style="margin-top: 4px;">Manba: Sevimli Kassa kassalari (server bazasi).{% if not panel_manager %} Oylik karta esa MoySklad'dagi butun tarmoq savdosi — shuning uchun summalar farq qiladi.{% endif %}</div>
     {% if board.trend.open_hour %}
       <div class="sec" style="margin-top: 4px;">Joriy soat ({{ board.trend.open_hour }}) tugagach grafikka qo'shiladi — uning savdosi yuqoridagi jami summada bor.</div>
     {% endif %}
@@ -156,9 +156,11 @@
     bosh sahifa ularni kutib qolmasin.
   {% endcomment %}
   <div class="insights">
+    {% if not panel_manager %}{# oylik — butun tarmoq (MoySklad), faqat egasiga #}
     <section class="card insight" data-lazy="/oylik/">
       <div class="sec">Oylar kesimida savdo yuklanmoqda…</div>
     </section>
+    {% endif %}
     <section class="card insight" data-lazy="/tovarlar/tushgan/?qism=1">
       <div class="sec">Tushib ketgan tovarlar hisoblanmoqda…</div>
     </section>
@@ -667,6 +669,7 @@
     </div>
   {% endif %}
 
+  {% if not panel_manager %}{# tiqilgan cheklar, MoySklad sinovi, bonus, katalog — egasining ishi #}
   {% if stuck %}
   <div data-queue-stuck>
     <h2>Yozilmagan cheklar</h2>
@@ -770,5 +773,6 @@
     </tbody>
   </table>
   </div>
+  {% endif %}
 
 {% endblock %}

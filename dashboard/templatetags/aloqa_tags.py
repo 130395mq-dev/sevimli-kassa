@@ -18,7 +18,8 @@ def aloqa_strip(context):
     user = getattr(request, "user", None)
     if not (user and user.is_authenticated):
         return {"snap": None}
-    return {"snap": aloqa.snapshot()}
+    from dashboard import access
+    return {"snap": aloqa.snapshot(register_ids=access.register_ids())}
 
 
 @register.inclusion_tag("dashboard/_dot.html")

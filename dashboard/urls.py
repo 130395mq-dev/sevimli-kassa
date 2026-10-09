@@ -24,6 +24,7 @@ urlpatterns = [
     path("narxlar/", views.prices, name="prices"),
     path("tolov-turlari/", views.payment_methods, name="payment-methods"),
     path("versiyalar/", views.releases, name="releases"),
+    path("boshqaruvchilar/", views.managers, name="managers"),
     path("ornatish/", views.installer, name="installer"),
     path("ornatish/fayl/", views.installer_download, name="installer-download"),
     path("health/", views.health, name="health"),
