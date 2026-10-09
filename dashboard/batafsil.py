@@ -23,8 +23,8 @@ from django.db.models import Count, Sum
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
-from dashboard import grafik, savdo
-from sales.models import PanelSettings, Payment, Register, Sale, SaleItem
+from dashboard import access, grafik, savdo
+from sales.models import PanelSettings, Sale
 
 #: Qaysi kartalar ochiladi (URL dagi ?detail= qiymati)
 KPIS = ("savdo", "cheklar", "ortacha", "tolov", "qaytarish")
@@ -70,8 +70,8 @@ def _frame(params) -> dict:
 
     a, b = savdo._bounds(start, end)
     pa, pb = savdo._bounds(prev_start, prev_end)
-    qs = Sale.objects.filter(created_at__gte=a, created_at__lt=b)
-    prev_qs = Sale.objects.filter(created_at__gte=pa, created_at__lt=pb)
+    qs = access.sales().filter(created_at__gte=a, created_at__lt=b)
+    prev_qs = access.sales().filter(created_at__gte=pa, created_at__lt=pb)
 
     cur = savdo._totals(qs)
     prev = savdo._totals(prev_qs)
@@ -103,7 +103,7 @@ def _frame(params) -> dict:
 def _registers(f, field: str = "total"):
     """Kassalar kesimi: [{name, point, total, receipts, avg, returns}]."""
     out = []
-    for reg in Register.objects.filter(active=True, archived=False).select_related("store"):
+    for reg in access.registers().filter(active=True, archived=False).select_related("store"):
         t = savdo._totals(f["qs"].filter(shift__register=reg))
         out.append({"name": reg.name, "point": reg.point_name, **t})
     return sorted(out, key=lambda r: -r[field])
@@ -200,7 +200,7 @@ def _cheklar(f) -> dict:
     regs = _registers(f, "receipts")
     points = _points(f, "receipts")
     last = (
-        Sale.objects.filter(kind=Sale.SALE, created_at__gte=savdo._bounds(f["start"], f["end"])[0],
+        access.sales().filter(kind=Sale.SALE, created_at__gte=savdo._bounds(f["start"], f["end"])[0],
                             created_at__lt=savdo._bounds(f["start"], f["end"])[1])
         .select_related("shift__register__store").order_by("-created_at")[:20]
     )
@@ -287,7 +287,7 @@ def _payments_chart(f):
     a, b = savdo._bounds(f["start"], f["end"])
     tz = timezone.get_current_timezone()
     rows = (
-        Payment.objects.filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
+        access.payments().filter(sale__kind=Sale.SALE, sale__created_at__gte=a,
                                sale__created_at__lt=b)
         .annotate(day=TruncDate("sale__created_at", tzinfo=tz))
         .values("day", "method__is_cash")
@@ -310,7 +310,7 @@ def _payments_chart(f):
 def _tolov(f) -> dict:
     sales = f["qs"].filter(kind=Sale.SALE)
     rows = (
-        Payment.objects.filter(sale__in=sales)
+        access.payments().filter(sale__in=sales)
         .values("method__name", "method__is_cash")
         .annotate(total=Sum("amount"), n=Count("id"))
         .order_by("-total")
@@ -370,7 +370,7 @@ def _qaytarish(f) -> dict:
     regs = _registers(f, "returns")
     a, b = savdo._bounds(f["start"], f["end"])
     items = (
-        Sale.objects.filter(kind=Sale.RETURN, created_at__gte=a, created_at__lt=b)
+        access.sales().filter(kind=Sale.RETURN, created_at__gte=a, created_at__lt=b)
         .select_related("shift__register__store").order_by("-created_at")[:30]
     )
     tables = [
