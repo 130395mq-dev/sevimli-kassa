@@ -84,6 +84,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "dashboard.middleware.FrameAncestorsMiddleware",
+    # Market boshqaruvchisi faqat o'z marketini ko'radi (dashboard/access.py)
+    "dashboard.access.PanelAccessMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -103,6 +105,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "dashboard.access.context",
             ],
         },
     },
