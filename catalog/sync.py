@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import requests
 from django.utils import timezone as dj_timezone
 
 from moysklad.client import MoySkladClient, MoySkladError
@@ -127,7 +128,8 @@ class CatalogSync:
         started = dj_timezone.now()
         try:
             count = worker(state, full)
-        except MoySkladError as exc:
+        except (MoySkladError, requests.RequestException) as exc:
+            # Tarmoq uzilishi ham yoziladi — panel oxirgi xatoni ko'rsatsin
             logger.exception("«%s» sinxronizatsiyasi muvaffaqiyatsiz", entity)
             self._fail(state, exc, started)
             raise
