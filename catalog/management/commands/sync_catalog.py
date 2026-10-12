@@ -16,11 +16,17 @@ Railway'da cron sifatida:
 
 import time
 
+import requests
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from catalog.sync import CatalogSync
 from moysklad.client import MoySkladClient, MoySkladError
+
+# MoySklad bir sahifani 60 s ichida bermasa yoki ulanish uzilsa — shu sahifa
+# 3 martagacha qayta so'raladi (5, 10, 15 s kutib). Bitta tasodifiy uzilish
+# butun sinxronizatsiyani yiqitmasin (2026-10: kuniga 1-2 marta bo'lardi).
+NETWORK_RETRIES = 3
 
 
 class Command(BaseCommand):
@@ -67,7 +73,7 @@ class Command(BaseCommand):
                 "MOYSKLAD_TOKEN topilmadi. Railway'ning Variables bo'limiga qo'shing."
             )
 
-        client = MoySkladClient(token=token)
+        client = MoySkladClient(token=token, network_retries=NETWORK_RETRIES)
 
         # --check: ulanishni tekshiramiz va limitni ko'rsatamiz
         if options["check"]:
@@ -108,6 +114,15 @@ class Command(BaseCommand):
                     "MoySklad eski tokenlarni bekor qiladi."
                 )
             raise CommandError("Sinxronizatsiya to'xtadi")
+        except requests.RequestException as exc:
+            # Qayta urinishlar ham yordam bermadi — MoySklad hozir javob
+            # bermayapti. Uzun traceback o'rniga qisqa xabar; keyingi cron
+            # navbatida (5 daqiqadan keyin) o'zi qayta uriniladi.
+            self._error(
+                f"MoySklad javob bermadi ({NETWORK_RETRIES + 1} marta urinildi): "
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise CommandError("Sinxronizatsiya to'xtadi — keyingi navbatda qayta uriniladi")
 
         if once:
             from django.utils import timezone

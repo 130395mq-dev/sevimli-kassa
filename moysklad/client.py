@@ -60,6 +60,20 @@ MAX_RETRIES = 5
 # Backoff: 1s, 2s, 4s, 8s, 16s — lekin 5 daqiqadan oshmaydi.
 MAX_BACKOFF_SECONDS = 300
 
+# Tarmoq uzilishi (MoySklad 60 s ichida javob bermadi, ulanish uzildi) —
+# HTTP xato emas, javobning o'zi yo'q. Bunday holda faqat GET qayta
+# so'raladi: o'qish xavfsiz. POST/PUT takrorlanmaydi — javob yo'qolgan
+# bo'lsa ham hujjat MoySklad'da yozilgan bo'lishi mumkin, takror esa
+# dublikat yaratadi.
+NETWORK_ERRORS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+
+# Tarmoq xatosidan keyin kutish: 1-marta 5 s, 2-marta 10 s, 3-marta 15 s.
+NETWORK_RETRY_WAIT_SECONDS = 5
+
 
 class MoySkladError(Exception):
     """MoySklad API xatosi."""
@@ -169,12 +183,17 @@ class MoySkladClient:
         base_url: str = BASE_URL,
         timeout: int = 60,
         user_agent: str = "SevimliKassa/0.1",
+        network_retries: int = 0,
     ) -> None:
         if not token:
             raise ValueError("MoySklad tokeni berilmagan")
 
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        # Tarmoq uzilganda GET necha marta QAYTA so'raladi. Standart 0 —
+        # panel va kassa so'rovlari kutib qolmasin; fon sinxronizatsiyasi
+        # (sync_catalog) o'zi oshiradi.
+        self.network_retries = max(0, int(network_retries))
         self.state = RateLimitState()
 
         # Bir vaqtda bitta so'rov — parallel limitga urilmaslik uchun.
@@ -206,9 +225,10 @@ class MoySkladClient:
         url = path if path.startswith("http") else f"{self.base_url}/{path.lstrip('/')}"
         attempt = 0
         backoff = 1.0
+        network_failures = 0
 
         while True:
-            attempt += 1
+            network_error: Exception | None = None
 
             with self._lock:
                 pause = self.state.suggested_pause()
@@ -216,14 +236,34 @@ class MoySkladClient:
                     logger.debug("Limitga yaqinlashdik, %.2f s kutamiz", pause)
                     time.sleep(pause)
 
-                response = self._session.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json,
-                    timeout=self.timeout,
+                try:
+                    response = self._session.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json,
+                        timeout=self.timeout,
+                    )
+                except NETWORK_ERRORS as exc:
+                    network_error = exc
+                else:
+                    self.state.update_from_headers(response.headers)
+
+            if network_error is not None:
+                network_failures += 1
+                if method.upper() != "GET" or network_failures > self.network_retries:
+                    raise network_error
+                wait = NETWORK_RETRY_WAIT_SECONDS * network_failures
+                logger.warning(
+                    "MoySklad javob bermadi (%s %s): %s — %.0f s dan keyin qayta "
+                    "so'raymiz (urinish %s/%s)",
+                    method, path, type(network_error).__name__, wait,
+                    network_failures, self.network_retries,
                 )
-                self.state.update_from_headers(response.headers)
+                time.sleep(wait)
+                continue
+
+            attempt += 1
 
             if response.status_code in (200, 201, 204):
                 if response.status_code == 204 or not response.content:
