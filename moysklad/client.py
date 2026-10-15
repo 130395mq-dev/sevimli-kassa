@@ -184,6 +184,7 @@ class MoySkladClient:
         timeout: int = 60,
         user_agent: str = "SevimliKassa/0.1",
         network_retries: int = 0,
+        max_retries: int = MAX_RETRIES,
     ) -> None:
         if not token:
             raise ValueError("MoySklad tokeni berilmagan")
@@ -194,6 +195,10 @@ class MoySkladClient:
         # panel va kassa so'rovlari kutib qolmasin; fon sinxronizatsiyasi
         # (sync_catalog) o'zi oshiradi.
         self.network_retries = max(0, int(network_retries))
+        # MoySklad 5xx/429 bersa jami nechta urinish. Standart 5 (~1 daqiqa);
+        # fon sinxronizatsiyasi ko'proq beradi — MoySklad sekinlashganda
+        # (2026-10-14: bir necha daqiqa 504) bir daqiqa kamlik qildi.
+        self.max_retries = max(1, int(max_retries))
         self.state = RateLimitState()
 
         # Bir vaqtda bitta so'rov — parallel limitga urilmaslik uchun.
@@ -275,14 +280,14 @@ class MoySkladClient:
             # Qayta urinishga arzimaydigan xato — darhol chiqamiz.
             # Bu muhim: bir xil xatoni takrorlash MoySklad'ni API'ni
             # o'chirishga majbur qiladi.
-            if not error.is_retryable or attempt >= MAX_RETRIES:
+            if not error.is_retryable or attempt >= self.max_retries:
                 logger.warning("MoySklad so'rovi muvaffaqiyatsiz: %s %s → %s", method, path, error)
                 raise error
 
             wait = self._wait_for(error, backoff)
             logger.info(
                 "MoySklad %s, %.1f s kutamiz (urinish %s/%s)",
-                error.status, wait, attempt, MAX_RETRIES,
+                error.status, wait, attempt, self.max_retries,
             )
             time.sleep(wait)
             backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
