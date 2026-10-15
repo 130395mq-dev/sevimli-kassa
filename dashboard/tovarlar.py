@@ -397,6 +397,11 @@ def falling_products(now=None, warehouse=None, strict=False) -> dict:
     demak sabab talab emas, tovar kelmay qolgan. «Boshqa omborlarda» —
     MoySklad'dagi qolgan omborlar qoldig'i (ko'chirib kelish mumkinmi).
 
+    Savdo manbai: kassasi bor omborlar — Sevimli Kassa cheklari (bizning
+    baza). Sevimli Kassa hali ulanmagan marketlar (masalan, un zavod —
+    egasining so'rovi, 2026-10-14) — MoySklad'dan (`tushgan_ms`), qoidalar
+    aynan bir xil.
+
     `warehouse` — ombor ms_id yoki «hammasi». Berilmasa: kassalar bitta
     omborda bo'lsa — o'sha, bir nechta bo'lsa — hammasi.
     `strict` — faqat aynan shu ombor (market boshqaruvchisi): ombor
@@ -406,48 +411,58 @@ def falling_products(now=None, warehouse=None, strict=False) -> dict:
     from django.db.models.functions import TruncDate
     from django.utils import timezone as tz
 
+    from . import tushgan_ms
+
     today = tz.localdate(now)
+    recent_start = today - timedelta(days=RECENT_DAYS)
+    recent_end = today - timedelta(days=1)
+    base_end = recent_start - timedelta(days=1)
+    base_start = base_end - timedelta(days=BASE_DAYS - 1)
+    window = {"base_start": base_start, "base_end": base_end,
+              "recent_start": recent_start, "recent_end": recent_end}
+
     warehouses = kassa_warehouses()
     by_id = {w["id"]: w for w in warehouses}
-    if strict and warehouse not in by_id:
-        recent_start = today - timedelta(days=RECENT_DAYS)
-        base_end = recent_start - timedelta(days=1)
+    ms_only = tushgan_ms.markets(exclude=by_id)
+    if strict and warehouse not in by_id and warehouse not in ms_only:
         return {"warehouse": warehouse, "warehouse_name": "", "warehouses": [],
                 "stopped": [], "dropped": [], "base_days": 0, "recent_days": 0,
-                "base_start": base_end - timedelta(days=BASE_DAYS - 1),
-                "base_end": base_end, "recent_start": recent_start,
-                "recent_end": today - timedelta(days=1), "ready": False}
-    if warehouse not in by_id and warehouse != ALL_WAREHOUSES:
+                **window, "ready": False}
+    if warehouse not in by_id and warehouse not in ms_only and warehouse != ALL_WAREHOUSES:
         warehouse = warehouses[0]["id"] if len(warehouses) == 1 else ALL_WAREHOUSES
+    # «Hammasi» — faqat kassasi bor omborlar (MoySklad'dagi marketlar alohida
+    # tanlanadi) — nomida shuni aytamiz, adashtirmasin
+    all_name = "Hamma kassali omborlar" if ms_only else "Hamma omborlar"
+    options = [{"id": w["id"], "name": w["name"]} for w in warehouses]
+    if len(warehouses) > 1:
+        options.insert(0, {"id": ALL_WAREHOUSES, "name": all_name})
+    options += [{"id": k, "name": f"{v} (MoySklad)"}
+                for k, v in sorted(ms_only.items(), key=lambda x: x[1].lower())]
+
+    if warehouse in ms_only:
+        return _falling_ms(warehouse, ms_only[warehouse], options, today, now, window)
+
     if warehouse == ALL_WAREHOUSES:
         registers = None
         stock_ids = list(by_id)
-        wh_name = "Hamma omborlar"
+        wh_name = all_name
     else:
         registers = by_id[warehouse]["registers"]
         stock_ids = [warehouse]
         wh_name = by_id[warehouse]["name"]
-    options = [{"id": w["id"], "name": w["name"]} for w in warehouses]
-    if len(warehouses) > 1:
-        options.insert(0, {"id": ALL_WAREHOUSES, "name": "Hamma omborlar"})
 
     key = f"tushgan:v2:{warehouse}:{today.isoformat()}:{tz.localtime(now).hour}"
     hit = cache.get(key)
     if hit is not None:
         return hit
 
-    recent_start = today - timedelta(days=RECENT_DAYS)
-    recent_end = today - timedelta(days=1)
-    base_end = recent_start - timedelta(days=1)
-    base_start = base_end - timedelta(days=BASE_DAYS - 1)
     base_days = _active_days(base_start, base_end, registers)
     recent_days = _active_days(recent_start, recent_end, registers)
 
     out = {"warehouse": warehouse, "warehouse_name": wh_name, "warehouses": options,
-           "stopped": [], "dropped": [], "base_days": len(base_days),
-           "recent_days": len(recent_days), "base_start": base_start,
-           "base_end": base_end, "recent_start": recent_start,
-           "recent_end": recent_end, "ready": len(base_days) >= 5 and len(recent_days) >= 2}
+           "source": "kassa", "stopped": [], "dropped": [], "base_days": len(base_days),
+           "recent_days": len(recent_days), **window,
+           "ready": len(base_days) >= 5 and len(recent_days) >= 2}
     if not out["ready"]:
         cache.set(key, out, FALL_CACHE_TTL)
         return out
@@ -459,35 +474,98 @@ def falling_products(now=None, warehouse=None, strict=False) -> dict:
     if registers is not None:
         items = items.filter(sale__shift__register_id__in=registers)
     rows = (
-        items
+        (r["product_id"], r["day"], r["qty"], r["total"])
+        for r in items
         .annotate(day=TruncDate("sale__created_at", tzinfo=tz.get_current_timezone()))
         .values("product_id", "day")
         .annotate(qty=Sum("quantity"), total=Sum("total"))
         .order_by()
     )
+    stopped, dropped = _classify(rows, base_days, recent_days, today)
+    _decorate(out, stopped, dropped, stock_ids, today)
+    cache.set(key, out, FALL_CACHE_TTL)
+    return out
+
+
+def _falling_ms(warehouse: str, name: str, options: list, today: date, now,
+                window: dict) -> dict:
+    """Sevimli Kassa ulanmagan market — savdo MoySklad'dan (`tushgan_ms`).
+
+    Ma'lumot fonda yuklanadi; hali to'liq bo'lmasa `pending` > 0 va sahifa
+    «MoySklad'dan yuklanmoqda» deb o'zi yangilanadi."""
+    from django.core.cache import cache
+    from django.utils import timezone as tz
+
+    from . import tushgan_ms
+
+    out = {"warehouse": warehouse, "warehouse_name": name, "warehouses": options,
+           "source": "moysklad", "stopped": [], "dropped": [], "base_days": 0,
+           "recent_days": 0, **window, "ready": False, "pending": 0,
+           "loading": False, "error": None, "fetched_at": None}
+    key = f"tushgan:ms:v1:{warehouse}:{today.isoformat()}:{tz.localtime(now).hour}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+
+    days = [window["base_start"] + timedelta(days=i)
+            for i in range((today - window["base_start"]).days + 1)]
+    got = tushgan_ms.days_data(warehouse, days, now=now)
+    out.update({"pending": got["missing"], "loading": got["loading"],
+                "error": got["error"], "fetched_at": got["fetched_at"]})
+    if got["missing"]:
+        return out
+
+    def active(start, end):
+        totals = {d: got["days"][d].get("total") or 0 for d in got["days"] if start <= d <= end}
+        top = max(totals.values(), default=0)
+        if top <= 0:
+            return []
+        return sorted(d for d, s in totals.items() if s >= top * ACTIVE_DAY_SHARE)
+
+    base_days = active(window["base_start"], window["base_end"])
+    recent_days = active(window["recent_start"], window["recent_end"])
+    out.update({"base_days": len(base_days), "recent_days": len(recent_days),
+                "ready": len(base_days) >= 5 and len(recent_days) >= 2})
+    if out["ready"]:
+        by_ms = {str(ms): pk for pk, ms in Product.objects.values_list("pk", "ms_id")}
+        rows = []
+        for d, e in got["days"].items():
+            for ms_id, (qty, total) in (e.get("rows") or {}).items():
+                pk = by_ms.get(ms_id)
+                if pk:
+                    rows.append((pk, d, Decimal(qty), int(total)))
+        stopped, dropped = _classify(rows, base_days, recent_days, today)
+        _decorate(out, stopped, dropped, [warehouse], today)
+    if not got["loading"]:
+        cache.set(key, out, FALL_CACHE_TTL)
+    return out
+
+
+def _classify(rows, base_days, recent_days, today: date) -> tuple[list, list]:
+    """Sof hisob. rows — (tovar_pk, kun, soni, summa_tiyin), bir tovar-kun
+    bir necha qator bo'lishi mumkin. Qaytaradi: (to'xtagan, kamaygan)."""
     base_set, recent_set = set(base_days), set(recent_days)
     stats: dict[int, dict] = {}
-    for r in rows:
-        s = stats.setdefault(r["product_id"], {"b_qty": Decimal(0), "b_sum": 0, "b_days": 0,
-                                               "r_qty": Decimal(0), "r_sum": 0,
-                                               "t_qty": Decimal(0), "last": None})
-        d = r["day"]
+    for pid, d, qty, total in rows:
+        s = stats.setdefault(pid, {"b_qty": Decimal(0), "b_sum": 0, "b_days": set(),
+                                   "r_qty": Decimal(0), "r_sum": 0,
+                                   "t_qty": Decimal(0), "last": None})
         if d in base_set:
-            s["b_qty"] += r["qty"] or 0
-            s["b_sum"] += r["total"] or 0
-            s["b_days"] += 1
+            s["b_qty"] += qty or 0
+            s["b_sum"] += total or 0
+            s["b_days"].add(d)
         elif d in recent_set:
-            s["r_qty"] += r["qty"] or 0
-            s["r_sum"] += r["total"] or 0
+            s["r_qty"] += qty or 0
+            s["r_sum"] += total or 0
         elif d == today:
-            s["t_qty"] += r["qty"] or 0
-        if (r["qty"] or 0) > 0 and (s["last"] is None or d > s["last"]):
+            s["t_qty"] += qty or 0
+        if (qty or 0) > 0 and (s["last"] is None or d > s["last"]):
             s["last"] = d
 
     nb, nr = len(base_days), len(recent_days)
     stopped, dropped = [], []
     for pid, s in stats.items():
-        if s["b_days"] < nb * REGULAR_SHARE:
+        if len(s["b_days"]) < nb * REGULAR_SHARE:
             continue
         b_day_qty = s["b_qty"] / nb
         if b_day_qty < 1:
@@ -506,13 +584,18 @@ def falling_products(now=None, warehouse=None, strict=False) -> dict:
             row["lost"] = row["before_sum"] - row["now_sum"]
             row["change"] = round(float((r_day_qty - b_day_qty) / b_day_qty * 100))
             dropped.append(row)
-
     stopped.sort(key=lambda r: -r["lost"])
     dropped.sort(key=lambda r: -r["lost"])
+    return stopped, dropped
+
+
+def _decorate(out: dict, stopped: list, dropped: list, stock_ids: list, today: date) -> None:
+    """Nomi, kodi, shtrix, qoldiq (tanlangan omborlar) va boshqa omborlar qoldig'i."""
+    from catalog.models import Stock
+
     ids = [r["product_id"] for r in stopped + dropped]
     products = {p.pk: p for p in Product.objects.filter(pk__in=ids)}
     codes = main_barcodes(ids)
-    from catalog.models import Stock
     in_stock = Stock.objects.filter(product_id__in=ids)
     stock = {
         r["product_id"]: r["q"]
@@ -545,8 +628,6 @@ def falling_products(now=None, warehouse=None, strict=False) -> dict:
         "stopped_out": sum(1 for r in stopped if r["out"]),
         "lost_per_day": sum(r["lost"] for r in stopped + dropped),
     })
-    cache.set(key, out, FALL_CACHE_TTL)
-    return out
 
 
 def manager_view(data: dict) -> dict:
