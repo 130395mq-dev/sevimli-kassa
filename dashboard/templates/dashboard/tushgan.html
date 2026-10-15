@@ -24,11 +24,27 @@
       </select>
     </label>
     <noscript><button type="submit" class="small">Ko'rsatish</button></noscript>
+    {% if f.source == "moysklad" %}
+    <span class="sec">Bu marketda Sevimli Kassa hali yo'q — savdo <b>MoySklad'dan</b> olinadi, qoldiq — shu omborniki.</span>
+    {% else %}
     <span class="sec">Savdo — shu ombordan sotadigan kassalarniki, qoldiq — shu omborniki.</span>
+    {% endif %}
   </form>
   {% endif %}
 
-  {% if not f.ready %}
+  {% if f.source == "moysklad" and f.pending %}
+    {% if f.loading %}
+    <div class="alert warn" data-kochirish-loading role="status"><span><i class="aylana" aria-hidden="true"></i></span><div>
+      <b>MoySklad'dan yuklanmoqda…</b> <span class="sec" data-otgan></span><br>
+      {{ f.warehouse_name }} savdosi kunma-kun MoySklad'dan olinadi — birinchi marta 1–2 daqiqa
+      oladi, keyin tez ochiladi. Sahifa tayyor bo'lgach <b>o'zi ochiladi</b>, hech narsa bosish shart emas.
+    </div></div>
+    {% else %}
+    <div class="alert err"><span>✕</span><div>
+      <b>MoySklad'dan olib bo'lmadi.</b> {{ f.error|default:"Keyinroq qayta oching." }}
+    </div></div>
+    {% endif %}
+  {% elif not f.ready %}
     <div class="alert warn"><span>!</span><div>
       <b>Hali erta.</b> Solishtirish uchun kamida 5 kunlik to'liq savdo kerak — hozir
       {{ f.base_days }} kun bor. Har kuni ma'lumot ko'payib boradi.
@@ -41,6 +57,7 @@
         <div><div class="k">To'xtagan</div><div class="v"><b class="minus">{{ f.stopped|length }}</b> ta{% if f.stopped_out %} <span class="sec">({{ f.stopped_out }} tasi tugagan)</span>{% endif %}</div></div>
         <div><div class="k">Kamaygan</div><div class="v"><b>{{ f.dropped|length }}</b> ta</div></div>
         <div><div class="k">Yo'qotish</div><div class="v num">≈ {{ f.lost_per_day|som }} so'm/kun</div></div>
+        {% if f.source == "moysklad" %}<div><div class="k">MoySklad'dan olindi</div><div class="v">{{ f.fetched_at|date:"d.m H:i"|default:"—" }}{% if f.loading %} <span class="sec" data-kochirish-loading role="status">· <i class="aylana kichik" aria-hidden="true"></i> yangilanmoqda</span>{% endif %}</div></div>{% endif %}
       </div>
       <div class="sec" style="margin-top: 12px;">
         Muntazam tovar — «oldin» kunlarning kamida yarmida sotilgan va kuniga o'rtacha 1 donadan
@@ -108,4 +125,5 @@
     </table>
     </div>
   {% endif %}
+  {% if f.loading %}{% include "dashboard/_fon_hisob.html" %}{% endif %}
 {% endblock %}
