@@ -28,6 +28,17 @@ from moysklad.client import MoySkladClient, MoySkladError
 # butun sinxronizatsiyani yiqitmasin (2026-10: kuniga 1-2 marta bo'lardi).
 NETWORK_RETRIES = 3
 
+# MoySklad 5xx (504 — «server vaqtida javob bermadi») yoki 429 bersa — jami
+# 8 urinish (kutish 1, 2, 4 … 64 s, ~3–4 daqiqa). Standart 5 urinish ~1
+# daqiqada tugaydi; 2026-10-14 da MoySklad undan uzoqroq 504 berib turdi.
+SERVER_RETRIES = 8
+
+# MoySklad baribir javob bermasa: shu tur oxirgi marta shuncha daqiqa
+# ichida muvaffaqiyatli yangilangan bo'lsa — navbat XATO deb belgilanmaydi
+# (keyingi navbatda o'zi qayta uriniladi, ma'lumot eskirmagan). MoySklad
+# bundan uzoqroq ishlamasa — xato: haqiqiy nosozlik yashirinib qolmasin.
+GRACE_MINUTES = 30
+
 
 class Command(BaseCommand):
     help = "MoySklad katalogini lokal bazaga sinxronlaydi"
@@ -73,7 +84,8 @@ class Command(BaseCommand):
                 "MOYSKLAD_TOKEN topilmadi. Railway'ning Variables bo'limiga qo'shing."
             )
 
-        client = MoySkladClient(token=token, network_retries=NETWORK_RETRIES)
+        client = MoySkladClient(token=token, network_retries=NETWORK_RETRIES,
+                                max_retries=SERVER_RETRIES)
 
         # --check: ulanishni tekshiramiz va limitni ko'rsatamiz
         if options["check"]:
@@ -113,6 +125,8 @@ class Command(BaseCommand):
                     "Token ishlamayapti. Ehtimol kimdir yangi token yaratgan — "
                     "MoySklad eski tokenlarni bekor qiladi."
                 )
+            elif exc.is_retryable and self._tolerate(options["only"], options["if_due"]):
+                return
             raise CommandError("Sinxronizatsiya to'xtadi")
         except requests.RequestException as exc:
             # Qayta urinishlar ham yordam bermadi — MoySklad hozir javob
@@ -122,6 +136,8 @@ class Command(BaseCommand):
                 f"MoySklad javob bermadi ({NETWORK_RETRIES + 1} marta urinildi): "
                 f"{type(exc).__name__}: {exc}"
             )
+            if self._tolerate(options["only"], options["if_due"]):
+                return
             raise CommandError("Sinxronizatsiya to'xtadi — keyingi navbatda qayta uriniladi")
 
         if once:
@@ -169,6 +185,35 @@ class Command(BaseCommand):
         "organizations": "organization",
         "reconcile": "reconcile",
     }
+
+    def _tolerate(self, kind: str | None, if_due: int = 0) -> bool:
+        """MoySklad VAQTINCHA javob bermadi (5xx/429/tarmoq). Shu tur yaqinda
+        muvaffaqiyatli yangilangan bo'lsa — navbatni xato deb belgilamaymiz:
+        ma'lumot eskirmagan, keyingi navbatda o'zi qayta uriniladi. Uzoq
+        davom etsa (yoki hech qachon muvaffaqiyat bo'lmagan) — xato.
+
+        `--if-due N` bilan ishlaydigan turlar N daqiqada bir yangilanadi —
+        ularning chegarasi N + GRACE_MINUTES."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from catalog.models import SyncState
+
+        if not kind:
+            return False
+        state = SyncState.objects.filter(entity=self._ENTITY[kind]).first()
+        if not state or not state.last_success_at:
+            return False
+        age = timezone.now() - state.last_success_at
+        if age > timedelta(minutes=GRACE_MINUTES + (if_due or 0)):
+            return False
+        self._warn(
+            f"MoySklad vaqtincha javob bermayapti — «{kind}» oxirgi marta "
+            f"{int(age.total_seconds() // 60)} daqiqa oldin yangilangan. "
+            "Keyingi navbatda o'zi qayta uriniladi."
+        )
+        return True
 
     def _is_due(self, kind: str, minutes: int) -> bool:
         from datetime import timedelta
