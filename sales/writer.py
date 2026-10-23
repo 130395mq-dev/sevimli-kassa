@@ -516,7 +516,9 @@ class SaleWriter:
         return payload
 
     def _agent(self, sale: Sale) -> dict:
-        if sale.customer_id and sale.customer.ms_id:
+        # ms_local — mijoz kassada yaratilgan, MoySklad'da hali yo'q: chek
+        # «Розничный покупатель» ga yoziladi (ball baribir bizda hisoblanadi).
+        if sale.customer_id and sale.customer.ms_id and not sale.customer.ms_local:
             return meta("counterparty", sale.customer.ms_id)
         return meta("counterparty", self._retail_agent_id())
 
