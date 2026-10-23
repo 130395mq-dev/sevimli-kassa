@@ -113,6 +113,71 @@ def bonus_receipts(params) -> dict:
             "kinds": BONUS_KINDS}
 
 
+RECEIPT_KINDS = [("", "Hammasi"), ("karta", "Nakopitel karta bilan"), ("qaytarish", "Qaytarishlar")]
+
+
+def all_receipts(params, base=None) -> dict:
+    """Barcha cheklar — mijoz ismi bilan (egasining so'rovi, 2026-10-22:
+    «cheklar ro'yxati bo'lishi kerak, nakopitel ishlatgan bo'lsa ismi
+    chiqib turishi kerak» — panelda).
+
+    `base` — `access.sales()` (boshqaruvchi faqat o'z marketini ko'radi).
+    ?tur=karta — faqat nakopitel karta skanerlangan cheklar (mijoz
+    biriktirilgan), ?tur=qaytarish; ?kassa=<id>; ?q= — mijoz, telefon,
+    karta yoki chek raqami.
+    """
+    period = _period(params)
+    a, b = _bounds(period["start"], period["end"])
+    tur = (params.get("tur") or "").strip()
+    q = (params.get("q") or "").strip()
+    kassa = (params.get("kassa") or "").strip()
+
+    base = Sale.objects.all() if base is None else base
+    qs = base.filter(created_at__gte=a, created_at__lt=b)
+    if kassa.isdigit():
+        qs = qs.filter(shift__register_id=int(kassa))
+    else:
+        kassa = ""
+    period_qs = qs                       # jami raqamlar — tur/qidiruvsiz
+    if tur == "karta":
+        qs = qs.filter(customer__isnull=False)
+    elif tur == "qaytarish":
+        qs = qs.filter(kind=Sale.RETURN)
+    else:
+        tur = ""
+    if q:
+        cond = (
+            Q(customer__name__icontains=q) | Q(customer__phone__icontains=q)
+            | Q(customer__discount_card__icontains=q) | Q(receipt_number=q)
+        )
+        if q.isdigit():
+            cond |= Q(number=int(q))
+        qs = qs.filter(cond)
+    qs = (
+        qs.annotate(
+            given=Sum("bonus_entries__delta", filter=Q(bonus_entries__delta__gt=0)),
+            taken=Sum("bonus_entries__delta", filter=Q(bonus_entries__delta__lt=0)),
+        )
+        .select_related("customer", "shift__register__store")
+        .order_by("-created_at", "-pk")
+    )
+
+    sales = period_qs.filter(kind=Sale.SALE)
+    agg = sales.aggregate(n=Count("id"), net=Sum("net_total"), spent=Sum("points_spent"),
+                          card=Count("id", filter=Q(customer__isnull=False)),
+                          customers=Count("customer", distinct=True))
+    totals = {
+        "receipts": agg["n"] or 0,
+        "sum": ((agg["net"] or 0) + (agg["spent"] or 0) * POINT_TIYIN) / 100,
+        "card": agg["card"] or 0,
+        "customers": agg["customers"] or 0,
+        "returns": period_qs.filter(kind=Sale.RETURN).count(),
+    }
+    registers = list(access.registers().order_by("name").values("pk", "name"))
+    return {**period, "qs": qs, "tur": tur, "q": q, "kassa": kassa, "totals": totals,
+            "kinds": RECEIPT_KINDS, "registers": registers}
+
+
 def decorate_receipts(sales) -> list:
     """Sahifadagi cheklarga ko'rsatish uchun maydonlar qo'shadi.
 
@@ -127,8 +192,8 @@ def decorate_receipts(sales) -> list:
         s.point = names[reg.pk]
         s.register_name = reg.name
         s.full_sum = (s.net_total + s.points_spent * POINT_TIYIN) / 100
-        s.given_pts = s.given or 0
-        s.taken_pts = -(s.taken or 0)
+        s.given_pts = getattr(s, "given", 0) or 0
+        s.taken_pts = -(getattr(s, "taken", 0) or 0)
         out.append(s)
     return out
 

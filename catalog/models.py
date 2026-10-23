@@ -209,6 +209,18 @@ class Customer(models.Model):
     updated = models.DateTimeField(null=True, blank=True)
     synced_at = models.DateTimeField(auto_now=True)
 
+    # SEVIMLI BONUS mijozlari bizning bazada yashaydi, MoySklad'ga qaram emas
+    # (egasining talabi, 2026-10-22). Kassada ro'yxatdan o'tgan mijoz darhol
+    # bizda yaratiladi; MoySklad'ga keyin yoziladi (catalog/mijozlar.py).
+    ms_local = models.BooleanField(
+        default=False,
+        help_text="MoySklad'da hali yaratilmagan: ms_id vaqtinchalik (lokal)",
+    )
+    ms_card_pending = models.BooleanField(
+        default=False,
+        help_text="Karta/telefon MoySklad'ga hali yozilmagan",
+    )
+
     class Meta:
         ordering = ["name"]
         verbose_name = "Mijoz"

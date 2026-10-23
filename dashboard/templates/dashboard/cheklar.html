@@ -1,0 +1,129 @@
+{% extends "dashboard/base.html" %}
+{% load pul l10n %}
+
+{% block title %}Cheklar — SEVIMLI{% endblock %}
+{% block nav_receipts %}on{% endblock %}
+{% block crumb %}Savdo · Cheklar{% endblock %}
+
+{% block body %}
+  <h1>Cheklar</h1>
+  <div class="sub">Barcha cheklar, nakopitel karta ishlatilgan bo'lsa mijoz ismi bilan — {{ d.label }}</div>
+
+  {% comment %}
+    Sana tanlovi bosh sahifadagidek. Qidiruv, kassa va «tur» tanlovi saqlanib
+    qoladi — tayyor davr bosilganda ham.
+  {% endcomment %}
+  <form method="get" class="davr">
+    <div class="presets">
+      {% for key, name in d.presets %}
+        <a class="chip {% if d.preset == key %}on{% endif %}" href="?davr={{ key }}{% if filt %}&amp;{{ filt }}{% endif %}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <label>dan <input type="date" name="dan" value="{{ d.start|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    <label>gacha <input type="date" name="gacha" value="{{ d.end|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"></label>
+    {% if d.registers|length > 1 %}
+      <label>kassa
+        <select name="kassa">
+          <option value="">hammasi</option>
+          {% for r in d.registers %}
+            <option value="{{ r.pk }}" {% if d.kassa == r.pk|stringformat:"s" %}selected{% endif %}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <input class="grow" type="search" name="q" value="{{ d.q }}" placeholder="Mijoz ismi, telefon, karta yoki chek raqami">
+    {% if d.tur %}<input type="hidden" name="tur" value="{{ d.tur }}">{% endif %}
+    <button type="submit" class="small">Ko'rsatish</button>
+  </form>
+
+  {% localize off %}
+  <div class="tiles">
+    <div class="tile hero">
+      <div class="head">
+        <div class="label">Cheklar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+      </div>
+      <div class="value num">{{ d.totals.receipts|som }}</div>
+      <div class="note">summasi {{ d.totals.sum|som }} so'm</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Nakopitel karta bilan</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg></span>
+      </div>
+      <div class="value num">{{ d.totals.card|som }}</div>
+      <div class="note">{{ d.totals.customers|som }} ta mijoz</div>
+    </div>
+    <div class="tile">
+      <div class="head">
+        <div class="label">Qaytarishlar</div>
+        <span class="tileicon"><svg class="icon" aria-hidden="true"><use href="#i-wallet"/></svg></span>
+      </div>
+      <div class="value num">{{ d.totals.returns|som }}</div>
+      <div class="note">shu davrda</div>
+    </div>
+  </div>
+  {% endlocalize %}
+
+  <form method="get" class="davr" style="margin-bottom: 12px;">
+    <div class="presets">
+      {% for key, name in d.kinds %}
+        <a class="chip {% if d.tur == key %}on{% endif %}" href="?{% if key %}tur={{ key }}{% if per %}&amp;{% endif %}{% endif %}{{ per }}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <span class="sec">Chekni bossangiz — ichidagi tovarlar ochiladi</span>
+  </form>
+
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th class="tight">Vaqt</th><th class="tight">Chek</th><th>Kassa</th><th>Mijoz</th>
+      <th class="right">Summa</th><th class="right">Ball</th>
+    </tr></thead>
+    <tbody>
+    {% for s in rows %}
+      <tr>
+        <td class="num tight">{{ s.created_at|date:"d.m H:i" }}</td>
+        <td class="num tight">
+          <a href="{% url 'dashboard:receipt' s.pk %}"><b>#{% if s.receipt_number %}{{ s.receipt_number }}{% else %}{{ s.number }}{% endif %}</b></a>
+          {% if s.kind == "return" %}<div><span class="badge warn">qaytarish</span></div>{% endif %}
+        </td>
+        <td>{{ s.register_name }}<div class="sec">{{ s.point }}</div></td>
+        <td>
+          {% if s.customer %}
+            {% if manager %}<b>{{ s.customer.name }}</b>{% else %}<a href="{% url 'dashboard:customer-bonus' s.customer.pk %}"><b>{{ s.customer.name }}</b></a>{% endif %}
+            <div class="sec">{{ s.customer.phone|default:"" }}{% if s.customer.discount_card %} · karta {{ s.customer.discount_card }}{% endif %}</div>
+          {% else %}<span class="sec">—</span>{% endif %}
+        </td>
+        <td class="right num">
+          <b>{{ s.full_sum|som_aniq }}</b>
+          {% if s.points_spent %}<div class="sec">pul bilan {{ s.net_sum|som_aniq }}</div>{% endif %}
+        </td>
+        <td class="right num">
+          {% if s.given_pts %}<span class="plus">+{{ s.given_pts|som }}</span>{% endif %}
+          {% if s.taken_pts %}<div><span class="minus">−{{ s.taken_pts|som }}</span></div>{% endif %}
+          {% if not s.given_pts and not s.taken_pts %}<span class="sec">—</span>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">
+        {% if d.q %}«{{ d.q }}» bo'yicha chek topilmadi.{% else %}Bu davrda chek yo'q.{% endif %}
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if page.paginator.num_pages > 1 %}
+    <div class="pager">
+      <span class="count">{{ page.paginator.count }} ta chek · {{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
+      {% if page.has_previous %}
+        <a href="?{% if keep %}{{ keep }}&amp;{% endif %}page={{ page.previous_page_number }}">‹ Oldingi</a>
+      {% else %}<span class="disabled">‹ Oldingi</span>{% endif %}
+      <span class="cur">{{ page.number }}</span>
+      {% if page.has_next %}
+        <a href="?{% if keep %}{{ keep }}&amp;{% endif %}page={{ page.next_page_number }}">Keyingi ›</a>
+      {% else %}<span class="disabled">Keyingi ›</span>{% endif %}
+    </div>
+  {% endif %}
+{% endblock %}

@@ -46,6 +46,7 @@ MANAGER_PAGES = frozenset({
     "dashboard:shifts",
     "dashboard:shift-detail",
     "dashboard:receipt",
+    "dashboard:receipts",          # cheklar ro'yxati — o'z marketiniki
     "dashboard:top-products",
     "dashboard:falling-products",
     "dashboard:running-out",

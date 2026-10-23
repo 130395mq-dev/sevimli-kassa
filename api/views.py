@@ -957,13 +957,14 @@ def _customer_dict(c: Customer) -> dict:
 @require_POST
 @register_required
 def create_customer(request):
-    """Kassadan yangi mijoz qo'shish.
+    """Kassadan yangi mijoz qo'shish (SEVIMLI BONUS).
 
-    MoySklad tokeni sozlangan bo'lsa — kontragent MoySklad'da yaratiladi
-    va uning id'si ishlatiladi (savdo o'shanga bog'lanadi). Sozlanmagan
-    bo'lsa (sinov) — lokal uuid bilan yaratiladi.
+    Mijoz avval BIZNING bazada yaratiladi — MoySklad'ga qaram emas
+    (egasining talabi, 2026-10-22). MoySklad'ga darhol yozishga urinamiz
+    (savdo shu kontragentga bog'lansin); bo'lmasa fon ishi keyin yozadi.
+    Qoidalar: catalog/mijozlar.py.
     """
-    import uuid as _uuid
+    from catalog import mijozlar
 
     data = body(request)
     name = (data.get("name") or "").strip()
@@ -973,36 +974,19 @@ def create_customer(request):
     if len(name) < 2:
         return error("Ism kamida 2 harf bo'lishi kerak")
 
-    ms_id = None
-    token = getattr(settings, "MOYSKLAD_TOKEN", "")
-    if token:
-        # MoySklad'da kontragent yaratamiz — savdo shunga bog'lanadi
-        from moysklad.client import MoySkladClient, MoySkladError
+    try:
+        customer, restored = mijozlar.register(name, phone, card)
+    except mijozlar.RegistrationError as e:
+        return error(str(e), status=e.status)
 
-        payload = {"name": name}
-        if phone:
-            payload["phone"] = phone
+    if customer.ms_local or customer.ms_card_pending:
         try:
-            created = MoySkladClient(token=token).post("entity/counterparty", payload)
-            ms_id = created.get("id")
-        except MoySkladError as e:
-            return error(f"MoySklad'ga yozilmadi: {e}", status=502)
-        if not ms_id:
-            return error("MoySklad javobida id yo'q", status=502)
-    else:
-        ms_id = str(_uuid.uuid4())
+            mijozlar.push_one(customer.pk)
+        except Exception as e:  # noqa: BLE001 — kassa kutmasin, fon ishi yozadi
+            logger.warning("Mijoz #%s MoySklad'ga hozir yozilmadi (keyin yoziladi): %s", customer.pk, e)
+        customer.refresh_from_db()
 
-    customer, created_local = Customer.objects.get_or_create(
-        ms_id=ms_id,
-        defaults={"name": name, "phone": phone, "discount_card": card},
-    )
-    if not created_local:
-        # Kamdan-kam: shu id allaqachon bor — nomni yangilaymiz
-        customer.name = name
-        customer.phone = phone or customer.phone
-        customer.save(update_fields=["name", "phone"])
-
-    return JsonResponse({"customer": _customer_dict(customer)})
+    return JsonResponse({"customer": _customer_dict(customer), "restored": restored})
 
 
 # ------------------------------------------------------------------ smena
