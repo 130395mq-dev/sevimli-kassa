@@ -15,6 +15,7 @@ urlpatterns = [
     path("bonus/", views.bonus, name="bonus"),
     path("bonus/mijoz/<int:pk>/", views.customer_bonus, name="customer-bonus"),
     path("bonus/cheklar/", views.bonus_receipts, name="bonus-receipts"),
+    path("cheklar/", views.receipts, name="receipts"),
     path("chek/<int:pk>/", views.receipt, name="receipt"),
     path("tovarlar/", views.top_products, name="top-products"),
     path("tovarlar/tushgan/", views.falling_products, name="falling-products"),
