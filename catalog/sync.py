@@ -456,9 +456,34 @@ class CatalogSync:
                 "archived": row.get("archived", False),
                 "updated": _parse_ms_datetime(row.get("updated")),
             }
+            self._keep_local_card(row["id"], defaults)
             Customer.objects.update_or_create(ms_id=row["id"], defaults=defaults)
             count += 1
         return count
+
+    @staticmethod
+    def _keep_local_card(ms_id, defaults: dict) -> None:
+        """Kassada berilgan karta/telefon MoySklad'dagi bo'sh qiymat bilan
+        o'chirilmaydi (SEVIMLI BONUS bizda yashaydi, 2026-10-22).
+
+        Xato shu edi: kassada ro'yxatdan o'tgan mijozning kartasi MoySklad'ga
+        yozilmagan, sinxron esa bo'sh kartani bazaga yozardi — mijoz keyingi
+        safar karta bo'yicha topilmasdi. Bizdagi karta MoySklad'ga hali
+        yozilmagan bo'lsa (ms_card_pending) yoki MoySklad'da karta bo'sh
+        bo'lsa — bizdagisi qoladi va MoySklad'ga yozish navbatiga qo'yiladi.
+        """
+        old = (
+            Customer.objects.filter(ms_id=ms_id)
+            .values("discount_card", "phone", "ms_card_pending").first()
+        )
+        if not old:
+            return
+        if old["discount_card"] and (old["ms_card_pending"] or not defaults["discount_card"]):
+            if not defaults["discount_card"] and not old["ms_card_pending"]:
+                defaults["ms_card_pending"] = True
+            defaults["discount_card"] = old["discount_card"]
+        if old["phone"] and not defaults["phone"]:
+            defaults["phone"] = old["phone"]
 
     def force_import_bonus(self) -> int:
         """MoySklad'dan har mijozning JORIY bonus balansini MAJBURAN oladi
