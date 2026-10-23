@@ -160,6 +160,17 @@ def heal(now=None) -> dict:
     except Exception as e:
         logger.warning("Sinov nomli cheklarni tuzatish: %s", e)
 
+    # 3b. Kassada ro'yxatdan o'tgan mijozlar MoySklad'ga (karta bilan).
+    #     Bonus bizda yashaydi; MoySklad nusxasi — savdo kontragenti uchun.
+    try:
+        from catalog import mijozlar
+
+        pushed = mijozlar.push_pending(limit=10)
+        if pushed["created"] or pushed["updated"] or pushed["failed"]:
+            done["customers"] = pushed
+    except Exception as e:
+        logger.warning("Mijozlarni MoySklad'ga yozish: %s", e)
+
     # 3. Kassa versiyalari — GitHub Release'dan (10 daqiqada bir).
     #    Egasi hech narsa yuklamaydi: GitHub yig'adi, hub o'zi olib keladi.
     try:
