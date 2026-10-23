@@ -1036,6 +1036,25 @@ def bonus_receipts(request):
     })
 
 
+@login_required
+def receipts(request):
+    """Cheklar: barcha cheklar, nakopitel karta ishlatilgan bo'lsa — mijoz
+    ismi bilan (egasining so'rovi, 2026-10-22). Boshqaruvchi faqat o'z
+    marketining cheklarini ko'radi."""
+    data = tovarlar.all_receipts(request.GET, access.sales())
+    page = Paginator(data["qs"], tovarlar.PAGE_SIZE).get_page(request.GET.get("page"))
+    return render(request, "dashboard/cheklar.html", {
+        "d": data,
+        "page": page,
+        "rows": tovarlar.decorate_receipts(page.object_list),
+        "keep": _query_without(request.GET, "page"),
+        "filt": _query_without(request.GET, "page", "davr", "dan", "gacha"),
+        "per": _query_without(request.GET, "page", "tur"),
+        "today": timezone.localdate(),
+        "manager": access.manager_of(request.user),
+    })
+
+
 def _query_without(params, *names) -> str:
     """So'rov qatori — ko'rsatilgan kalitlarsiz («a=1&b=2»)."""
     q = params.copy()
