@@ -147,6 +147,21 @@
             <span>%</span>
           </div>
         </label>
+        <label class="chk">
+          <input type="checkbox" name="search_code_only" {% if st.search_code_only %}checked{% endif %}>
+          <span>Kassada qidiruv faqat tovar kodi bo'yicha
+            <span class="hint">Nomi bilan qidirilmaydi — kassir tovar kodini teradi (masalan 00117). Yulduzchali tovarlar avvalgidek turadi.</span></span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="scan_only_barcoded" {% if st.scan_only_barcoded %}checked{% endif %}>
+          <span>Shtrix-kodli tovarni faqat skaner bilan qo'shish
+            <span class="hint">Qadog'ida shtrix-kodi bor tovar nomi bilan qo'shilmaydi — kassir uni skanerlaydi yoki kod raqamini teradi. Kilo va tarozi tovarlari nomi bilan qo'shilaveradi. Katta huquqli kassirga cheklov yo'q.</span></span>
+        </label>
+        <label class="chk">
+          <input type="checkbox" name="allow_park" {% if st.allow_park %}checked{% endif %}>
+          <span>Chekni keyinga qoldirishga ruxsat
+            <span class="hint">Kassa menyusida «Chekni keyinga qoldirish» chiqadi.</span></span>
+        </label>
       </div>
 
       <div class="sec-card" id="tovarlar">
