@@ -718,6 +718,7 @@ _SETTINGS_BOOLS = [
     "allow_choose_cashier",
     "allow_price_edit", "allow_price_type_switch",
     "allow_delete_line", "allow_discount",
+    "scan_only_barcoded", "allow_park", "search_code_only",
     "allow_create_product", "track_stock", "track_reserves",
     "add_customers_to_groups", "upload_customers_offline",
     "req_fio", "req_phone", "req_card", "req_email", "req_birthday", "req_gender",
