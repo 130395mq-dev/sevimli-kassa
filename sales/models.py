@@ -323,6 +323,19 @@ class RegisterSettings(models.Model):
     allow_delete_line = models.BooleanField("Chekdan alohida qatorni o'chirishga ruxsat", default=True)
     allow_discount = models.BooleanField("Chek va qatorlarga chegirma berishga ruxsat", default=True)
     max_discount = models.DecimalField("Eng ko'p chegirma (%)", max_digits=5, decimal_places=2, default=1)
+    # Egasi, 2026-10-24: kassir chekni yopgach mijoz «buni ham» desa,
+    # tovarni nomi bilan qidirib narxi bir xil BOSHQA tovarni urardi
+    # (Cola 2 L o'rniga 2,5 L) — qoldiq buzilardi. Yoqilsa: qadog'ida
+    # shtrix-kodi bor tovar kassada faqat skanerlanadi (kassa 1.18.15+).
+    scan_only_barcoded = models.BooleanField(
+        "Shtrix-kodli tovarni faqat skaner bilan qo'shish", default=True
+    )
+    # «Chekni keyinga qoldirish» 2026-10-15 da olib tashlangan edi;
+    # egasi (2026-10-24) uni kassa bo'yicha yoqib-o'chiradigan qildi.
+    allow_park = models.BooleanField("Chekni keyinga qoldirishga ruxsat", default=False)
+    # Egasi, 2026-10-24: «kodi bilan qidirish bo'lsin, faqat kod bilan» —
+    # kassada qidiruv nom bo'yicha emas, faqat tovar kodi bo'yicha.
+    search_code_only = models.BooleanField("Kassada qidiruv faqat tovar kodi bo'yicha", default=True)
 
     # ------------------------------------------------ Товары
     warehouse = models.CharField("Ombor", max_length=128, blank=True, default="")
@@ -410,6 +423,9 @@ class RegisterSettings(models.Model):
             "allow_delete_line": self.allow_delete_line,
             "allow_discount": self.allow_discount,
             "max_discount": float(self.max_discount),
+            "scan_only_barcoded": self.scan_only_barcoded,
+            "allow_park": self.allow_park,
+            "search_code_only": self.search_code_only,
             "allow_create_product": self.allow_create_product,
             "track_stock": self.track_stock,
             "required_customer_fields": [
