@@ -93,8 +93,15 @@ class ShiftReceipt:
 
     @property
     def net_total(self) -> int:
-        """Sof savdo — chek oxiridagi «shuncha savdo bo'ldi» raqami."""
+        """Sof savdo — faqat sotuv cheklari (to'lovlar shunga teng bo'lishi kerak)."""
         return self.gross_total - self.discount_total - self.paid_by_points
+
+    @property
+    def total_after_returns(self) -> int:
+        """Umumiy savdo — qaytarishlar AYRILGAN: chek oxiridagi «shuncha
+        savdo bo'ldi» raqami. Egasi (2026-10-24): «chekda umumiy savdodan
+        vozvrat ayrilmayapti» — ilgari bu yerda qaytarishlar ayrilmasdi."""
+        return self.net_total - self.returns_total
 
     @property
     def cash_total(self) -> int:
@@ -203,6 +210,12 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
         add(_pair("Ball bilan to'landi", "-" + sum_str(r.paid_by_points), w))
     add(_line("-", w))
     add(_pair("SOF SAVDO", sum_str(r.net_total), w))
+    if r.returns_count:
+        # Qaytarishlar umumiy savdodan ayriladi (egasi, 2026-10-24)
+        add(_pair(f"Qaytarishlar ({r.returns_count} chek)",
+                  "-" + sum_str(r.returns_total), w))
+        add(_line("-", w))
+        add(_pair("UMUMIY SAVDO", sum_str(r.total_after_returns), w))
 
     # --- to'lov turlari
     add(_line("=", w))
@@ -262,7 +275,9 @@ def render(r: ShiftReceipt, width: int = WIDE) -> str:
     add(_line("=", w))
     add("")
     add(_center("SHU SMENA SAVDOSI", w))
-    add(_center(sum_str(r.net_total) + " so'm", w))
+    add(_center(sum_str(r.total_after_returns) + " so'm", w))
+    if r.returns_count:
+        add(_center("(qaytarishlar ayrilgan)", w))
     add("")
     add(_line("=", w))
 

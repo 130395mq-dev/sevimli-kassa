@@ -118,6 +118,35 @@ class ShiftReceiptTest(TestCase):
         # 30 000 + 500 000 - 84 000
         self.assertEqual(r.expected_cash, 446_000_00)
 
+    def test_smena_chekida_umumiy_savdodan_qaytarish_ayriladi(self):
+        """Egasi (2026-10-24): «chekda umumiy savdodan vozvrat ayrilmayapti».
+
+        Smena yopilish chekidagi yakuniy raqam — qaytarishlar ayrilgan
+        umumiy savdo. To'lovlar baribir sotuv cheklariga teng (balans buzilmaydi).
+        """
+        self.add_sale(1, gross=500_000_00, pays=[(self.cash, 500_000_00)])
+        self.add_sale(2, gross=84_000_00, kind=Sale.RETURN,
+                      pays=[(self.cash, 84_000_00)])
+
+        r = build_receipt(self.shift)
+        self.assertEqual(r.total_after_returns, 416_000_00)
+        self.assertTrue(r.is_balanced)
+
+        text = render(r)
+        self.assertIn("Qaytarishlar (1 chek)", text)
+        self.assertRegex(text, r"UMUMIY SAVDO\s+416 000")
+        tail = text[text.index("SHU SMENA SAVDOSI"):]
+        self.assertIn("416 000 so'm", tail)
+        self.assertNotIn("500 000 so'm", tail)
+        self.assertIn("(qaytarishlar ayrilgan)", tail)
+
+    def test_qaytarishsiz_smena_cheki_ozgarmaydi(self):
+        self.add_sale(1, gross=100_000_00, pays=[(self.cash, 100_000_00)])
+        text = render(build_receipt(self.shift))
+        self.assertNotIn("UMUMIY SAVDO", text)
+        self.assertNotIn("qaytarishlar ayrilgan", text)
+        self.assertIn("100 000 so'm", text[text.index("SHU SMENA SAVDOSI"):])
+
     def test_kassa_operatsiyalari(self):
         self.add_sale(1, gross=800_000_00, pays=[(self.cash, 800_000_00)])
         CashOperation.objects.create(
