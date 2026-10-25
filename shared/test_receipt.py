@@ -102,8 +102,12 @@ def main() -> int:
         longest = max(len(x) for x in lines)
         ok &= check(f"{label} kenglik", longest <= width, True)
 
-    # Eng muhim raqam chekda borligi
-    ok &= check("itog bor", "13 829 600 so'm" in render(r), True)
+    # Eng muhim raqam chekda borligi. Egasi (2026-10-24): «chekda umumiy
+    # savdodan vozvrat ayrilmayapti» — yakuniy raqam qaytarishlar AYRILGAN
+    # umumiy savdo: 13 829 600 - 84 000 = 13 745 600.
+    ok &= check("umumiy savdo", r.total_after_returns, 1_374_560_000)
+    ok &= check("itog bor", "13 745 600 so'm" in render(r), True)
+    ok &= check("UMUMIY SAVDO qatori", "UMUMIY SAVDO" in render(r), True)
 
     # --- mijoz cheki (render_sale)
     from shared.receipt import SaleItem, SaleReceipt, render_sale
