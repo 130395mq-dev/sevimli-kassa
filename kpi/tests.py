@@ -14,9 +14,9 @@ from unittest import mock
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
 
-from catalog.models import Product, Warehouse
+from catalog.models import Product, SyncState, Warehouse
 
-from . import davomat, hisob, hujjatlar, ishlar, minus, ms, sabab
+from . import davomat, hisob, hujjatlar, ishlar, korinish, minus, ms, sabab
 from .models import (Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan,
                      Tovaroved)
 
@@ -465,6 +465,26 @@ class HujjatTest(Base):
         self.assertEqual((vol["hodisa"], vol["noyob_tovar"]), (2, 1))   # qayta chop etish = bitta tovar
 
 
+    def test_audit_oynalab_o_qiladi_va_vaqt_tugasa_davom_etadi(self):
+        """Orqaga to'ldirish vaqt chegarasiga sig'masa — boshidan emas,
+        to'xtagan joyidan davom etadi (aks holda chop etish hech qachon
+        ko'rinmay qolardi)."""
+        now = T(h=15)
+        c = FakeClient({"audit": []})
+        hujjatlar.sync_prints(c, hujjatlar.Budget(0), now)          # vaqt yo'q — bitta oyna
+        st = SyncState.objects.get(entity="kpi:audit:print")
+        start = now - timedelta(days=hujjatlar.BACKFILL_DAYS)
+        self.assertEqual(st.cursor, start + hujjatlar.WINDOW)
+        self.assertEqual(len(c.calls), 1)
+        self.assertIn(f"moment>={ms.fmt(start)};moment<={ms.fmt(start + hujjatlar.WINDOW)}", c.calls[0][1]["filter"])
+        c2 = FakeClient({"audit": []})
+        hujjatlar.sync_prints(c2, hujjatlar.Budget(0), now)
+        self.assertIn(f"moment>={ms.fmt(st.cursor - hujjatlar.OVERLAP)}", c2.calls[0][1]["filter"])
+        hujjatlar.sync_prints(FakeClient({"audit": []}), hujjatlar.Budget(30), now)   # qolgani bir yo'la
+        st.refresh_from_db()
+        self.assertEqual(st.cursor, now)
+
+
 class SababTest(Base):
     def test_kech_kiritilgan_prixod_taxmini_va_yechim(self):
         self.scan({(WH1, P2): Decimal(1)}, T(h=9))
@@ -626,3 +646,105 @@ class SahifaTest(Base):
         self.assertContains(r, "taxmin matni")
         r = c.get(f"/kpi/minus/{MinusIssue.objects.get().pk}/")
         self.assertContains(r, "TAXMIN")
+
+
+class KorinishTest(Base):
+    """Reyting sahifasidagi grafiklar hisobi."""
+
+    def test_minus_ulushi_chizgichi(self):
+        self.assertEqual(korinish.share_meter(1.0, 5)["status"], "good")
+        self.assertEqual(korinish.share_meter(4.0, 5)["label"], "chegaraga yaqin")
+        m = korinish.share_meter(7.0, 5)
+        self.assertEqual((m["status"], m["fill"], m["mark"]), ("bad", 70.0, 50.0))
+        m = korinish.share_meter(12.0, 5)                      # shkala ulushga cho'ziladi
+        self.assertEqual((m["fill"], m["mark"]), (100.0, 41.7))
+        self.assertIsNone(korinish.share_meter(None, 5))
+
+    def test_ochiq_minuslar_tarkibi(self):
+        now = T(h=12)
+
+        def issue(pid, **kw):
+            p = Product.objects.create(ms_id=pid, name=pid[-3:])
+            return MinusIssue.objects.create(warehouse_ms_id=WH1, product=p, product_ms_id=pid, name="x",
+                                             first_seen=T(h=8), last_seen=T(h=11), first_qty=-1, min_qty=-1,
+                                             last_qty=-1, **kw)
+        issue("aaaaaaaa-0000-0000-0000-000000000101", deadline=T(h=10))                     # muddati o'tgan
+        issue("aaaaaaaa-0000-0000-0000-000000000102", deadline=T(h=20), pre_tracking=True)  # kuzatuvdan oldingi
+        issue("aaaaaaaa-0000-0000-0000-000000000103", deadline=T(h=20))                     # muddati bor
+        issue("aaaaaaaa-0000-0000-0000-000000000104", deadline=T(h=9), confirmed_cause="xato_emas")
+        issue("aaaaaaaa-0000-0000-0000-000000000105", deadline=T(h=9), status=MinusIssue.CLOSED, closed_at=T(h=9))
+        c = korinish.composition(WH1, now)
+        self.assertEqual(c["total"], 3)
+        self.assertEqual({s["key"]: s["n"] for s in c["segs"]}, {"late": 1, "pre": 1, "ok": 1})
+
+    def test_ball_halqasi(self):
+        self.assertEqual(korinish.score_ring(None)["status"], "none")
+        self.assertEqual(korinish.score_ring(None)["text"], "—")
+        r = korinish.score_ring(Decimal("82.50"))
+        self.assertEqual((r["status"], r["text"], r["percent"]), ("good", "82.5", 82))
+        self.assertEqual(korinish.status_of(Decimal("49.99")), "bad")
+
+    def test_kunlik_ball_trendi_0_100_shkalada(self):
+        day = date(2026, 10, 26)
+        self.assertIsNone(korinish.score_spark(self.tov, day, day))
+        for d, v in ((24, "40"), (25, None), (26, "90")):
+            KpiKun.objects.create(tovaroved=self.tov, sana=date(2026, 10, d), warehouse_ms_id=WH1,
+                                  qoida_version=1, ish_ball=Decimal(v) if v else None)
+        sp = korinish.score_spark(self.tov, day, day)             # «bugun» ham — so'nggi 14 kun
+        self.assertEqual((sp["n"], sp["first"], sp["last"]), (2, "40", "90"))
+        self.assertEqual(sp["end"]["y"], round(sp["h"] - 4 - 0.9 * (sp["h"] - 8), 1))
+
+    def test_oxirgi_tekshiruv_do_kon_bo_yicha(self):
+        MinusScan.objects.create(at=T(h=9), per_wh={WH1: [3, 300], WH2: [1, 50]})
+        MinusScan.objects.create(at=T(h=10), per_wh={WH1: [2, 300]})          # WH2 yo'q
+        self.assertEqual(korinish.latest_counts(WH1), (2, 300))
+        self.assertEqual(korinish.latest_counts(WH2), (1, 50))
+        self.assertEqual(korinish.latest_counts("33333333-3333-3333-3333-333333333333"), (None, None))
+
+    def test_minus_ulushi_dinamikasi(self):
+        day = date(2026, 10, 26)
+        defs = [(WH1, "Unzavod", 0), (WH2, "Ulgurji", 1)]
+        MinusScan.objects.create(at=T(h=9, m=5), per_wh={WH1: [4, 200]})
+        self.assertIsNone(korinish.minus_trend(defs, day, day, T(h=12), 5))   # bitta nuqta — grafik yo'q
+        MinusScan.objects.create(at=T(h=10, m=5), per_wh={WH1: [2, 200], WH2: [1, 100]})
+        MinusScan.objects.create(at=T(h=10, m=40), per_wh={WH1: [3, 200]})   # soat ichida oxirgisi olinadi
+        MinusScan.objects.create(at=T(h=11, m=5), per_wh={WH1: [1, 200]})
+        c = korinish.minus_trend(defs, day, day, T(h=12), 5)
+        # Ikkala do'konda ham ma'lumot bor joydan boshlanadi; WH2 oldingi qiymati bilan davom etadi
+        self.assertEqual([h["label"] for h in c["hover"]], ["10:00", "11:00"])
+        self.assertEqual([[it["txt"] for it in h["items"]] for h in c["hover"]],
+                         [["1.50", "1.00"], ["0.50", "1.00"]])
+        self.assertEqual([[it["n"] for it in h["items"]] for h in c["hover"]], [[3, 1], [1, 1]])
+        self.assertEqual([s["idx"] for s in c["series"]], [0, 1])
+        self.assertEqual((c["goal"]["text"], c["series"][0]["last"]), ("5", "0.5"))
+        self.assertTrue(all(t["label"].endswith("%") for t in c["ticks"]))
+        self.assertTrue(c["hourly"])
+        self.assertIn("mob", c)
+        # Bir necha kunlik davr — kunlar bo'yicha
+        MinusScan.objects.create(at=T(day=25, h=20), per_wh={WH1: [5, 200], WH2: [2, 100]})
+        c = korinish.minus_trend(defs, date(2026, 10, 20), day, T(h=12), 5)
+        self.assertEqual([h["label"] for h in c["hover"]], ["25.10", "26.10"])
+        self.assertFalse(c["hourly"])
+
+    def test_x_yozuvlari_bir_biriga_tegmaydi(self):
+        xl = [{"x": x, "label": str(x)} for x in (68, 100, 140, 190, 230, 864)]
+        out = korinish.thin_labels(xl, 60, 864)
+        self.assertEqual([x["x"] for x in out], [68, 140, 230, 864])
+        self.assertEqual(out[-1]["anchor"], "end")
+
+    def test_reyting_sahifasi_grafiklar_bilan(self):
+        for h in range(8, 13):
+            MinusScan.objects.create(at=T(h=h, m=5), per_wh={WH1: [10 - h % 3, 400]})
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        with mock.patch("kpi.views.timezone.now", return_value=T(h=13)):
+            r = c.get("/kpi/?davr=bugun")
+        self.assertContains(r, 'class="chart kchart desk"')
+        self.assertContains(r, "chegara 5%")
+        self.assertContains(r, "Ochiq minuslar")
+        self.assertContains(r, "Unzavod tovaroved")
+        self.assertNotContains(r, "Grafik kamida")
+        MinusScan.objects.all().delete()
+        r = c.get("/kpi/?davr=bugun")
+        self.assertContains(r, "Grafik kamida")

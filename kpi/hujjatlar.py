@@ -194,39 +194,57 @@ def sync_details(client, budget: Budget) -> int:
     return n
 
 
-def _contexts(client, event_type: str, since):
-    return client.iter_list(
-        "audit", page_size=AUDIT_PAGE,
-        filter=f"moment>={ms.fmt(since)};eventType={event_type}",
-    )
+WINDOW = timedelta(hours=12)   # audit oynasi: har oyna tugagach kursor suriladi
+
+
+def _contexts(client, event_type: str, since, until=None):
+    flt = f"moment>={ms.fmt(since)}"
+    if until is not None:
+        flt += f";moment<={ms.fmt(until)}"
+    return client.iter_list("audit", page_size=AUDIT_PAGE, filter=f"{flt};eventType={event_type}")
+
+
+def _windows(st: SyncState, now):
+    """Kursordan hozirgacha 12 soatlik oynalar. Har oyna to'liq o'qilgach kursor
+    suriladi — katta orqaga to'ldirish vaqt chegarasida bo'linib, keyingi
+    safar to'xtagan joyidan davom etadi (boshidan emas)."""
+    start = (st.cursor - OVERLAP) if st.cursor else now - timedelta(days=BACKFILL_DAYS)
+    while start < now:
+        end = min(start + WINDOW, now)
+        yield start, end
+        start = end
+
+
+def _advance(st: SyncState, cursor) -> None:
+    st.cursor = cursor
+    st.last_success_at = timezone.now()
+    st.last_error = ""
+    st.save()
 
 
 def sync_deleted(client, budget: Budget, now=None) -> int:
     """O'chirilgan / savatga tashlangan / qaytarilgan hujjatlar (auditdan)."""
     now = now or timezone.now()
     st = _state("kpi:audit:delete")
-    since = (st.cursor - OVERLAP) if st.cursor else now - timedelta(days=BACKFILL_DAYS)
     n = 0
-    for et in ("delete", "puttorecyclebin", "restorefromrecyclebin"):
-        for ctx in _contexts(client, et, since):
-            if ctx.get("entityType") and ctx["entityType"] not in KINDS:
-                continue
-            for ev in client.iter_list(f"audit/{ctx['id']}/events", page_size=AUDIT_PAGE):
-                if ev.get("entityType") not in KINDS:
+    for a, b in _windows(st, now):
+        for et in ("delete", "puttorecyclebin", "restorefromrecyclebin"):
+            for ctx in _contexts(client, et, a, b):
+                if ctx.get("entityType") and ctx["entityType"] not in KINDS:
                     continue
-                mid = ms.ms_id(ev.get("entity"))
-                if not mid:
-                    continue
-                when = ms.parse(ev.get("moment")) or now
-                n += Hujjat.objects.filter(ms_id=mid).update(
-                    deleted_at=None if et == "restorefromrecyclebin" else when,
-                )
-            if not budget.left():
-                return n  # kursor surilmaydi — keyingi safar shu joydan
-    st.cursor = now
-    st.last_success_at = timezone.now()
-    st.last_error = ""
-    st.save()
+                for ev in client.iter_list(f"audit/{ctx['id']}/events", page_size=AUDIT_PAGE):
+                    if ev.get("entityType") not in KINDS:
+                        continue
+                    mid = ms.ms_id(ev.get("entity"))
+                    if not mid:
+                        continue
+                    when = ms.parse(ev.get("moment")) or now
+                    n += Hujjat.objects.filter(ms_id=mid).update(
+                        deleted_at=None if et == "restorefromrecyclebin" else when,
+                    )
+        _advance(st, b)          # oyna to'liq o'qildi
+        if not budget.left():
+            break
     return n
 
 
@@ -234,33 +252,30 @@ def sync_prints(client, budget: Budget, now=None) -> int:
     """«Распечатан товар» — audit `print` hodisalari (kim, qachon, qaysi tovar)."""
     now = now or timezone.now()
     st = _state("kpi:audit:print")
-    since = (st.cursor - OVERLAP) if st.cursor else now - timedelta(days=BACKFILL_DAYS)
     n = 0
-    for ctx in _contexts(client, "print", since):
-        for ev in client.iter_list(f"audit/{ctx['id']}/events", page_size=AUDIT_PAGE):
-            et = ev.get("entityType") or ""
-            if et not in ("product", "variant", "bundle", "service"):
-                continue
-            mid = ms.ms_id(ev.get("entity"))
-            when = ms.parse(ev.get("moment") or ctx.get("moment"))
-            if not mid or not when:
-                continue
-            _, created = ChopEtish.objects.get_or_create(
-                audit_id=ctx["id"], product_ms_id=mid,
-                defaults={
-                    "product_name": (ev.get("name") or "")[:512], "entity_type": et,
-                    "uid": ev.get("uid") or ctx.get("uid") or "",
-                    "source": ev.get("source") or ctx.get("source") or "",
-                    "moment": when,
-                },
-            )
-            n += int(created)
+    for a, b in _windows(st, now):
+        for ctx in _contexts(client, "print", a, b):
+            for ev in client.iter_list(f"audit/{ctx['id']}/events", page_size=AUDIT_PAGE):
+                et = ev.get("entityType") or ""
+                if et not in ("product", "variant", "bundle", "service"):
+                    continue
+                mid = ms.ms_id(ev.get("entity"))
+                when = ms.parse(ev.get("moment") or ctx.get("moment"))
+                if not mid or not when:
+                    continue
+                _, created = ChopEtish.objects.get_or_create(
+                    audit_id=ctx["id"], product_ms_id=mid,
+                    defaults={
+                        "product_name": (ev.get("name") or "")[:512], "entity_type": et,
+                        "uid": ev.get("uid") or ctx.get("uid") or "",
+                        "source": ev.get("source") or ctx.get("source") or "",
+                        "moment": when,
+                    },
+                )
+                n += int(created)
+        _advance(st, b)
         if not budget.left():
-            return n
-    st.cursor = now
-    st.last_success_at = timezone.now()
-    st.last_error = ""
-    st.save()
+            break
     return n
 
 
