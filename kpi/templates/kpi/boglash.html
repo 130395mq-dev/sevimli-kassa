@@ -39,6 +39,7 @@
             {% for x in xodimlar %}<option value="{{ x.pk }}" {% if t.ms_xodim_id == x.pk %}selected{% endif %}>{{ x.name }}{% if x.uid %} ({{ x.uid }}){% endif %}</option>{% endfor %}
           </select>
         </label>
+        <label><span>yoki MoySklad logini <span class="sec">— qo'lda</span></span><input name="ms_uid" value="{{ t.ms_uid }}" maxlength="255" placeholder="masalan: giyos@sevimli_uz"></label>
         <label><span>Sevimli HR xodim ID <span class="sec">— HR ulanganda</span></span><input name="hr_id" value="{{ t.hr_xodim_id }}" maxlength="64"></label>
         <label><span>HR'dagi ismi</span><input name="hr_name" value="{{ t.hr_xodim_nomi }}" maxlength="255"></label>
         <label><span>Smena boshlanishi</span><input type="time" name="smena_boshi" value="{{ t.smena_boshi|time:'H:i' }}"></label>
@@ -47,6 +48,13 @@
       </div>
       <button type="submit" class="small">Saqlash</button>
     </form>
+    {% if t.ochsa_boladi %}
+    <form method="post" style="margin-top: 8px;" onsubmit="return confirm('«{{ t.name|escapejs }}» o\'chirilsinmi?');">
+      {% csrf_token %}<input type="hidden" name="action" value="ochir"><input type="hidden" name="id" value="{{ t.pk }}">
+      <button type="submit" class="small ghost">O'chirish</button>
+      <span class="sec">Xato yaratilgan bo'lsa. Do'konga biriktirilgandan keyin o'chirilmaydi (tarix saqlanadi).</span>
+    </form>
+    {% endif %}
 
     <h3 style="margin: 18px 0 8px;">Do'kon</h3>
     <div class="tablewrap"><table>
@@ -72,7 +80,9 @@
       <span class="sec">Avvalgi do'kon shu sanadan oldingi kun bilan avtomatik yopiladi.</span>
     </form>
 
-    <h3 style="margin: 18px 0 8px;">Panelga kirish</h3>
+    <details style="margin-top: 18px;"{% if t.user %} open{% endif %}>
+    <summary class="sec" style="cursor: pointer;">Tovaroved panelga o'zi kirib, o'z natijasini ko'rsinmi? (ixtiyoriy — bog'lash uchun shart emas)</summary>
+    <div style="margin-top: 10px;">
     {% if t.user %}
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="login_off"><input type="hidden" name="id" value="{{ t.pk }}">
         Login: <b>{{ t.user.username }}</b> — {% if t.user.is_active %}<span class="badge ok">kira oladi</span>{% else %}<span class="badge off">to'xtatilgan</span>{% endif %}
@@ -89,6 +99,8 @@
       </form>
       <div class="note">Ixtiyoriy. Login bo'lmasa tovaroved panelga kirmaydi — natijalarni faqat siz ko'rasiz.</div>
     {% endif %}
+    </div>
+    </details>
   </div>
   {% endfor %}
 
@@ -103,8 +115,9 @@
           {% for x in xodimlar %}<option value="{{ x.pk }}">{{ x.name }}{% if x.uid %} ({{ x.uid }}){% endif %}</option>{% endfor %}
         </select>
       </label>
+      <label><span>yoki MoySklad logini <span class="sec">— qo'lda</span></span><input name="ms_uid" maxlength="255" placeholder="masalan: giyos@sevimli_uz"></label>
     </div>
-    {% if not xodimlar %}<div class="note" style="margin-bottom: 10px;">MoySklad xodimlari ro'yxati bo'sh — yuqoridagi «MoySklad xodimlarini yangilash» tugmasini bosing.</div>{% endif %}
+    {% if not xodimlar %}<div class="note" style="margin-bottom: 10px;">MoySklad xodimlari ro'yxati bo'sh — yuqoridagi «MoySklad xodimlarini yangilash» tugmasini bosing yoki loginni qo'lda yozing.</div>{% endif %}
     <button type="submit">Qo'shish</button>
   </form>
 {% endblock %}
