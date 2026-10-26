@@ -1,10 +1,10 @@
 <style>
-  .kpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  .kpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
                gap: 16px; margin-bottom: 18px; }
   .kpi-cards .card { margin: 0; }
   .kpi-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .kpi-head .who { font-weight: 700; font-size: 16px; }
-  .kpi-head .where { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .kpi-head .who, .kcard .who { font-weight: 700; font-size: 16px; }
+  .kpi-head .where, .kcard .where { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .rank { font-size: 12px; color: var(--faint); font-weight: 700; }
   .score { font-size: 30px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
   .score small { font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -22,5 +22,145 @@
   details.tarkib summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   details.tarkib[open] summary { color: var(--ink); }
   .wrapline { white-space: normal; word-break: break-word; }
-  @media (max-width: 760px) { .mini { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* ---- holat ranglari: doim matn bilan birga (rang yolg'iz ma'no bermaydi) */
+  .st-good { color: var(--accent); }
+  .st-warn { color: var(--warn); }
+  .st-bad  { color: var(--danger); }
+  .st-none { color: var(--muted); }
+
+  /* ---- yuqori plitalar */
+  .kpi-tiles { margin-bottom: 16px; }
+  .kpi-tiles .tile .value small.of { font-size: 14px; font-weight: 600; color: var(--muted);
+                                     letter-spacing: 0; margin-left: 2px; }
+  .kpi-tiles .tile .value.faintv { color: var(--faint); }
+
+  /* ---- minuslar dinamikasi (bitta o'q, har do'kon — o'z rangida) */
+  .kpi-trend { margin-bottom: 18px; padding-bottom: 12px; }
+  .kpi-trend-head { display: flex; justify-content: space-between; align-items: flex-end;
+                    gap: 10px 18px; flex-wrap: wrap; margin-bottom: 10px; }
+  .kpi-trend-head .legend { margin: 0; }
+  .kpi-trend-head .legend b { color: var(--ink); }
+  .legend .swatch.line.c0, .trend-tip .k.c0 { background: var(--c0); }
+  .legend .swatch.line.c1, .trend-tip .k.c1 { background: var(--c1); }
+  .legend .swatch.line.c2, .trend-tip .k.c2 { background: var(--c2); }
+  .legend .swatch.line.c3, .trend-tip .k.c3 { background: var(--c3); }
+  .legend .swatch.line.c4, .trend-tip .k.c4 { background: var(--c4); }
+  .swatch.c0 { background: var(--c0); }  .swatch.c1 { background: var(--c1); }
+  .swatch.c2 { background: var(--c2); }  .swatch.c3 { background: var(--c3); }
+  .swatch.c4 { background: var(--c4); }
+  .kpi-chart { position: relative; }
+  svg.kchart { width: 100%; max-width: none; height: auto; }
+  svg.kchart.mob { display: none; }
+  svg.kchart .tick, svg.kchart .day { font-size: 12px; }
+  svg.kchart .day.end { text-anchor: end; }
+  svg.kchart .kline { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+  svg.kchart .kend { stroke: var(--surface); stroke-width: 2; }
+  svg.kchart .kline.c0 { stroke: var(--c0); }  svg.kchart .c0:not(.kline) { fill: var(--c0); }
+  svg.kchart .kline.c1 { stroke: var(--c1); }  svg.kchart .c1:not(.kline) { fill: var(--c1); }
+  svg.kchart .kline.c2 { stroke: var(--c2); }  svg.kchart .c2:not(.kline) { fill: var(--c2); }
+  svg.kchart .kline.c3 { stroke: var(--c3); }  svg.kchart .c3:not(.kline) { fill: var(--c3); }
+  svg.kchart .kline.c4 { stroke: var(--c4); }  svg.kchart .c4:not(.kline) { fill: var(--c4); }
+  svg.kchart .hov .hit { fill: transparent; }
+  svg.kchart .hov:hover .hit { fill: rgba(255,255,255,.035); }
+  html[data-theme="light"] svg.kchart .hov:hover .hit { fill: rgba(0,0,0,.03); }
+  svg.kchart .hov .cross { stroke: var(--line-strong); stroke-width: 1; opacity: 0; }
+  svg.kchart .hov .pt { opacity: 0; stroke: var(--surface); stroke-width: 2; }
+  svg.kchart .hov:hover .cross, svg.kchart .hov:hover .pt { opacity: 1; }
+  .kpi-chart .trend-tip { transform: none; top: 0; }
+  .kpi-chart .trend-tip .k { display: inline-block; width: 10px; height: 3px; border-radius: 2px;
+                             margin-right: 6px; vertical-align: middle; }
+  .kpi-chart .trend-tip div { margin-top: 2px; }
+  svg.kchart .kgoal { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 5 5; }
+  svg.kchart .kgoal-t { fill: var(--muted); font-size: 11.5px; text-anchor: end; }
+  .kfoot { color: var(--faint); }
+  .kpi-empty { padding: 26px 0 18px; color: var(--muted); font-size: 13.5px; text-align: center; }
+
+  /* ---- tovaroved kartasi */
+  a.kcard { display: block; color: inherit; text-decoration: none; min-width: 0;
+            transition: border-color .12s, background .12s; }
+  a.kcard:hover { text-decoration: none; border-color: var(--line-strong); background: var(--surface-2); }
+  .kcard-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; }
+  .kwho { min-width: 0; flex: 1 1 auto; }
+  .kcard .who { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+  .kcard .who .swatch { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 10px; }
+  .kverdict { font-weight: 700; font-size: 14px; line-height: 1.35; margin-top: 8px; }
+  .kverdict .note { font-weight: 400; }
+  svg.kring { flex: 0 0 auto; }
+  svg.kring text { font-size: 22px; font-weight: 800; }
+  svg.kring text.of { font-size: 10.5px; font-weight: 600; fill: var(--muted); }
+  svg.kring.none text { fill: var(--faint); }
+  svg.kring.good circle.fg { stroke: var(--accent); }
+  svg.kring.warn circle.fg { stroke: var(--warn); }
+  svg.kring.bad  circle.fg { stroke: var(--danger); }
+  .kdays { margin-top: 8px; }
+  .kgap { margin-top: 10px; }
+  .kblock { margin-top: 16px; }
+  .kblock-h > span { white-space: nowrap; }
+  .kblock-h { display: flex; justify-content: space-between; align-items: baseline; gap: 2px 10px; flex-wrap: wrap;
+              font-size: 12.5px; color: var(--muted); margin-bottom: 7px; }
+  .kblock-h b { color: var(--ink); font-size: 14px; }
+  svg.kspark { display: block; width: 100%; height: 44px; }
+  svg.kspark .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+                     vector-effect: non-scaling-stroke; }
+  svg.kspark .area { stroke: none; opacity: .14; }
+  svg.kspark.c0 .line { stroke: var(--c0); }  svg.kspark.c0 .area { fill: var(--c0); }
+  svg.kspark.c1 .line { stroke: var(--c1); }  svg.kspark.c1 .area { fill: var(--c1); }
+  svg.kspark.c2 .line { stroke: var(--c2); }  svg.kspark.c2 .area { fill: var(--c2); }
+  svg.kspark.c3 .line { stroke: var(--c3); }  svg.kspark.c3 .area { fill: var(--c3); }
+  svg.kspark.c4 .line { stroke: var(--c4); }  svg.kspark.c4 .area { fill: var(--c4); }
+
+  /* minus ulushi chizg'ichi: chegara — tik chiziq */
+  .meter { position: relative; height: 10px; border-radius: 5px; background: var(--surface-3); }
+  .meter-fill { height: 100%; border-radius: 5px; min-width: 4px; }
+  .meter-fill.good { background: var(--accent); }
+  .meter-fill.warn { background: var(--warn); }
+  .meter-fill.bad  { background: var(--danger); }
+  .meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px;
+                border-radius: 1px; background: var(--ink-soft); }
+  .meter-legend { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px;
+                  font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* ochiq minuslar tarkibi — bo'laklar orasida 2px bo'shliq */
+  .stack { display: flex; gap: 2px; height: 12px; }
+  .stack .seg { display: block; min-width: 4px; border-radius: 3px; }
+  .seg.late { background: var(--danger); }
+  .seg.pre  { background: var(--faint); }
+  .seg.ok   { background: var(--warn); }
+  .stack-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px;
+                  font-size: 12px; color: var(--muted); }
+  .stack-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .stack-legend i.seg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+  .stack-legend b { color: var(--ink); }
+  .stack-legend .zero { opacity: .6; }
+
+  .kvol .hrow { padding: 4px 0; }
+  .kvol .hrow:hover { background: transparent; }
+  .kvol .hrow .top { margin-bottom: 4px; }
+  .kvol .hrow .nm { font-size: 12.5px; }
+  .kvol .hrow .vl { font-size: 12.5px; }
+  .kvol .hrow .track { height: 6px; }
+  .kvol .hrow .fill { background: var(--faint); }
+
+  /* ---- ma'lumot holati */
+  .kstatus { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px 24px; }
+  .kstatus > div { display: flex; align-items: center; gap: 9px; padding: 7px 0;
+                   border-bottom: 1px solid var(--line); font-size: 13.5px; min-width: 0; }
+  .kstatus .k { color: var(--muted); }
+  .kstatus .v { margin-left: auto; color: var(--ink); white-space: nowrap; }
+  .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--line-strong); }
+  .sdot.ok { background: var(--accent); }
+  .sdot.bad { background: var(--danger); }
+
+  @media (max-width: 760px) {
+    .mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    svg.kchart.desk { display: none; }
+    svg.kchart.mob { display: block; }
+    svg.kchart.mob .tick, svg.kchart.mob .day { font-size: 21px; }
+    svg.kchart.mob .kgoal-t { font-size: 19px; }
+    svg.kchart.mob .kline { stroke-width: 3.6; }
+    svg.kchart.mob .kgoal { stroke-width: 2.2; stroke-dasharray: 8 7; }
+    .kpi-chart .trend-tip { white-space: normal; max-width: 260px; }
+    .kpi-cards { grid-template-columns: 1fr; }
+  }
 </style>
