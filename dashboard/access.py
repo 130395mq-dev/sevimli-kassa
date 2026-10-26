@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import Resolver404, resolve
 
 from sales.models import PanelManager, Payment, Register, Sale, SaleItem, Shift
@@ -57,6 +57,10 @@ MANAGER_PAGES = frozenset({
 #: POST faqat kirish/chiqish uchun — boshqaruvchi hech narsani o'zgartirmaydi.
 _MANAGER_POST = frozenset({"login", "logout"})
 
+#: Tovaroved (o'z logini bilan, kpi.Tovaroved.user) — faqat o'z KPI sahifalari,
+#: faqat ko'rish. Bu sahifalar ichida ham faqat o'z ma'lumoti (kpi/views.py).
+TOVAROVED_PAGES = frozenset({"login", "logout", "kpi:men", "kpi:xodim", "kpi:minus"})
+
 
 def manager_of(user) -> PanelManager | None:
     """Foydalanuvchi boshqaruvchi bo'lsa — uning yozuvi, egasi bo'lsa None."""
@@ -71,6 +75,24 @@ def manager_of(user) -> PanelManager | None:
         manager = None
     user._panel_manager_cache = manager
     return manager
+
+
+def tovaroved_of(user):
+    """Foydalanuvchi tovaroved sifatida bog'langan bo'lsa — uning yozuvi.
+    Superfoydalanuvchi (egasi) hech qachon tovaroved hisoblanmaydi."""
+    if user is None or not getattr(user, "is_authenticated", False) or user.is_superuser:
+        return None
+    cached = getattr(user, "_tovaroved_cache", False)
+    if cached is not False:
+        return cached
+    from django.core.exceptions import ObjectDoesNotExist
+
+    try:
+        tov = user.tovaroved
+    except (ObjectDoesNotExist, AttributeError):
+        tov = None
+    user._tovaroved_cache = tov
+    return tov
 
 
 def registers_of(warehouse_ms_id) -> frozenset[int]:
@@ -139,7 +161,10 @@ class PanelAccessMiddleware:
     def __call__(self, request):
         manager = manager_of(getattr(request, "user", None))
         if manager is None:
-            return self.get_response(request)
+            tovaroved = tovaroved_of(getattr(request, "user", None))
+            if tovaroved is None:
+                return self.get_response(request)
+            return self._tovaroved(request)
         # Doira 403 sahifasi uchun ham o'rnatiladi: uning tepasidagi aloqa
         # chiroqlari ham faqat o'z kassalarini ko'rsatsin.
         token = _SCOPE.set(registers_of(manager.warehouse_ms_id))
@@ -157,6 +182,27 @@ class PanelAccessMiddleware:
             _SCOPE.reset(token)
 
 
+    def _tovaroved(self, request):
+        # Kassalar doirasi bo'sh — tepadagi aloqa chiroqlari ham hech narsa ko'rsatmaydi
+        token = _SCOPE.set(frozenset())
+        try:
+            try:
+                name = resolve(request.path_info).view_name
+            except Resolver404:
+                return self.get_response(request)
+            if name == "dashboard:points":
+                return redirect("kpi:men")  # kirgandan keyin bosh sahifa — o'z KPI'si
+            if name not in TOVAROVED_PAGES:
+                return forbidden(request)
+            if request.method not in ("GET", "HEAD") and name not in _MANAGER_POST:
+                return forbidden(request)
+            return self.get_response(request)
+        finally:
+            _SCOPE.reset(token)
+
+
 def context(request):
-    """Shablonlar uchun: `panel_manager` — boshqaruvchi bo'lsa uning yozuvi."""
-    return {"panel_manager": manager_of(getattr(request, "user", None))}
+    """Shablonlar uchun: `panel_manager` — boshqaruvchi bo'lsa uning yozuvi,
+    `panel_tovaroved` — tovaroved bo'lsa uning yozuvi."""
+    user = getattr(request, "user", None)
+    return {"panel_manager": manager_of(user), "panel_tovaroved": tovaroved_of(user)}
