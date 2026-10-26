@@ -27,13 +27,31 @@
     <span class="sec">{{ xodimlar|length }} ta xodim ro'yxatda · faqat o'qiladi</span>
   </form>
   {% if hr_on %}
-  <form method="post" style="margin-bottom: 16px;">
+  <form method="post" style="margin-bottom: 8px;">
     {% csrf_token %}<input type="hidden" name="action" value="hr_xodimlar">
     <button type="submit" class="small ghost">Sevimli HR xodimlarini yangilash</button>
     <span class="sec">{{ hr_xodimlar|length }} ta HR xodimi ro'yxatda · faqat o'qiladi</span>
   </form>
+  {% if not hr_env %}
+  <form method="post" style="margin-bottom: 16px;" onsubmit="return confirm('Sevimli HR bilan aloqa uzilsinmi? Davomat KPI\'ga kirmay qoladi.');">
+    {% csrf_token %}<input type="hidden" name="action" value="hr_uz">
+    <span class="badge ok">Sevimli HR ulangan</span>
+    <button type="submit" class="small ghost">Uzish</button>
+  </form>
+  {% endif %}
   {% else %}
-  <div class="alert warn"><span>!</span><div>Sevimli HR ulanmagan: kassa serverida <b>SEVIMLI_HR_TOKEN</b> sozlanmagan. Ulangach HR xodimini ro'yxatdan tanlaysiz va davomat KPI'ga qo'shiladi.</div></div>
+  <div class="card">
+    <h3 style="margin: 0 0 6px;">Sevimli HR'ni ulash</h3>
+    <div class="note" style="margin-bottom: 10px;">
+      1) <a href="{{ hr_url }}/api/kpi/kalit/" target="_blank" rel="noopener">{{ hr_url }}/api/kpi/kalit/</a> sahifasini oching (Sevimli HR'ga super admin bo'lib kirgan bo'lishingiz kerak) va «Nusxa olish» ni bosing.<br>
+      2) Kalitni shu yerga qo'ying va «Ulash» ni bosing. Kalit saqlanadi, lekin bu sahifada qayta ko'rsatilmaydi.
+    </div>
+    <form method="post" autocomplete="off" class="davr">
+      {% csrf_token %}<input type="hidden" name="action" value="hr_kalit">
+      <label style="flex: 1 1 320px;">Sevimli HR kaliti <input type="password" name="hr_kalit" required minlength="20" maxlength="255" autocomplete="off" spellcheck="false" style="width: 100%;"></label>
+      <button type="submit" class="small">Ulash</button>
+    </form>
+  </div>
   {% endif %}
 
   {% for t in rows %}
