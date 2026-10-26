@@ -841,10 +841,18 @@
       <div class="mark" aria-hidden="true">S</div>
       <div class="txt">
         <div class="name">SEVIMLI</div>
-        <div class="sub">{% if panel_manager %}{{ panel_manager.warehouse_name|default:"market paneli" }}{% else %}boshqaruv paneli{% endif %}</div>
+        <div class="sub">{% if panel_manager %}{{ panel_manager.warehouse_name|default:"market paneli" }}{% elif panel_tovaroved %}{{ panel_tovaroved.name }}{% else %}boshqaruv paneli{% endif %}</div>
       </div>
     </div>
 
+    {% if panel_tovaroved %}{# tovaroved faqat o'z KPI'sini ko'radi (dashboard/access.py) #}
+    <nav aria-label="Nazorat">
+      <div class="group">Nazorat</div>
+      <a class="item {% block nav_kpi_men %}{% endblock %}" href="/kpi/men/">
+        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+        <span class="txt">Mening ishim</span></a>
+    </nav>
+    {% else %}
     <nav aria-label="Savdo">
       <div class="group">Savdo</div>
       <a class="item {% block nav_points %}{% endblock %}" href="/">
@@ -860,8 +868,18 @@
         <svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>
         <span class="txt">Top tovarlar</span></a>
     </nav>
+    {% endif %}
 
-    {% if not panel_manager %}{# boshqaruvchi sozlamalarni ko'rmaydi (dashboard/access.py) #}
+    {% if not panel_manager and not panel_tovaroved %}
+    <nav aria-label="Nazorat">
+      <div class="group">Nazorat</div>
+      <a class="item {% block nav_kpi %}{% endblock %}" href="/kpi/">
+        <svg class="icon" aria-hidden="true"><use href="#i-store"/></svg>
+        <span class="txt">Tovarovedlar</span></a>
+    </nav>
+    {% endif %}
+
+    {% if not panel_manager and not panel_tovaroved %}{# boshqaruvchi va tovaroved sozlamalarni ko'rmaydi (dashboard/access.py) #}
     <nav aria-label="Sozlash">
       <div class="group">Sozlash</div>
       <a class="item {% block nav_registers %}{% endblock %}" href="/kassalar/">
