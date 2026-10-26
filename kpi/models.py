@@ -3,8 +3,9 @@ Tovarovedlar nazorati va KPI (egasining talabi, 2026-10-26).
 
 Ma'lumot manbalari:
   * MoySklad — FAQAT O'QISH (qoldiq, hujjatlar, audit). Hech narsa yozilmaydi.
-  * Sevimli HR — davomat. Hozircha ULANMAGAN: davomat qismi «Ma'lumot
-    yetarli emas» deb turadi, soxta (demo) raqam qo'yilmaydi.
+  * Sevimli HR — davomat, FAQAT O'QISH API orqali (kpi/hr.py). Kalit
+    sozlanmagan bo'lsa davomat qismi «Ma'lumot yetarli emas» deb turadi,
+    soxta (demo) raqam qo'yilmaydi.
 
 Asosiy qoidalar (egasining hujjatidan):
   * taxmin hech qachon tasdiqlangan xato sifatida ko'rsatilmaydi va ballga
@@ -39,6 +40,68 @@ class MsXodim(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.uid})" if self.uid else self.name
+
+
+class HrXodim(models.Model):
+    """Sevimli HR xodimi — faqat o'qib olinadi (bog'lash ro'yxati uchun)."""
+
+    hr_id = models.CharField("HR ID", max_length=64, unique=True)
+    ism = models.CharField("Ismi", max_length=255)
+    lavozim = models.CharField("Lavozimi", max_length=255, blank=True)
+    filial = models.CharField("Filial", max_length=255, blank=True)
+    smena = models.CharField("Smena", max_length=255, blank=True)
+    faol = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-faol", "filial", "ism"]
+        verbose_name = "Sevimli HR xodimi"
+        verbose_name_plural = "Sevimli HR xodimlari"
+
+    def __str__(self) -> str:
+        return f"{self.ism} — {self.filial}" if self.filial else self.ism
+
+
+class HrUlanish(models.Model):
+    """Sevimli HR kaliti — egasi panelda (Bog'lash) kiritadi. Kalit sahifada
+    qayta ko'rsatilmaydi va logga yozilmaydi. Bitta qator."""
+
+    kalit = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Sevimli HR ulanishi"
+        verbose_name_plural = "Sevimli HR ulanishi"
+
+    def __str__(self) -> str:
+        return "Sevimli HR kaliti"
+
+
+class HrDavomat(models.Model):
+    """Sevimli HR'dagi bir kunlik davomat (nusxa). KPI shu nusxadan hisoblanadi —
+    HR vaqtincha javob bermasa ham oldingi kunlar saqlanib qoladi."""
+
+    hr_xodim_id = models.CharField(max_length=64, db_index=True)
+    sana = models.DateField()
+    smena = models.CharField(max_length=255, blank=True)
+    reja_boshi = models.DateTimeField(null=True, blank=True)
+    reja_oxiri = models.DateTimeField(null=True, blank=True)
+    kirish = models.DateTimeField(null=True, blank=True)
+    chiqish = models.DateTimeField(null=True, blank=True)
+    dam_kuni = models.BooleanField(default=False)
+    kechikish_kechirilgan = models.BooleanField(default=False)
+    erta_ketish_kechirilgan = models.BooleanField(default=False)
+    holat = models.CharField(max_length=20, blank=True)
+    olingan_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-sana"]
+        constraints = [models.UniqueConstraint(fields=["hr_xodim_id", "sana"], name="kpi_hrdavomat_xodim_sana")]
+        verbose_name = "HR davomati"
+        verbose_name_plural = "HR davomati"
+
+    def __str__(self) -> str:
+        return f"{self.hr_xodim_id} — {self.sana}"
 
 
 class Tovaroved(models.Model):

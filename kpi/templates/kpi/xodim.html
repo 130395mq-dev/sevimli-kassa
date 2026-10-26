@@ -27,9 +27,9 @@
 
   <div class="card">
     <div class="kv">
-      <div><div class="k">Umumiy baho</div><div class="v">{% if p.umumiy is not None %}<span class="score">{{ p.umumiy }}</span>{% else %}<span class="score none">Ma'lumot yetarli emas</span><div class="note">davomat (Sevimli HR) ulanmagan</div>{% endif %}</div></div>
+      <div><div class="k">Umumiy baho</div><div class="v">{% if p.umumiy is not None %}<span class="score">{{ p.umumiy }}</span>{% else %}<span class="score none">Ma'lumot yetarli emas</span><div class="note">{% if hr_on %}davomat bahosi hali yo'q{% else %}davomat (Sevimli HR) ulanmagan{% endif %}</div>{% endif %}</div></div>
       <div><div class="k">Ish natijasi (davr o'rtachasi)</div><div class="v">{% if p.ish is not None %}<span class="score">{{ p.ish }}</span>{% else %}<span class="score none">Ma'lumot yetarli emas</span>{% endif %}</div></div>
-      <div><div class="k">Davomat</div><div class="v"><span class="badge off">Sevimli HR ulanmagan</span></div></div>
+      <div><div class="k">Davomat</div><div class="v">{% if not hr_on %}<span class="badge off">Sevimli HR ulanmagan</span>{% elif p.davomat is not None %}<span class="score">{{ p.davomat }}</span><div class="note">{{ p.davomat_kunlar }} kun baholandi{% if p.soat is not None %} · {{ p.soat }} soat ishlangan{% endif %}</div>{% else %}<span class="score none">Ma'lumot yetarli emas</span>{% endif %}</div></div>
       <div><div class="k">Kunlar</div><div class="v">{{ p.ish_kunlar }} baholandi / {{ p.kunlar }} hisoblandi{% if p.versiyalar %}<div class="note">qoida versiyasi: {% for v in p.versiyalar %}v{{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}</div></div>
     </div>
     <div class="note" style="margin-top: 10px;">Davr bahosi — shu davrda saqlangan kunlik natijalar o'rtachasi. Ma'lumot yetarli bo'lmagan kunlar o'rtachaga kirmaydi (jazo ham, bonus ham emas).</div>
@@ -131,12 +131,33 @@
   </div>
 
   <h2>Davomat</h2>
+  {% if hr_on and tov.hr_xodim_id %}
+  <div class="note" style="margin-bottom: 8px;">Sevimli HR'dan (faqat o'qiladi){% if tov.hr_xodim_nomi %} · {{ tov.hr_xodim_nomi }}{% endif %}. Chiqish belgisi yo'q kun ball olmaydi va tekshiruvga chiqadi; HR'da kechirilgan kechikish jazo bermaydi; dam kuni baholanmaydi.</div>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Sana</th><th>Smena (reja)</th><th>Kirish</th><th>Chiqish</th><th class="right">Ball</th><th>Izoh</th></tr>
+    {% for d in davomat %}
+      <tr>
+        <td class="tight">{{ d.sana|date:"d.m.Y" }}</td>
+        <td class="tight">{% if d.reja_boshi %}{{ d.reja_boshi|time:"H:i" }}–{{ d.reja_oxiri|time:"H:i" }}{% else %}<span class="sec">smena yo'q</span>{% endif %}</td>
+        <td class="tight">{% if d.kirish %}{{ d.kirish|time:"H:i" }}{% elif d.dam_kuni %}<span class="sec">dam kuni</span>{% else %}<span class="minus">—</span>{% endif %}</td>
+        <td class="tight">{% if d.chiqish %}{{ d.chiqish|time:"H:i" }}{% else %}—{% endif %}</td>
+        <td class="right num">{% if d.baho.ball is not None and d.baho.ball != "" %}<b>{{ d.baho.ball }}</b>{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="wrapline">{% if d.baho.tekshiruv %}<span class="badge warn">tekshirilsin</span> {% endif %}{{ d.baho.sabab|default:"hali hisoblanmagan" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">Bu davrda HR'dan davomat hali olinmagan.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% else %}
   <div class="card">
-    <span class="badge off">Sevimli HR ulanmagan</span>
-    <div class="note" style="margin-top: 8px;">Rejalashtirilgan va ishlangan soat, kechikish, ruxsatli yo'qlik va tasdiqlangan qo'shimcha soat HR ulangandan keyin shu yerda chiqadi.
+    <span class="badge off">{% if hr_on %}Sevimli HR xodimiga bog'lanmagan{% else %}Sevimli HR ulanmagan{% endif %}</span>
+    <div class="note" style="margin-top: 8px;">{% if hr_on %}Bog'lash sahifasida shu tovarovedga Sevimli HR'dagi xodimni tanlang — keyin smena, kirish/chiqish va davomat bahosi shu yerda chiqadi.{% else %}Rejalashtirilgan va ishlangan soat, kechikish, ruxsatli yo'qlik HR ulangandan keyin shu yerda chiqadi.{% endif %}
       {% if tov.smena_boshi %}Jadval (qo'lda kiritilgan): {{ tov.smena_boshi|time:"H:i" }}–{{ tov.smena_oxiri|time:"H:i" }}.{% endif %}
       {% if tov.hr_xodim_id %}HR xodim ID: {{ tov.hr_xodim_id }}.{% endif %}</div>
   </div>
+  {% endif %}
 
   <h2>Biriktirish tarixi</h2>
   <div class="tablewrap">

@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -23,9 +24,9 @@ from django.utils import timezone
 from catalog.models import SyncState, Warehouse
 from dashboard import access, grafik
 
-from . import hisob, korinish, ms
-from .models import (Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan,
-                     MsXodim, Tovaroved)
+from . import hisob, hr, korinish, ms
+from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
+                     MinusScan, MsXodim, Tovaroved)
 
 DAVRLAR = [("bugun", "Bugun"), ("kecha", "Kecha"), ("hafta", "Oxirgi 7 kun"),
            ("oy", "Shu oy"), ("otgan_oy", "O'tgan oy")]
@@ -73,10 +74,13 @@ def _status() -> dict:
     names = {"kpi:minus": "Minus tekshiruvi", "kpi:hujjatlar": "Hujjatlar", "kpi:chop": "Chop etish (audit)",
              "kpi:ochirilgan": "O'chirilgan hujjatlar", "kpi:xodimlar": "MoySklad xodimlari",
              "kpi:hisob": "KPI hisobi"}
+    hr_on = hr.configured()
+    if hr_on:
+        names["kpi:davomat"] = "Davomat (Sevimli HR)"
     rows = [{"name": label, "ok": bool(states.get(k) and states[k].last_success_at),
              "at": states[k].last_success_at if states.get(k) else None,
              "error": states[k].last_error if states.get(k) else ""} for k, label in names.items()]
-    return {"rows": rows, "last_scan": last_scan, "enabled": Biriktirish.objects.exists()}
+    return {"rows": rows, "last_scan": last_scan, "enabled": Biriktirish.objects.exists(), "hr_on": hr_on}
 
 
 def _late(i: MinusIssue) -> bool:
@@ -214,7 +218,14 @@ def xodim(request, pk):
                     .filter(Q(store_ms_id=b.warehouse_ms_id) | Q(target_ms_id=b.warehouse_ms_id))
                     .order_by("-created")[:150])
     prints = list(ChopEtish.objects.filter(uid=tov.ms_uid, moment__gte=s, moment__lt=e)[:150]) if tov.ms_uid else []
+    davomat = []
+    if hr.configured() and tov.hr_xodim_id:
+        baho = {d.sana: (d.tarkib or {}).get("davomat") or {} for d in days}
+        for row in HrDavomat.objects.filter(hr_xodim_id=tov.hr_xodim_id.strip(), sana__gte=start, sana__lte=end):
+            row.baho = baho.get(row.sana, {})
+            davomat.append(row)
     return render(request, "kpi/xodim.html", {
+        "hr_on": hr.configured(), "davomat": davomat,
         "tov": tov, "b": b, "p": hisob.period(tov, start, end), "days": days, "issues": issues,
         "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(),
         "davr": key, "davrlar": DAVRLAR, "start": start, "end": end, "owner": _owner(request),
@@ -334,6 +345,40 @@ def boglash(request):
                                             "Loginni qo'lda yozsangiz ham bo'ladi.")
             return redirect("kpi:boglash")
 
+        if action == "hr_kalit":
+            kalit = (request.POST.get("hr_kalit") or "").strip()
+            if len(kalit) < 20 or len(kalit) > 255 or any(ch.isspace() for ch in kalit):
+                messages.error(request, "Kalit noto'g'ri ko'rinishda. Sevimli HR sahifasidagi kalitni to'liq nusxa oling.")
+                return redirect("kpi:boglash")
+            hr.save_token(kalit)
+            try:
+                n = hr.sync_xodimlar()
+            except hr.HrKalitXato as exc:
+                hr.forget_token()
+                messages.error(request, str(exc))
+            except hr.HrError as exc:
+                messages.error(request, f"Kalit saqlandi, lekin hozir tekshirib bo'lmadi: {exc}. Keyinroq «Sevimli HR xodimlarini yangilash» ni bosing.")
+            else:
+                messages.success(request, f"Sevimli HR ulandi: {n} ta xodim o'qildi. Endi har tovarovedga HR xodimini tanlang.")
+            return redirect("kpi:boglash")
+
+        if action == "hr_uz":
+            if not hr.from_env():
+                hr.forget_token()
+                messages.success(request, "Sevimli HR kaliti o'chirildi — HR'ga so'rov yuborilmaydi.")
+            return redirect("kpi:boglash")
+
+        if action == "hr_xodimlar":
+            if not hr.configured():
+                messages.error(request, "Avval Sevimli HR kalitini kiriting.")
+            else:
+                try:
+                    n = hr.sync_xodimlar()
+                    messages.success(request, f"Sevimli HR'dan {n} ta xodim o'qildi (faqat o'qish).")
+                except hr.HrError as exc:
+                    messages.error(request, str(exc))
+            return redirect("kpi:boglash")
+
         if action == "save":
             tov = Tovaroved.objects.filter(pk=request.POST.get("id")).first() or Tovaroved()
             name = (request.POST.get("name") or "").strip()[:255]
@@ -343,8 +388,14 @@ def boglash(request):
             tov.name = name
             tov.ms_xodim = MsXodim.objects.filter(pk=request.POST.get("ms_xodim") or None).first()
             tov.ms_uid = tov.ms_xodim.uid if tov.ms_xodim else (request.POST.get("ms_uid") or "").strip()[:255]
-            tov.hr_xodim_id = (request.POST.get("hr_id") or "").strip()[:64]
-            tov.hr_xodim_nomi = (request.POST.get("hr_name") or "").strip()[:255]
+            # Ro'yxatdan tanlangani ustun; bo'lmasa qo'lda yozilgan ID
+            hid = ((request.POST.get("hr_pick") or "").strip() or (request.POST.get("hr_id") or "").strip())[:64]
+            known = HrXodim.objects.filter(hr_id=hid).first() if hid else None
+            tov.hr_xodim_id = hid
+            if known:
+                tov.hr_xodim_nomi = known.ism[:255]
+            elif "hr_name" in request.POST or not hid:
+                tov.hr_xodim_nomi = (request.POST.get("hr_name") or "").strip()[:255]
             tov.smena_boshi = _time(request.POST.get("smena_boshi", ""))
             tov.smena_oxiri = _time(request.POST.get("smena_oxiri", ""))
             tov.active = request.POST.get("active", "1") == "1"
@@ -433,6 +484,8 @@ def boglash(request):
     return render(request, "kpi/boglash.html", {
         "rows": rows,
         "xodimlar": MsXodim.objects.filter(archived=False),
+        "hr_on": hr.configured(), "hr_env": hr.from_env(), "hr_url": settings.SEVIMLI_HR_URL,
+        "hr_xodimlar": HrXodim.objects.filter(faol=True),
         "markets": markets, "today": _today(), "min_password": _MIN_PASSWORD,
     })
 
