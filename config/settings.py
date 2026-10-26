@@ -165,8 +165,8 @@ USE_TZ = True
 MOYSKLAD_TOKEN = env("MOYSKLAD_TOKEN")
 
 # Sevimli HR — tovarovedlar KPI'si uchun davomat (FAQAT O'QISH API).
-# Kalit HR'dagi KPI_API_TOKEN bilan bir xil bo'ladi. Kalit bo'lmasa HR
-# ulanmagan hisoblanadi va HR'ga birorta ham so'rov yuborilmaydi.
+# Odatda kalit panelda kiritiladi (Tovarovedlar → Bog'lash); bu o'zgaruvchi
+# ixtiyoriy va berilsa ustun. Kalit bo'lmasa HR'ga so'rov yuborilmaydi.
 SEVIMLI_HR_URL = env("SEVIMLI_HR_URL", "https://sevimlihr.uz").rstrip("/")
 SEVIMLI_HR_TOKEN = env("SEVIMLI_HR_TOKEN").strip()
 
