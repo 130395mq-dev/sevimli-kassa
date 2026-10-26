@@ -205,9 +205,11 @@ def compute(b: Biriktirish, day: date, rule: KpiQoida, now=None) -> KpiKun:
     ish = None
     if used:
         ish = q2(sum(Decimal(x["ball"]) * x["vazn"] for x in used) / sum(x["vazn"] for x in used))
-    rec = davomat_manba(tov, day)
+    rec = davomat_manba(tov, day, now)
     if rec is None:
         davomat = {"ball": None, "sabab": "Sevimli HR hali ulanmagan — davomat ma'lumoti yo'q"}
+    elif isinstance(rec, str):
+        davomat = {"ball": None, "sabab": rec}
     else:
         davomat = davomat_baho(rec, rule.qoshimcha_ball_soat, rule.qoshimcha_ball_max)
     bonus = Decimal(davomat.get("bonus") or 0)
@@ -262,10 +264,17 @@ def period(tov, start: date, end: date) -> dict:
     days = list(KpiKun.objects.filter(tovaroved=tov, sana__gte=start, sana__lte=end).order_by("sana"))
     ish = [d.ish_ball for d in days if d.ish_ball is not None]
     umumiy = [d.umumiy for d in days if d.umumiy is not None]
+    dav = [d.davomat_ball for d in days if d.davomat_ball is not None]
+    soat = [Decimal(str(h)) for h in ((d.tarkib or {}).get("davomat", {}).get("ishlangan_soat") for d in days)
+            if h is not None]
     return {
         "kunlar": len(days),
         "ish_kunlar": len(ish),
         "ish": q2(sum(ish) / len(ish)) if ish else None,
+        "davomat": q2(sum(dav) / len(dav)) if dav else None,
+        "davomat_kunlar": len(dav),
+        "soat": q2(sum(soat)) if soat else None,
+        "tekshiruv": sum(1 for d in days if (d.tarkib or {}).get("davomat", {}).get("tekshiruv")),
         "umumiy": q2(sum(umumiy) / len(umumiy)) if umumiy else None,
         "yetarli_emas": len(days) - len(ish),
         "versiyalar": sorted({d.qoida_version for d in days}),

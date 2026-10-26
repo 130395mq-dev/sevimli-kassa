@@ -12,13 +12,13 @@ from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth.models import User
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from catalog.models import Product, SyncState, Warehouse
 
-from . import davomat, hisob, hujjatlar, ishlar, korinish, minus, ms, sabab
-from .models import (Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan,
-                     Tovaroved)
+from . import davomat, hisob, hr, hujjatlar, ishlar, korinish, minus, ms, sabab
+from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
+                     MinusScan, Tovaroved)
 
 WH1 = "11111111-1111-1111-1111-111111111111"
 WH2 = "22222222-2222-2222-2222-222222222222"
@@ -748,3 +748,172 @@ class KorinishTest(Base):
         MinusScan.objects.all().delete()
         r = c.get("/kpi/?davr=bugun")
         self.assertContains(r, "Grafik kamida")
+
+
+def hr_resp(data, status=200):
+    r = mock.Mock(status_code=status)
+    r.json.return_value = data
+    return r
+
+
+@override_settings(SEVIMLI_HR_TOKEN="test-hr-kalit", SEVIMLI_HR_URL="https://hr.test")
+class HrTest(Base):
+    """Sevimli HR davomati: faqat o'qish, kalit bilan, mahalliy nusxa."""
+
+    def setUp(self):
+        super().setUp()
+        self.tov.hr_xodim_id = "7"
+        self.tov.save()
+
+    def row(self, day=26, **kw):
+        base = {"xodim": 7, "sana": f"2026-10-{day:02d}", "smena": "Kunduz",
+                "reja_boshi": f"2026-10-{day:02d}T08:00:00+05:00", "reja_oxiri": f"2026-10-{day:02d}T16:00:00+05:00",
+                "kirish": f"2026-10-{day:02d}T08:20:00+05:00", "chiqish": f"2026-10-{day:02d}T16:05:00+05:00",
+                "dam_kuni": False, "kechikish_kechirilgan": False, "erta_ketish_kechirilgan": False, "holat": "late"}
+        base.update(kw)
+        return base
+
+    def test_kalitsiz_hr_ga_so_rov_yo_q(self):
+        with override_settings(SEVIMLI_HR_TOKEN=""), mock.patch("kpi.hr.requests.get") as get:
+            self.assertFalse(hr.configured())
+            self.assertIsNone(davomat.manba(self.tov, date(2026, 10, 26)))
+            routes = {"report/stock/bystore/current": [], "entity/employee": [], "audit": [],
+                      **{f"entity/{k}": [] for k in hujjatlar.KINDS}}
+            done = ishlar.run(client=FakeClient(routes), now=T(h=12))
+        get.assert_not_called()
+        self.assertNotIn("kpi:davomat", done)
+
+    def test_xodimlar_ro_yxati(self):
+        data = {"xodimlar": [{"id": 7, "ism": "G'iyosiddin", "lavozim": "Tovaroved", "filial": "Shahar",
+                              "smena": "Kunduz 08:00–16:00"}]}
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp(data)) as get:
+            self.assertEqual(hr.sync_xodimlar(), 1)
+        url, kw = get.call_args[0][0], get.call_args[1]
+        self.assertEqual(url, "https://hr.test/api/kpi/xodimlar/")
+        self.assertEqual(kw["headers"]["Authorization"], "Bearer test-hr-kalit")
+        self.assertEqual(HrXodim.objects.get().filial, "Shahar")
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp({"xodimlar": []})):
+            hr.sync_xodimlar()
+        self.assertFalse(HrXodim.objects.get().faol)      # HR'dan chiqib ketgan — ro'yxatda ko'rinmaydi
+
+    def test_davomat_oyna_va_takroriy_sinxron(self):
+        rows = {"davomat": [self.row(25), self.row(26)]}
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp(rows)) as get:
+            changed = hr.sync_davomat(T(h=18))
+        self.assertEqual(get.call_args[1]["params"], {"dan": "2026-09-26", "gacha": "2026-10-26", "xodim": "7"})
+        self.assertEqual(changed, {date(2026, 10, 25), date(2026, 10, 26)})
+        self.assertEqual(HrDavomat.objects.count(), 2)
+        # Keyingi safar — faqat oxirgi 7 kun; o'zgarmagan kun «o'zgardi» deb sanalmaydi
+        rows = {"davomat": [self.row(25), self.row(26, chiqish="2026-10-26T17:00:00+05:00")]}
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp(rows)) as get:
+            changed = hr.sync_davomat(T(h=18))
+        self.assertEqual(get.call_args[1]["params"]["dan"], "2026-10-20")
+        self.assertEqual(changed, {date(2026, 10, 26)})
+        self.assertEqual(HrDavomat.objects.count(), 2)
+
+    def test_xato_matnida_kalit_yo_q(self):
+        import requests as rq
+        for side in (hr_resp({}, 401), hr_resp({}, 404), hr_resp({}, 500)):
+            with mock.patch("kpi.hr.requests.get", return_value=side):
+                with self.assertRaises(hr.HrError) as e:
+                    hr.sync_xodimlar()
+            self.assertNotIn("test-hr-kalit", str(e.exception))
+        with mock.patch("kpi.hr.requests.get", side_effect=rq.ConnectionError("https://hr.test?token=test-hr-kalit")):
+            with self.assertRaises(hr.HrError) as e:
+                hr.sync_xodimlar()
+        self.assertNotIn("test-hr-kalit", str(e.exception))
+
+    def save_rows(self, *rows):
+        hr._save(list(rows))
+
+    def test_manba_holatlari(self):
+        day = date(2026, 10, 26)
+        self.assertIn("hali olinmagan", davomat.manba(self.tov, day, T(h=18)))
+        self.save_rows(self.row(26))
+        k = davomat.manba(self.tov, day, T(h=18))
+        r = davomat.baho(k, Decimal(1), Decimal(5))
+        self.assertEqual(r["ball"], "95.83")                        # 20 daqiqa kechikish / 480
+        self.assertFalse(r["tekshiruv"])
+        # Smena davom etyapti — hali baholanmaydi (kelmagan ham deyilmaydi)
+        self.save_rows(self.row(26, kirish=None, chiqish=None))
+        r = davomat.baho(davomat.manba(self.tov, day, T(h=12)), Decimal(1), Decimal(5))
+        self.assertIsNone(r["ball"])
+        self.assertIn("tugamagan", r["sabab"])
+        # Smena tugadi, chiqish yo'q — tekshiruvga
+        self.save_rows(self.row(26, chiqish=None))
+        r = davomat.baho(davomat.manba(self.tov, day, T(h=18)), Decimal(1), Decimal(5))
+        self.assertTrue(r["tekshiruv"])
+        self.assertIsNone(r["ball"])
+        # HR'da kechirilgan kechikish — jazo yo'q
+        self.save_rows(self.row(26, kechikish_kechirilgan=True))
+        r = davomat.baho(davomat.manba(self.tov, day, T(h=18)), Decimal(1), Decimal(5))
+        self.assertEqual(Decimal(r["ball"]), 100)
+        self.assertIn("kechirilgan", r["sabab"])
+        # Dam kuni — baholanmaydi
+        self.save_rows(self.row(26, kirish=None, chiqish=None, dam_kuni=True))
+        r = davomat.baho(davomat.manba(self.tov, day, T(h=18)), Decimal(1), Decimal(5))
+        self.assertIsNone(r["ball"])
+        self.assertIn("Ruxsatli", r["sabab"])
+        self.tov.hr_xodim_id = ""
+        self.assertIn("bog'lanmagan", davomat.manba(self.tov, day, T(h=18)))
+
+    def test_kpi_umumiy_baho_davomat_bilan(self):
+        for h in range(8, 22):
+            MinusScan.objects.create(at=T(day=25, h=h, m=5), per_wh={WH1: [3, 200]})
+        self.save_rows(self.row(25))
+        kun = hisob.compute(Biriktirish.objects.get(), date(2026, 10, 25), self.rule, now=T(day=26))
+        self.assertEqual(kun.davomat_ball, Decimal("95.83"))
+        self.assertIsNotNone(kun.ish_ball)
+        w = self.rule.w_ish + self.rule.w_davomat
+        self.assertEqual(kun.umumiy, hisob.q2((kun.ish_ball * self.rule.w_ish + Decimal("95.83") * self.rule.w_davomat) / w))
+        p = hisob.period(self.tov, date(2026, 10, 25), date(2026, 10, 25))
+        self.assertEqual((p["davomat"], p["soat"]), (Decimal("95.83"), Decimal("7.75")))
+
+    def test_fon_ishi_davomatni_oladi_va_eski_kunni_qayta_hisoblaydi(self):
+        for h in range(8, 22):
+            MinusScan.objects.create(at=T(day=10, h=h, m=5), per_wh={WH1: [3, 200]})
+        hisob.recompute_day(date(2026, 10, 10), now=T(day=11))
+        self.assertIsNone(KpiKun.objects.get(sana=date(2026, 10, 10)).davomat_ball)
+        routes = {"report/stock/bystore/current": [], "entity/employee": [], "audit": [],
+                  **{f"entity/{k}": [] for k in hujjatlar.KINDS}}
+
+        def fake(url, **kw):
+            if url.endswith("/xodimlar/"):
+                return hr_resp({"xodimlar": []})
+            return hr_resp({"davomat": [self.row(10)]})
+        with mock.patch("kpi.hr.requests.get", side_effect=fake):
+            done = ishlar.run(client=FakeClient(routes), now=T(h=18))
+        self.assertEqual(done["kpi:davomat"], 1)
+        self.assertEqual(KpiKun.objects.get(sana=date(2026, 10, 10)).davomat_ball, Decimal("95.83"))
+
+    def test_hr_ishlamasa_boshqa_qadamlar_davom_etadi(self):
+        routes = {"report/stock/bystore/current": [], "entity/employee": [], "audit": [],
+                  **{f"entity/{k}": [] for k in hujjatlar.KINDS}}
+        import requests as rq
+        with mock.patch("kpi.hr.requests.get", side_effect=rq.Timeout()):
+            done = ishlar.run(client=FakeClient(routes), now=T(h=18))
+        self.assertIn("kpi:hisob", done)
+        from catalog.models import SyncState
+        self.assertIn("javob bermadi", SyncState.objects.get(entity="kpi:davomat").last_error)
+
+    def test_bog_lash_ro_yxatdan_tanlash_va_sahifalar(self):
+        HrXodim.objects.create(hr_id="12", ism="G'iyosiddin Karimov", filial="Shahar", lavozim="Tovaroved")
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        r = c.get("/kpi/boglash/")
+        self.assertContains(r, "G&#x27;iyosiddin Karimov — Shahar")
+        self.assertContains(r, "Sevimli HR xodimlarini yangilash")
+        c.post("/kpi/boglash/", {"action": "save", "id": self.tov.pk, "name": self.tov.name, "hr_pick": "12",
+                                 "hr_id": "7", "active": "1"})
+        self.tov.refresh_from_db()
+        self.assertEqual((self.tov.hr_xodim_id, self.tov.hr_xodim_nomi), ("12", "G'iyosiddin Karimov"))
+        hr._save([self.row(26, xodim=12)])
+        hisob.recompute_day(date(2026, 10, 26), now=T(day=26, h=18))
+        with mock.patch("kpi.views.timezone.now", return_value=T(day=26, h=18)):
+            r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=bugun")
+            self.assertContains(r, "08:20")
+            self.assertContains(r, "95.83")
+            r = c.get("/kpi/?davr=bugun")
+        self.assertContains(r, "Davomat (Sevimli HR)")
+        self.assertNotContains(r, "Sevimli HR ulanmagan")

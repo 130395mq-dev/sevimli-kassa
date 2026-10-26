@@ -29,6 +29,9 @@ BUDGET_SECONDS = 60
 STEPS = [
     # (nomi, necha daqiqada bir)
     ("kpi:minus", 4),
+    # Sevimli HR — tez va MoySklad'ga bog'liq emas (kalit bo'lmasa o'tkazib yuboriladi)
+    ("kpi:hr_xodimlar", 360),
+    ("kpi:davomat", 15),
     ("kpi:xodimlar", 360),
     # Audit (chop etish, o'chirilganlar) hujjatlardan OLDIN: hujjatlarni orqaga
     # to'ldirish vaqt chegarasini to'liq yeb qo'ymasin
@@ -72,8 +75,27 @@ def make_client():
     return MoySkladClient(token=token, network_retries=1, max_retries=3, user_agent="SevimliKassa-KPI/0.1")
 
 
+HR_STEPS = ("kpi:hr_xodimlar", "kpi:davomat")
+# MoySklad vaqt chegarasi tugasa ham bajariladiganlar (MoySklad'ga so'rov yubormaydi)
+ALWAYS = ("kpi:sabab", "kpi:hisob") + HR_STEPS
+
+
+def _davomat(now) -> int:
+    """HR davomati; o'zgargan eski kunlar KPI'da qayta hisoblanadi (yangi
+    kunlarni `kpi:hisob` qadami baribir hisoblaydi)."""
+    from . import hisob, hr, ms
+    from .models import KpiQoida
+
+    changed = hr.sync_davomat(now)
+    rule = KpiQoida.current()
+    fresh = ms.local_date(now) - timedelta(days=rule.qayta_paydo_kun + 1)
+    for day in sorted(d for d in changed if d < fresh):
+        hisob.recompute_day(day, rule, now)
+    return len(changed)
+
+
 def run(client=None, now=None, budget_seconds: float = BUDGET_SECONDS) -> dict:
-    from . import hisob, hujjatlar, minus, sabab
+    from . import hisob, hr, hujjatlar, minus, sabab
 
     now = now or timezone.now()
     if not enabled():
@@ -94,9 +116,14 @@ def run(client=None, now=None, budget_seconds: float = BUDGET_SECONDS) -> dict:
             "kpi:chop": lambda: hujjatlar.sync_prints(client, budget, now),
             "kpi:sabab": lambda: sabab.refresh(now),
             "kpi:hisob": lambda: hisob.recompute_recent(now),
+            "kpi:hr_xodimlar": lambda: hr.sync_xodimlar(),
+            "kpi:davomat": lambda: _davomat(now),
         }
+        hr_on = hr.configured()
         for name, minutes in STEPS:
-            if not budget.left() and name not in ("kpi:sabab", "kpi:hisob"):
+            if name in HR_STEPS and not hr_on:
+                continue
+            if not budget.left() and name not in ALWAYS:
                 continue
             if not _due(name, minutes, now):
                 continue
