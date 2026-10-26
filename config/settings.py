@@ -164,6 +164,12 @@ USE_TZ = True
 # va bu o'zgaruvchi kerak bo'lmaydi.
 MOYSKLAD_TOKEN = env("MOYSKLAD_TOKEN")
 
+# Sevimli HR — tovarovedlar KPI'si uchun davomat (FAQAT O'QISH API).
+# Kalit HR'dagi KPI_API_TOKEN bilan bir xil bo'ladi. Kalit bo'lmasa HR
+# ulanmagan hisoblanadi va HR'ga birorta ham so'rov yuborilmaydi.
+SEVIMLI_HR_URL = env("SEVIMLI_HR_URL", "https://sevimlihr.uz").rstrip("/")
+SEVIMLI_HR_TOKEN = env("SEVIMLI_HR_TOKEN").strip()
+
 # Mijozsiz savdolar kimga yoziladi — MoySklad'dagi «Розничный покупатель»
 # kontragentining ID'si. Busiz mijozsiz chek yozilmaydi.
 MOYSKLAD_RETAIL_CUSTOMER_ID = env("MOYSKLAD_RETAIL_CUSTOMER_ID")
