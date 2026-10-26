@@ -1,0 +1,102 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Tovarovedlar — Sevimli Kassa{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Tovarovedlar{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Tovarovedlar nazorati</h1>
+  <div class="sub">MoySklad (faqat o'qiladi) va Sevimli HR asosida. Har ballning qanday hisoblangani xodim kartasida ochiladi.</div>
+
+  {% if messages %}{% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}{% endif %}
+
+  <nav class="tabs" aria-label="Tovarovedlar">
+    <a class="on" href="{% url 'kpi:bosh' %}">Reyting</a>
+    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a href="{% url 'kpi:qoida' %}">Qoida (v{{ rule.version }})</a>
+  </nav>
+
+  {% if not status.enabled %}
+    <div class="alert warn"><span>!</span><div>
+      <b>Hali hech bir tovaroved do'konga biriktirilmagan.</b>
+      Biriktirilmaguncha dastur MoySklad'ga birorta ham so'rov yubormaydi va hech narsa hisoblamaydi.
+      <a href="{% url 'kpi:boglash' %}">Bog'lash sahifasiga o'tish →</a>
+    </div></div>
+  {% endif %}
+
+  <form method="get" class="davr">
+    <label>Davr
+      <select name="davr" onchange="this.form.submit()">
+        {% for k, n in davrlar %}<option value="{{ k }}" {% if k == davr %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+    <span class="sec">{{ start|date:"d.m.Y" }}{% if start != end %} – {{ end|date:"d.m.Y" }}{% endif %}</span>
+  </form>
+
+  <div class="kpi-cards">
+  {% for r in cards %}
+    <a class="card" href="{% url 'kpi:xodim' r.tov.pk %}?davr={{ davr }}" style="color: inherit; text-decoration: none;">
+      <div class="kpi-head">
+        <div>
+          <div class="rank">#{{ forloop.counter }}</div>
+          <div class="who">{{ r.tov.name }}</div>
+          <div class="where">{% if r.b %}{{ r.b.warehouse_name }}{% else %}<span class="minus">do'konga biriktirilmagan</span>{% endif %}</div>
+        </div>
+        <div style="text-align: right;">
+          {% if r.p.umumiy is not None %}
+            <div class="score">{{ r.p.umumiy }}<small>/100</small></div>
+            <div class="note">umumiy baho</div>
+          {% elif r.p.ish is not None %}
+            <div class="score">{{ r.p.ish }}<small>/100</small></div>
+            <div class="note">faqat ish natijasi —<br>davomat ulanmagan</div>
+          {% else %}
+            <div class="score none">Ma'lumot<br>yetarli emas</div>
+          {% endif %}
+        </div>
+      </div>
+      {% if r.p.kunlar %}<div class="note" style="margin-top: 6px;">{{ r.p.ish_kunlar }} kun baholandi{% if r.p.yetarli_emas %}, {{ r.p.yetarli_emas }} kunda ma'lumot yetarli emas{% endif %}</div>{% endif %}
+      {% if r.b %}
+      <div class="mini">
+        <div class="{% if r.st.ochiq_kech %}bad{% endif %}"><b>{{ r.st.ochiq }}</b>ochiq minus{% if r.st.ochiq_kech %} ({{ r.st.ochiq_kech }} kechikkan){% endif %}</div>
+        <div><b>{% if r.share is not None %}{{ r.share }}%{% else %}—{% endif %}</b>faol tovarlardan minusda</div>
+        <div><b>{{ r.st.yangi }}</b>yangi minus</div>
+        <div><b>{{ r.st.tuzatilgan }}</b>yo'qolgan minus</div>
+        <div class="{% if r.st.kechikkan %}bad{% endif %}"><b>{{ r.st.kechikkan }}</b>muddati o'tgan</div>
+        <div><b>{{ r.prints.noyob }}</b>tovar chop etildi</div>
+      </div>
+      {% if r.st.qayta %}<div class="note minus" style="margin-top: 8px;">{{ r.st.qayta }} ta tuzatilgan tovar {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushdi — bu tuzatishlar ballda hisoblanmadi</div>{% endif %}
+      {% if r.st.oldingi %}<div class="note" style="margin-top: 8px;">{{ r.st.oldingi }} ta minus kuzatuvdan oldin bor edi — boshlanishi noma'lum</div>{% endif %}
+      <div class="note" style="margin-top: 10px;">
+        Hajm (ball bermaydi):
+        {% for v in r.vol %}{% if v.n %}{{ v.nomi }} {{ v.n }} ta{% if not forloop.last %} · {% endif %}{% endif %}{% empty %}—{% endfor %}
+      </div>
+      {% endif %}
+      <div class="note" style="margin-top: 6px;">Ishlangan / qo'shimcha soat: <b>—</b> (Sevimli HR ulanmagan)</div>
+    </a>
+  {% empty %}
+    <div class="card empty">Tovaroved qo'shilmagan. <a href="{% url 'kpi:boglash' %}">Qo'shish</a></div>
+  {% endfor %}
+  </div>
+
+  <h2>Ma'lumot holati</h2>
+  <div class="card">
+    <div class="kv">
+      <div><div class="k">Oxirgi minus tekshiruvi</div><div class="v">{% if status.last_scan %}{{ status.last_scan.at|date:"d.m H:i" }} <span class="sec">({% if status.last_scan.full %}to'liq{% else %}o'zgarganlar{% endif %})</span>{% else %}hali yo'q{% endif %}</div></div>
+      {% for s in status.rows %}
+        <div><div class="k">{{ s.name }}</div><div class="v">{% if s.at %}{{ s.at|date:"d.m H:i" }}{% else %}hali yo'q{% endif %}{% if s.error %} <span class="badge err" title="{{ s.error }}">xato</span>{% endif %}</div></div>
+      {% endfor %}
+      <div><div class="k">Davomat (Sevimli HR)</div><div class="v"><span class="badge off">ulanmagan</span></div></div>
+    </div>
+    <div class="sec" style="margin-top: 12px;">
+      Minuslar har qoldiq yangilanishida (bir necha daqiqada) tekshiriladi. Ish soatlarining {{ rule.min_qamrov }}% idan kamida
+      tekshiruv bo'lmagan kun «Ma'lumot yetarli emas» deb belgilanadi — 0 ham, 100 ham qo'yilmaydi.
+      Do'konga mas'ullik — xatoni aynan shu xodim qilgani degani emas; ehtimoliy sabablar faqat taxmin va ballga kirmaydi.
+    </div>
+  </div>
+{% endblock %}
