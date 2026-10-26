@@ -1,0 +1,53 @@
+{% extends "dashboard/base.html" %}
+{% load kpi_tags %}
+
+{% block title %}Chop etish — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Chop etish{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Chop etish (sennik / etiketka)</h1>
+  <div class="sub">MoySklad auditidagi «Распечатан товар» yozuvlari: kim, qachon, qaysi tovar</div>
+
+  <nav class="tabs">
+    <a href="{% url 'kpi:bosh' %}">Reyting</a>
+    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a class="on" href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a href="{% url 'kpi:qoida' %}">Qoida</a>
+  </nav>
+
+  <div class="alert warn"><span>!</span><div>
+    <b>Bu — faqat «chop etildi» hodisasi.</b> Auditda shablon ko'rinmaydi, shuning uchun sennikmi yoki shtrix-kod etiketkasimi — ajratib bo'lmaydi.
+    Chop etish sennik polkaga qo'yilganining isboti ham emas. Bir kunda bir tovarni qayta-qayta chop etish bitta deb sanaladi.
+    Hozircha KPI'ga kirmaydi.
+  </div></div>
+
+  <form method="get" class="davr">
+    <label>Davr
+      <select name="davr" onchange="this.form.submit()">
+        {% for k, n in davrlar %}<option value="{{ k }}" {% if k == davr %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <div class="tablewrap"><table>
+    <tr><th>Kim (MoySklad logini)</th><th class="right">Noyob tovar (kunlar bo'yicha)</th><th class="right">Jami chop etish</th></tr>
+    {% for s in summary %}
+      <tr><td>{{ s.name|default:s.uid }}{% if s.name %} <span class="sec">{{ s.uid }}</span>{% endif %}</td><td class="right num"><b>{{ s.noyob }}</b></td><td class="right num">{{ s.hodisa }}</td></tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty">Bu davrda chop etish yo'q (yoki audit hali o'qilmagan).</td></tr>
+    {% endfor %}
+  </table></div>
+
+  <h2>Ro'yxat</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Vaqt</th><th>Kim</th><th>Tovar</th><th>Qanday</th></tr>
+    {% for r in rows %}
+      <tr><td class="tight">{{ r.moment|date:"d.m H:i" }}</td><td>{{ names|get_item:r.uid|default:r.uid }}</td><td>{{ r.product_name|default:r.product_ms_id }}</td><td>{% if r.source == "app" %}qo'lda{% else %}{{ r.source }}{% endif %}</td></tr>
+    {% empty %}
+      <tr><td colspan="4" class="empty">—</td></tr>
+    {% endfor %}
+  </table></div>
+{% endblock %}

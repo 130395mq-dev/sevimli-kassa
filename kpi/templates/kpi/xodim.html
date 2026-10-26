@@ -1,0 +1,152 @@
+{% extends "dashboard/base.html" %}
+{% load pul kpi_tags %}
+
+{% block title %}{{ tov.name }} — Tovarovedlar{% endblock %}
+{% block nav_kpi %}{% if owner %}on{% endif %}{% endblock %}
+{% block nav_kpi_men %}{% if not owner %}on{% endif %}{% endblock %}
+{% block crumb %}Nazorat · {{ tov.name }}{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>{{ tov.name }}</h1>
+  <div class="sub">
+    {% if b %}Hozir: <b>{{ b.warehouse_name }}</b> ({{ b.boshlanish|date:"d.m.Y" }} dan){% else %}Hozir do'konga biriktirilmagan{% endif %}
+    {% if tov.ms_uid %} · MoySklad logini: <span class="code">{{ tov.ms_uid }}</span>{% endif %}
+  </div>
+
+  {% if owner %}<nav class="tabs"><a href="{% url 'kpi:bosh' %}">← Reyting</a></nav>{% endif %}
+
+  <form method="get" class="davr">
+    <label>Davr
+      <select name="davr" onchange="this.form.submit()">
+        {% for k, n in davrlar %}<option value="{{ k }}" {% if k == davr %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+    <span class="sec">{{ start|date:"d.m.Y" }}{% if start != end %} – {{ end|date:"d.m.Y" }}{% endif %}</span>
+  </form>
+
+  <div class="card">
+    <div class="kv">
+      <div><div class="k">Umumiy baho</div><div class="v">{% if p.umumiy is not None %}<span class="score">{{ p.umumiy }}</span>{% else %}<span class="score none">Ma'lumot yetarli emas</span><div class="note">davomat (Sevimli HR) ulanmagan</div>{% endif %}</div></div>
+      <div><div class="k">Ish natijasi (davr o'rtachasi)</div><div class="v">{% if p.ish is not None %}<span class="score">{{ p.ish }}</span>{% else %}<span class="score none">Ma'lumot yetarli emas</span>{% endif %}</div></div>
+      <div><div class="k">Davomat</div><div class="v"><span class="badge off">Sevimli HR ulanmagan</span></div></div>
+      <div><div class="k">Kunlar</div><div class="v">{{ p.ish_kunlar }} baholandi / {{ p.kunlar }} hisoblandi{% if p.versiyalar %}<div class="note">qoida versiyasi: {% for v in p.versiyalar %}v{{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}</div></div>
+    </div>
+    <div class="note" style="margin-top: 10px;">Davr bahosi — shu davrda saqlangan kunlik natijalar o'rtachasi. Ma'lumot yetarli bo'lmagan kunlar o'rtachaga kirmaydi (jazo ham, bonus ham emas).</div>
+  </div>
+
+  <h2>Kunlik natijalar</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Sana</th><th>Do'kon</th><th class="right">Ish</th><th class="right">Davomat</th><th class="right">Umumiy</th><th>Izoh</th></tr>
+    {% for d in days %}
+      <tr>
+        <td class="tight">{{ d.sana|date:"d.m.Y" }}</td>
+        <td>{{ d.warehouse_name }}</td>
+        <td class="right num">{% if d.ish_ball is not None %}<b>{{ d.ish_ball }}</b>{% else %}<span class="sec">yetarli emas</span>{% endif %}</td>
+        <td class="right num"><span class="sec">—</span></td>
+        <td class="right num">{% if d.umumiy is not None %}<b>{{ d.umumiy }}</b>{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td class="wrapline">
+          <details class="tarkib"><summary>qanday hisoblandi (v{{ d.qoida_version }})</summary>
+            {% for m in d.tarkib.mezonlar %}
+              <div class="mezon">
+                <div><b>{{ m.nomi }}</b> <span class="sec">— vazn {{ m.vazn }}</span>
+                  {% if m.formula %}<div class="note">{{ m.formula }}</div>{% endif %}
+                  {% if m.sabab %}<div class="note">{{ m.sabab }}</div>{% endif %}
+                  {% if m.kirish.kechikkan %}<div class="note minus">Kechikkan: {{ m.kirish.kechikkan|join:"; " }}</div>{% endif %}
+                  {% if m.kirish.vaqtida %}<div class="note">Vaqtida: {{ m.kirish.vaqtida|join:"; " }}</div>{% endif %}
+                  {% if m.kirish.neytral %}<div class="note">Neytral: {{ m.kirish.neytral|join:"; " }}</div>{% endif %}
+                  {% if m.kirish.faol_tarif %}<div class="note">Faol tovar: {{ m.kirish.faol_tarif }} — {{ m.kirish.faol_tovar }} ta; minus o'rtacha {{ m.kirish.minus_ortacha }} ({{ m.kirish.tekshiruvlar }} tekshiruv)</div>{% endif %}
+                  {% if m.kirish.ochiq %}<div class="note">Ochiq: {{ m.kirish.ochiq }}, muddati o'tgan: {{ m.kirish.muddati_otgan }}, o'rtacha yoshi {{ m.kirish.ortacha_yosh_soat }} soat</div>{% endif %}
+                </div>
+                <div class="num">{% if m.ball is not None %}<b>{{ m.ball }}</b>{% else %}<span class="sec">—</span>{% endif %}</div>
+              </div>
+            {% endfor %}
+            {% if d.tarkib.ish_formula %}<div class="note">Ish natijasi = ({{ d.tarkib.ish_formula }})</div>{% endif %}
+            <div class="note">Davomat: {{ d.tarkib.davomat.sabab }}</div>
+            <div class="note">Tekshiruv qamrovi: {{ d.tarkib.qamrov.soat }} / {{ d.tarkib.qamrov.jami }} ish soati</div>
+            <div class="note">Hajm (ball bermaydi):
+              {% for k, v in d.tarkib.hajm.items %}{% if v.hujjat %}{{ v.nomi }}: {{ v.hujjat }} hujjat, {{ v.tovar_turi }} tur, {{ v.dona }} dona{% if v.ozi_qolda %} (o'zi qo'lda {{ v.ozi_qolda }}){% endif %}; {% elif v.noyob_tovar %}{{ v.nomi }}: {{ v.noyob_tovar }} tovar ({{ v.hodisa }} marta); {% endif %}{% endfor %}
+            </div>
+          </details>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">Bu davrda hisoblangan kun yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <h2>Muammoli tovarlar (minuslar)</h2>
+  <div class="note" style="margin-bottom: 8px;">Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Tovar</th><th>Do'kon</th><th class="right">Qoldiq</th><th>Birinchi ko'rildi</th><th>Muddat</th><th>Holat</th></tr>
+    {% for i in issues %}
+      <tr>
+        <td><a href="{% url 'kpi:minus' i.pk %}"><b>{{ i.name|default:i.product_ms_id }}</b></a><div class="sec">{{ i.code }}</div></td>
+        <td>{{ i.warehouse_name }}</td>
+        <td class="right num minus">{{ i.last_qty|floatformat:"-3" }}</td>
+        <td class="tight">{% if i.pre_tracking %}<span class="sec">kuzatuvdan oldin (noma'lum)</span>{% else %}{{ i.first_seen|date:"d.m H:i" }}{% endif %}</td>
+        <td class="tight">{{ i.deadline|date:"d.m H:i" }}</td>
+        <td>{% if i.status == "open" %}<span class="badge {% if i.deadline < now %}err{% else %}warn{% endif %}">ochiq</span>{% else %}<span class="badge ok">yo'qoldi</span> <span class="sec">{{ i.closed_at|date:"d.m H:i" }}</span>{% endif %}{% if i.reopened %}<div class="sec minus">yana minusga tushdi — tuzatish hisoblanmadi</div>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">Ochiq minus yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <h2>Hujjatlar ({{ start|date:"d.m" }}–{{ end|date:"d.m" }})</h2>
+  <div class="note" style="margin-bottom: 8px;">Ish hajmi — ball bermaydi. «Kim yaratdi» MoySklad auditidan; «integratsiya» — dastur orqali yaratilgan (qo'lda emas). Tahrirlash yangi ish hisoblanmaydi.</div>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Turi</th><th>Raqami</th><th>Yaratildi</th><th class="right">Tur / dona</th><th class="right">Summa</th><th>Kim yaratdi</th></tr>
+    {% for h in docs %}
+      <tr>
+        <td>{{ h.get_kind_display }}{% if h.kind == "move" %}<div class="sec">{{ names|get_item:h.store_ms_id }} → {{ names|get_item:h.target_ms_id }}</div>{% endif %}{% if h.deleted_at %} <span class="badge off">o'chirilgan</span>{% endif %}</td>
+        <td class="code">{{ h.number }}</td>
+        <td class="tight">{{ h.created|date:"d.m H:i" }}</td>
+        <td class="right num">{% if h.lines_for %}{{ h.products_count }} / {{ h.quantity|floatformat:"-3" }}{% else %}<span class="sec">o'qilmoqda</span>{% endif %}</td>
+        <td class="right num">{{ h.sum|som_tiyin }}</td>
+        <td>{% if not h.creator_checked %}<span class="sec">aniqlanmoqda</span>{% elif not h.creator_uid %}<span class="sec">auditda yo'q</span>{% else %}{{ h.creator_uid }} {% if h.manual %}<span class="badge ok">qo'lda</span>{% else %}<span class="badge off">integratsiya ({{ h.creator_source }})</span>{% endif %}{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty">Bu davrda hujjat yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <h2>Chop etish</h2>
+  <div class="note" style="margin-bottom: 8px;">MoySklad auditidagi «Распечатан товар». Shablon (sennik yoki etiketka) auditda ko'rinmaydi. Chop etish — polkaga qo'yilganining isboti emas.</div>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Vaqt</th><th>Tovar</th><th>Qanday</th></tr>
+    {% for c in prints %}
+      <tr><td class="tight">{{ c.moment|date:"d.m H:i" }}</td><td>{{ c.product_name|default:c.product_ms_id }}</td><td>{% if c.source == "app" %}qo'lda{% else %}{{ c.source }}{% endif %}</td></tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty">{% if tov.ms_uid %}Bu davrda chop etish yo'q.{% else %}MoySklad logini bog'lanmagan.{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <h2>Davomat</h2>
+  <div class="card">
+    <span class="badge off">Sevimli HR ulanmagan</span>
+    <div class="note" style="margin-top: 8px;">Rejalashtirilgan va ishlangan soat, kechikish, ruxsatli yo'qlik va tasdiqlangan qo'shimcha soat HR ulangandan keyin shu yerda chiqadi.
+      {% if tov.smena_boshi %}Jadval (qo'lda kiritilgan): {{ tov.smena_boshi|time:"H:i" }}–{{ tov.smena_oxiri|time:"H:i" }}.{% endif %}
+      {% if tov.hr_xodim_id %}HR xodim ID: {{ tov.hr_xodim_id }}.{% endif %}</div>
+  </div>
+
+  <h2>Biriktirish tarixi</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Do'kon</th><th>Boshlanish</th><th>Tugash</th></tr>
+    {% for h in history %}
+      <tr><td>{{ h.warehouse_name }}</td><td>{{ h.boshlanish|date:"d.m.Y" }}</td><td>{% if h.tugash %}{{ h.tugash|date:"d.m.Y" }}{% else %}hozir ham{% endif %}</td></tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty">Biriktirish yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+{% endblock %}

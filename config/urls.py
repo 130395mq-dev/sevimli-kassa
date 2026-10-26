@@ -34,5 +34,6 @@ urlpatterns = [
          name="logout"),
     path("admin/", admin.site.urls),
     path("api/v1/", include("api.urls")),
+    path("kpi/", include("kpi.urls")),
     path("", include("dashboard.urls")),
 ]

@@ -1,0 +1,98 @@
+{% extends "dashboard/base.html" %}
+{% load kpi_tags %}
+
+{% block title %}Minus — {{ i.name }}{% endblock %}
+{% block nav_kpi %}{% if owner %}on{% endif %}{% endblock %}
+{% block nav_kpi_men %}{% if not owner %}on{% endif %}{% endblock %}
+{% block crumb %}Nazorat · Minus{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>{{ i.name|default:i.product_ms_id }}</h1>
+  <div class="sub">{{ i.warehouse_name }}{% if i.code %} · kodi {{ i.code }}{% endif %}{% if i.barcode %} · shtrix-kod {{ i.barcode }}{% endif %}</div>
+
+  {% if messages %}{% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}{% endif %}
+
+  {% if owner %}<nav class="tabs"><a href="{% url 'kpi:minuslar' %}">← Minuslar</a></nav>{% endif %}
+
+  <div class="card">
+    <div class="kv">
+      <div><div class="k">Holati</div><div class="v">{% if i.status == "open" %}<span class="badge {% if i.deadline < now %}err{% else %}warn{% endif %}">{% if i.deadline < now %}ochiq, muddati o'tgan{% else %}ochiq{% endif %}</span>{% else %}<span class="badge ok">yo'qoldi</span> {{ i.closed_at|date:"d.m.Y H:i" }}{% endif %}</div></div>
+      <div><div class="k">Manfiy miqdor</div><div class="v minus">{{ i.last_qty|floatformat:"-3" }} <span class="sec">(birinchi {{ i.first_qty|floatformat:"-3" }}, eng past {{ i.min_qty|floatformat:"-3" }})</span></div></div>
+      <div><div class="k">Birinchi ko'rildi</div><div class="v">{% if i.pre_tracking %}Kuzatuv boshlanganda allaqachon bor edi — <b>haqiqiy boshlanishi noma'lum</b> ({{ i.first_seen|date:"d.m.Y H:i" }} dan kuzatilmoqda){% else %}{{ i.first_seen|date:"d.m.Y H:i" }}{% if i.first_seen_prev_scan %}<div class="note">aslida {{ i.first_seen_prev_scan|date:"d.m H:i" }} – {{ i.first_seen|date:"H:i" }} oralig'ida paydo bo'lgan</div>{% endif %}{% endif %}</div></div>
+      <div><div class="k">Oxirgi ko'rildi</div><div class="v">{{ i.last_seen|date:"d.m.Y H:i" }}</div></div>
+      <div><div class="k">Tuzatish muddati</div><div class="v">{{ i.deadline|date:"d.m.Y H:i" }}</div></div>
+      <div><div class="k">Mas'ul (do'kon bo'yicha)</div><div class="v">{{ i.tovaroved.name|default:"biriktirilmagan" }}<div class="note">Xatoni aynan shu xodim qilgani degani emas.</div></div></div>
+    </div>
+    {% if i.reopened %}<div class="alert warn" style="margin-top: 12px;"><span>!</span><div>Bu tovar tuzatilgandan keyin qisqa vaqtda yana minusga tushdi — bu tuzatish ballda hisoblanmaydi (muddatida tuzatilmagan deb olinadi).</div></div>{% endif %}
+    {% if i.previous_id %}<div class="note" style="margin-top: 8px;">Avval ham shu tovar shu do'konda minusda bo'lgan: <a href="{% url 'kpi:minus' i.previous_id %}">oldingi karta</a>.</div>{% endif %}
+  </div>
+
+  {% if i.status == "closed" %}
+  <h2>Qanday yo'qoldi</h2>
+  <div class="card">
+    {% if i.resolution %}<b>{{ i.get_resolution_display }}</b>{% else %}<span class="sec">Hujjatlar o'qilmoqda — tez orada aniqlanadi.</span>{% endif %}
+    {% for d in i.resolution_docs %}<div class="note">{{ d.kind_name }} {{ d.number }} — {{ d.created }}{% if d.creator %} · {{ d.creator }}{% endif %}</div>{% endfor %}
+    {% if i.resolution == "oprixod" or i.resolution == "nomalum" %}<div class="note" style="margin-top: 6px;">Oddiy qoldiq tuzatishi yoki hujjatsiz yo'qolish avtomatik «sifatli yechim» hisoblanmaydi — KPI'da neytral, rahbar tasdiqlasa hisobga olinadi.</div>{% endif %}
+  </div>
+  {% endif %}
+
+  <h2>Ehtimoliy sabablar</h2>
+  <div class="taxmin">
+    <b>Bu — TAXMIN, tasdiqlangan xato emas.</b> Dastur hujjatlarni solishtirib topdi; ballga kirmaydi.
+    {% for p in i.probable %}
+      <div style="margin-top: 8px;">• {{ p.text }}
+        {% for d in p.docs %}<div class="note">&nbsp;&nbsp;{{ d.kind_name }} {{ d.number }} — {{ d.created }}{% if d.creator %} · {{ d.creator }}{% endif %}</div>{% endfor %}</div>
+    {% empty %}
+      <div style="margin-top: 8px;" class="note">Hujjatlardan aniq shubha topilmadi. Hujjatsiz jismoniy ko'chirish yoki polkadagi haqiqiy qoldiqni dastur bilmaydi.</div>
+    {% endfor %}
+  </div>
+
+  <h2>Tegishli hujjatlar</h2>
+  <div class="tablewrap">
+  <table>
+    <tr><th>Turi</th><th>Raqami</th><th>Yaratildi</th><th>Yo'nalish</th><th>Kim</th></tr>
+    {% for d in i.related_docs %}
+      <tr><td>{{ d.kind_name }}</td><td class="code">{{ d.number }}</td><td class="tight">{{ d.created }}</td>
+        <td>{% if d.target %}{{ names|get_item:d.store }} → {{ names|get_item:d.target }}{% else %}{{ names|get_item:d.store }}{% endif %}</td>
+        <td>{{ d.creator|default:"—" }}{% if d.manual is False %} <span class="badge off">integratsiya</span>{% endif %}</td></tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty">Bu tovar bo'yicha shu do'konda yaqin kunlarda hujjat yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  {% if owner %}
+  <h2>Rahbar xulosasi</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <div class="fields">
+      <label><span>Tasdiqlangan sabab</span>
+        <select name="cause">
+          <option value="">— tasdiqlanmagan —</option>
+          {% for k, n in causes %}<option value="{{ k }}" {% if i.confirmed_cause == k %}selected{% endif %}>{{ n }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Tuzatish muddati</span>
+        <input type="datetime-local" name="deadline" value="{{ deadline_local }}">
+      </label>
+      {% if i.resolution == "oprixod" or i.resolution == "nomalum" %}
+      <label><span>Yo'qolish to'g'ri yechimmi?</span>
+        <select name="resolution_ok">
+          <option value="" {% if i.resolution_ok is None %}selected{% endif %}>— tekshirilmagan (neytral) —</option>
+          <option value="1" {% if i.resolution_ok is True %}selected{% endif %}>Ha, to'g'ri tuzatilgan</option>
+          <option value="0" {% if i.resolution_ok is False %}selected{% endif %}>Yo'q, shunchaki qoldiq to'g'rilangan</option>
+        </select>
+      </label>
+      {% endif %}
+      <label style="grid-column: 1 / -1;"><span>Izoh</span><textarea name="note" rows="2">{{ i.confirmed_note }}</textarea></label>
+    </div>
+    <div class="note" style="margin: 6px 0 10px;">«Tovaroved xatosi emas» tanlansa, bu minus KPI'dan chiqariladi.{% if i.confirmed_by %} Oxirgi o'zgartirish: {{ i.confirmed_by }}, {{ i.confirmed_at|date:"d.m H:i" }}.{% endif %}</div>
+    <button type="submit">Saqlash</button>
+  </form>
+  {% elif i.confirmed_cause %}
+  <div class="card">Rahbar tasdiqlagan sabab: <b>{{ i.get_confirmed_cause_display }}</b>{% if i.confirmed_note %}<div class="note">{{ i.confirmed_note }}</div>{% endif %}</div>
+  {% endif %}
+{% endblock %}

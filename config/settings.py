@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "sales",
     "api",
     "dashboard",
+    "kpi",
 ]
 
 MIDDLEWARE = [

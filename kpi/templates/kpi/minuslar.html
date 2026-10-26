@@ -1,0 +1,61 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Minuslar — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Minuslar{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Minuslar</h1>
+  <div class="sub">MoySklad'da manfiy qoldiq — har biri uchun tekshiruv kartasi</div>
+
+  <nav class="tabs">
+    <a href="{% url 'kpi:bosh' %}">Reyting</a>
+    <a class="on" href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a href="{% url 'kpi:qoida' %}">Qoida</a>
+  </nav>
+
+  <form method="get" class="davr">
+    <label>Do'kon
+      <select name="dokon">
+        <option value="">— hammasi —</option>
+        {% for id, name in stores %}<option value="{{ id }}" {% if dokon == id %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Holat
+      <select name="holat">
+        <option value="open" {% if holat == "open" %}selected{% endif %}>Ochiq</option>
+        <option value="kech" {% if holat == "kech" %}selected{% endif %}>Ochiq, muddati o'tgan</option>
+        <option value="closed" {% if holat == "closed" %}selected{% endif %}>Yo'qolgan</option>
+        <option value="all" {% if holat == "all" %}selected{% endif %}>Hammasi</option>
+      </select>
+    </label>
+    <label>Qidirish <input type="search" name="q" value="{{ q }}" placeholder="nomi, kodi, shtrix-kod" style="padding: 6px 10px; font-size: 13px; margin: 0;"></label>
+    <button type="submit" class="small">Ko'rsatish</button>
+    <span class="sec">{{ total }} ta</span>
+  </form>
+
+  <div class="tablewrap">
+  <table>
+    <tr><th>Tovar</th><th>Do'kon / mas'ul</th><th class="right">Qoldiq</th><th>Birinchi ko'rildi</th><th>Muddat</th><th>Holat</th><th>Ehtimoliy sabab (taxmin)</th></tr>
+    {% for i in rows %}
+      <tr>
+        <td><a href="{% url 'kpi:minus' i.pk %}"><b>{{ i.name|default:i.product_ms_id }}</b></a><div class="sec">{{ i.code }}{% if i.barcode %} · {{ i.barcode }}{% endif %}</div></td>
+        <td>{{ i.warehouse_name }}<div class="sec">{{ i.tovaroved.name|default:"mas'ul biriktirilmagan" }}</div></td>
+        <td class="right num minus">{{ i.last_qty|floatformat:"-3" }}<div class="sec">eng past {{ i.min_qty|floatformat:"-3" }}</div></td>
+        <td class="tight">{% if i.pre_tracking %}<span class="sec">kuzatuvdan oldin<br>(haqiqiy boshlanishi noma'lum)</span>{% else %}{{ i.first_seen|date:"d.m H:i" }}{% endif %}</td>
+        <td class="tight">{{ i.deadline|date:"d.m H:i" }}</td>
+        <td>{% if i.status == "open" %}<span class="badge {% if i.deadline < now %}err{% else %}warn{% endif %}">{% if i.deadline < now %}kechikkan{% else %}ochiq{% endif %}</span>{% else %}<span class="badge ok">yo'qoldi</span><div class="sec">{{ i.get_resolution_display|default:"aniqlanmoqda" }}</div>{% endif %}
+          {% if i.reopened %}<div class="sec minus">yana minusga tushdi — tuzatish hisoblanmadi</div>{% endif %}
+          {% if i.confirmed_cause %}<div class="sec">tasdiqlangan: {{ i.get_confirmed_cause_display }}</div>{% endif %}</td>
+        <td class="wrapline note">{% for p in i.probable %}{{ p.text }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">Minus yo'q.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% if total > 300 %}<div class="sec" style="margin-top: 8px;">Birinchi 300 tasi ko'rsatildi — do'kon yoki qidiruv bilan toraytiring.</div>{% endif %}
+{% endblock %}
