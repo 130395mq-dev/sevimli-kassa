@@ -124,7 +124,7 @@
           <div class="where">{% if r.b %}{{ r.b.warehouse_name }}{% else %}<span class="minus">do'konga biriktirilmagan</span>{% endif %}</div>
           {% if r.score is not None %}
             <div class="kverdict st-{{ r.ring.status }}">{% if r.ring.status == "good" %}yaxshi{% elif r.ring.status == "warn" %}o'rtacha{% else %}past{% endif %}
-              <span class="note">· {% if r.p.umumiy is not None %}umumiy baho{% else %}faqat ish natijasi (davomat ulanmagan){% endif %}</span></div>
+              <span class="note">· {% if r.p.umumiy is not None %}umumiy baho{% else %}faqat ish natijasi ({% if status.hr_on %}davomat bahosi hali yo'q{% else %}davomat ulanmagan{% endif %}){% endif %}</span></div>
           {% else %}
             <div class="kverdict st-none">Ma'lumot yetarli emas</div>
           {% endif %}
@@ -207,7 +207,14 @@
           {% endif %}
         </div>
       {% endif %}
-      <div class="note kgap kfoot">Ishlangan / qo'shimcha soat: — · Sevimli HR ulanmagan</div>
+      <div class="note kgap kfoot">
+        {% if not status.hr_on %}Ishlangan / qo'shimcha soat: — · Sevimli HR ulanmagan
+        {% elif not r.tov.hr_xodim_id %}Davomat: Sevimli HR xodimiga bog'lanmagan
+        {% else %}Davomat: {% if r.p.davomat is not None %}<b>{{ r.p.davomat }}</b> ball ({{ r.p.davomat_kunlar }} kun){% else %}baho hali yo'q{% endif %}
+          · ishlangan {% if r.p.soat is not None %}<b>{{ r.p.soat }}</b> soat{% else %}—{% endif %}
+          {% if r.p.tekshiruv %} · <span class="minus">{{ r.p.tekshiruv }} kun tekshirilsin</span>{% endif %}
+        {% endif %}
+      </div>
     </a>
   {% empty %}
     <div class="card empty">Tovaroved qo'shilmagan. <a href="{% url 'kpi:boglash' %}">Qo'shish</a></div>
@@ -224,7 +231,7 @@
         <div><span class="sdot {% if s.error %}bad{% elif s.at %}ok{% endif %}"></span><span class="k">{{ s.name }}</span>
           <span class="v">{% if s.at %}{{ s.at|date:"d.m H:i" }}{% else %}hali yo'q{% endif %}{% if s.error %} <span class="badge err" title="{{ s.error }}">xato</span>{% endif %}</span></div>
       {% endfor %}
-      <div><span class="sdot"></span><span class="k">Davomat (Sevimli HR)</span><span class="v"><span class="badge off">ulanmagan</span></span></div>
+      {% if not status.hr_on %}<div><span class="sdot"></span><span class="k">Davomat (Sevimli HR)</span><span class="v"><span class="badge off">ulanmagan</span></span></div>{% endif %}
     </div>
     <div class="sec" style="margin-top: 12px;">
       Minuslar har qoldiq yangilanishida (bir necha daqiqada) tekshiriladi. Ish soatlarining {{ rule.min_qamrov }}% idan kamida

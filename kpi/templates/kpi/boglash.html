@@ -26,6 +26,15 @@
     <button type="submit" class="small ghost">MoySklad xodimlarini yangilash</button>
     <span class="sec">{{ xodimlar|length }} ta xodim ro'yxatda · faqat o'qiladi</span>
   </form>
+  {% if hr_on %}
+  <form method="post" style="margin-bottom: 16px;">
+    {% csrf_token %}<input type="hidden" name="action" value="hr_xodimlar">
+    <button type="submit" class="small ghost">Sevimli HR xodimlarini yangilash</button>
+    <span class="sec">{{ hr_xodimlar|length }} ta HR xodimi ro'yxatda · faqat o'qiladi</span>
+  </form>
+  {% else %}
+  <div class="alert warn"><span>!</span><div>Sevimli HR ulanmagan: kassa serverida <b>SEVIMLI_HR_TOKEN</b> sozlanmagan. Ulangach HR xodimini ro'yxatdan tanlaysiz va davomat KPI'ga qo'shiladi.</div></div>
+  {% endif %}
 
   {% for t in rows %}
   <div class="card">
@@ -40,8 +49,16 @@
           </select>
         </label>
         <label><span>yoki MoySklad logini <span class="sec">— qo'lda</span></span><input name="ms_uid" value="{{ t.ms_uid }}" maxlength="255" placeholder="masalan: giyos@sevimli_uz"></label>
-        <label><span>Sevimli HR xodim ID <span class="sec">— HR ulanganda</span></span><input name="hr_id" value="{{ t.hr_xodim_id }}" maxlength="64"></label>
-        <label><span>HR'dagi ismi</span><input name="hr_name" value="{{ t.hr_xodim_nomi }}" maxlength="255"></label>
+        {% if hr_xodimlar %}
+        <label><span>Sevimli HR xodimi</span>
+          <select name="hr_pick">
+            <option value="">— tanlang —</option>
+            {% for x in hr_xodimlar %}<option value="{{ x.hr_id }}" {% if t.hr_xodim_id == x.hr_id %}selected{% endif %}>{{ x.ism }}{% if x.filial %} — {{ x.filial }}{% endif %}{% if x.lavozim %} ({{ x.lavozim }}){% endif %}</option>{% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <label><span>{% if hr_xodimlar %}yoki HR xodim ID <span class="sec">— qo'lda</span>{% else %}Sevimli HR xodim ID{% endif %}</span><input name="hr_id" value="{{ t.hr_xodim_id }}" maxlength="64" inputmode="numeric"></label>
+        {% if not hr_xodimlar %}<label><span>HR'dagi ismi</span><input name="hr_name" value="{{ t.hr_xodim_nomi }}" maxlength="255"></label>{% endif %}
         <label><span>Smena boshlanishi</span><input type="time" name="smena_boshi" value="{{ t.smena_boshi|time:'H:i' }}"></label>
         <label><span>Smena tugashi</span><input type="time" name="smena_oxiri" value="{{ t.smena_oxiri|time:'H:i' }}"></label>
         <label><span>Holat</span><select name="active"><option value="1" {% if t.active %}selected{% endif %}>Faol</option><option value="0" {% if not t.active %}selected{% endif %}>Faol emas</option></select></label>
