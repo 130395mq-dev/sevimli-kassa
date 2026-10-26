@@ -1,0 +1,28 @@
+{% comment %}
+  Minus ulushi grafigi. `c` — korinish.minus_trend() natijasi (yoki uning
+  telefon uchun ixcham nusxasi `mob`), `cls` — «desk» yoki «mob»,
+  `r` — nuqta radiusi, `ly` — x yozuvlarining o'qdan pastligi.
+  Bitta o'q (%), har do'kon o'z rangida, uzuq chiziq — chegara.
+{% endcomment %}
+<svg class="chart kchart {{ cls }}" viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="xMidYMid meet"
+     role="img" aria-label="Minusdagi tovar ulushi dinamikasi">
+  {% for t in c.ticks %}
+    <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ t.y }}" y2="{{ t.y }}" class="grid"></line>
+    <text x="{{ c.left|add:'-10' }}" y="{{ t.y|add:'4' }}" class="tick">{{ t.label }}</text>
+  {% endfor %}
+  {% if c.goal %}
+    <path class="kgoal" d="{{ c.goal.line }}"></path>
+    <text class="kgoal-t" x="{{ c.axis_right|add:'-4' }}" y="{{ c.goal.y|add:'-7' }}">chegara {{ c.goal.text }}%</text>
+  {% endif %}
+  {% for s in c.series %}<path class="kline c{{ s.idx }}" d="{{ s.line }}"></path>{% endfor %}
+  {% for s in c.series %}<circle class="kend c{{ s.idx }}" cx="{{ s.end.x }}" cy="{{ s.end.y }}" r="{{ r }}"></circle>{% endfor %}
+  {% for h in c.hover %}
+    <g class="hov" data-i="{{ forloop.counter0 }}">
+      <rect x="{{ h.x }}" y="{{ c.top }}" width="{{ h.w }}" height="{{ c.plot_h }}" class="hit"></rect>
+      <line class="cross" x1="{{ h.cx }}" x2="{{ h.cx }}" y1="{{ c.top }}" y2="{{ c.baseline }}"></line>
+      {% for it in h.items %}<circle class="pt c{{ it.idx }}" cx="{{ h.cx }}" cy="{{ it.y }}" r="{{ r }}"></circle>{% endfor %}
+    </g>
+  {% endfor %}
+  {% for x in c.xlabels %}<text x="{{ x.x }}" y="{{ c.baseline|add:ly }}" class="day {{ x.anchor }}">{{ x.label }}</text>{% endfor %}
+  <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+</svg>

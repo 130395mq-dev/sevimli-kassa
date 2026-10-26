@@ -1,5 +1,5 @@
 {% extends "dashboard/base.html" %}
-{% load pul %}
+{% load l10n %}
 
 {% block title %}Tovarovedlar — Sevimli Kassa{% endblock %}
 {% block nav_kpi %}on{% endblock %}
@@ -7,6 +7,7 @@
 
 {% block body %}
   {% include "kpi/_style.html" %}
+  {% localize off %}{# SVG koordinatalari va foizlar nuqta bilan chiqsin #}
   <h1>Tovarovedlar nazorati</h1>
   <div class="sub">MoySklad (faqat o'qiladi) va Sevimli HR asosida. Har ballning qanday hisoblangani xodim kartasida ochiladi.</div>
 
@@ -39,59 +40,191 @@
     <span class="sec">{{ start|date:"d.m.Y" }}{% if start != end %} – {{ end|date:"d.m.Y" }}{% endif %}</span>
   </form>
 
-  <div class="kpi-cards">
-  {% for r in cards %}
-    <a class="card" href="{% url 'kpi:xodim' r.tov.pk %}?davr={{ davr }}" style="color: inherit; text-decoration: none;">
-      <div class="kpi-head">
-        <div>
-          <div class="rank">#{{ forloop.counter }}</div>
-          <div class="who">{{ r.tov.name }}</div>
-          <div class="where">{% if r.b %}{{ r.b.warehouse_name }}{% else %}<span class="minus">do'konga biriktirilmagan</span>{% endif %}</div>
-        </div>
-        <div style="text-align: right;">
-          {% if r.p.umumiy is not None %}
-            <div class="score">{{ r.p.umumiy }}<small>/100</small></div>
-            <div class="note">umumiy baho</div>
-          {% elif r.p.ish is not None %}
-            <div class="score">{{ r.p.ish }}<small>/100</small></div>
-            <div class="note">faqat ish natijasi —<br>davomat ulanmagan</div>
-          {% else %}
-            <div class="score none">Ma'lumot<br>yetarli emas</div>
-          {% endif %}
-        </div>
+  {% if status.enabled and cards %}
+  {# ------------------------------------------------------ umumiy plitalar #}
+  <div class="tiles kpi-tiles">
+    <div class="tile hero">
+      <div class="label">Ochiq minuslar</div>
+      <div class="value">{{ jami.ochiq }}</div>
+      <div class="note">{% if jami.kech %}<span class="minus">{{ jami.kech }} tasi muddati o'tgan</span>{% else %}muddati o'tgani yo'q{% endif %}{% if jami.oldingi %} · {{ jami.oldingi }} tasi kuzatuvdan oldingi{% endif %}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Yangi minuslar</div>
+      <div class="value">{{ jami.yangi }}</div>
+      <div class="note">shu davrda paydo bo'lgan</div>
+    </div>
+    <div class="tile good">
+      <div class="label">Yo'qolgan minuslar</div>
+      <div class="value">{{ jami.tuzatilgan }}</div>
+      <div class="note">{% if jami.qayta %}<span class="minus">{{ jami.qayta }} tasi {{ rule.qayta_paydo_kun }} kunda yana minusga tushdi</span>{% else %}tuzatilgan yoki qoldig'i to'ldirilgan{% endif %}</div>
+    </div>
+    <div class="tile">
+      <div class="label">O'rtacha ball</div>
+      {% if jami.ball is not None %}
+        <div class="value"><span class="st-{{ jami.ball_status }}">{{ jami.ball }}</span><small class="of">/100</small></div>
+        <div class="note">{{ jami.ball_n }} tovaroved bo'yicha · <span class="st-{{ jami.ball_status }}">{% if jami.ball_status == "good" %}yaxshi{% elif jami.ball_status == "warn" %}o'rtacha{% else %}past{% endif %}</span></div>
+      {% else %}
+        <div class="value faintv">—</div>
+        <div class="note">Ma'lumot yetarli emas</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ------------------------------------------------- minuslar dinamikasi #}
+  <section class="card kpi-trend">
+    <div class="kpi-trend-head">
+      <div>
+        <h2 class="trend-title">Faol tovarlardan minusdagi ulush</h2>
+        <div class="note">Har do'kon bo'yicha, {% if trend.hourly %}soatma-soat{% else %}kunma-kun{% endif %} — oraliqdagi oxirgi tekshiruv. Pastga tushsa — yaxshi{% if trend.goal %}; uzuq chiziq — chegara {{ trend.goal.text }}%{% endif %}.</div>
       </div>
-      {% if r.p.kunlar %}<div class="note" style="margin-top: 6px;">{{ r.p.ish_kunlar }} kun baholandi{% if r.p.yetarli_emas %}, {{ r.p.yetarli_emas }} kunda ma'lumot yetarli emas{% endif %}</div>{% endif %}
-      {% if r.b %}
-      <div class="mini">
-        <div class="{% if r.st.ochiq_kech %}bad{% endif %}"><b>{{ r.st.ochiq }}</b>ochiq minus{% if r.st.ochiq_kech %} ({{ r.st.ochiq_kech }} kechikkan){% endif %}</div>
-        <div><b>{% if r.share is not None %}{{ r.share }}%{% else %}—{% endif %}</b>faol tovarlardan minusda</div>
-        <div><b>{{ r.st.yangi }}</b>yangi minus</div>
-        <div><b>{{ r.st.tuzatilgan }}</b>yo'qolgan minus</div>
-        <div class="{% if r.st.kechikkan %}bad{% endif %}"><b>{{ r.st.kechikkan }}</b>muddati o'tgan</div>
-        <div><b>{{ r.prints.noyob }}</b>tovar chop etildi</div>
-      </div>
-      {% if r.st.qayta %}<div class="note minus" style="margin-top: 8px;">{{ r.st.qayta }} ta tuzatilgan tovar {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushdi — bu tuzatishlar ballda hisoblanmadi</div>{% endif %}
-      {% if r.st.oldingi %}<div class="note" style="margin-top: 8px;">{{ r.st.oldingi }} ta minus kuzatuvdan oldin bor edi — boshlanishi noma'lum</div>{% endif %}
-      <div class="note" style="margin-top: 10px;">
-        Hajm (ball bermaydi):
-        {% for v in r.vol %}{% if v.n %}{{ v.nomi }} {{ v.n }} ta{% if not forloop.last %} · {% endif %}{% endif %}{% empty %}—{% endfor %}
+      {% if trend %}
+      <div class="legend">
+        {% for s in trend.series %}
+          <span class="key"><span class="swatch line c{{ s.idx }}"></span>{{ s.name }} <b class="num">{{ s.last }}%</b></span>
+        {% endfor %}
       </div>
       {% endif %}
-      <div class="note" style="margin-top: 6px;">Ishlangan / qo'shimcha soat: <b>—</b> (Sevimli HR ulanmagan)</div>
+    </div>
+    {% if trend %}
+      <div class="kpi-chart" data-kpi-trend>
+        <div class="kpi-chart-scroll">
+        {% include "kpi/_trend_svg.html" with c=trend cls="desk" r=4.5 ly=20 %}
+        {% include "kpi/_trend_svg.html" with c=trend.mob cls="mob" r=6 ly=28 %}
+        </div>
+        <div class="trend-tip" hidden></div>
+        <div hidden>
+          {% for h in trend.hover %}
+            <div data-tip="{{ forloop.counter0 }}"><b>{{ h.label }}</b>{% for it in h.items %}<div><span class="k c{{ it.idx }}"></span>{{ it.name }}: <b>{{ it.txt }}%</b> ({{ it.n }} ta)</div>{% endfor %}</div>
+          {% endfor %}
+        </div>
+      </div>
+      <details class="trend-table">
+        <summary>Jadval ko'rinishi</summary>
+        <div class="tablewrap"><table>
+          <tr><th>{% if trend.hourly %}Soat{% else %}Kun{% endif %}</th>{% for s in trend.series %}<th class="right">{{ s.name }}</th>{% endfor %}</tr>
+          {% for h in trend.hover %}
+            <tr><td class="num tight">{{ h.label }}</td>{% for it in h.items %}<td class="right num">{{ it.txt }}% <span class="sec">({{ it.n }})</span></td>{% endfor %}</tr>
+          {% endfor %}
+        </table></div>
+      </details>
+    {% else %}
+      <div class="kpi-empty">Grafik kamida ikki xil vaqtdagi tekshiruv to'plangach chiqadi.</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ------------------------------------------------------ tovarovedlar #}
+  <div class="kpi-cards">
+  {% for r in cards %}
+    <a class="card kcard" href="{% url 'kpi:xodim' r.tov.pk %}?davr={{ davr }}">
+      <div class="kcard-head">
+        <div class="kwho">
+          <div class="rank">#{{ forloop.counter }}</div>
+          <div class="who"><span class="swatch c{{ r.idx }}"></span>{{ r.tov.name }}</div>
+          <div class="where">{% if r.b %}{{ r.b.warehouse_name }}{% else %}<span class="minus">do'konga biriktirilmagan</span>{% endif %}</div>
+          {% if r.score is not None %}
+            <div class="kverdict st-{{ r.ring.status }}">{% if r.ring.status == "good" %}yaxshi{% elif r.ring.status == "warn" %}o'rtacha{% else %}past{% endif %}
+              <span class="note">· {% if r.p.umumiy is not None %}umumiy baho{% else %}faqat ish natijasi (davomat ulanmagan){% endif %}</span></div>
+          {% else %}
+            <div class="kverdict st-none">Ma'lumot yetarli emas</div>
+          {% endif %}
+        </div>
+        <svg class="ring kring {{ r.ring.status }}" viewBox="0 0 {{ r.ring.size }} {{ r.ring.size }}"
+             width="{{ r.ring.size }}" height="{{ r.ring.size }}" role="img"
+             aria-label="{% if r.score is not None %}Ball {{ r.ring.text }} / 100{% else %}Ma'lumot yetarli emas{% endif %}">
+          <circle class="bg" cx="{{ r.ring.c }}" cy="{{ r.ring.c }}" r="{{ r.ring.r }}" stroke-width="{{ r.ring.thickness }}"></circle>
+          {% if r.score is not None and r.ring.dash %}
+            <circle class="fg" cx="{{ r.ring.c }}" cy="{{ r.ring.c }}" r="{{ r.ring.r }}" stroke-width="{{ r.ring.thickness }}"
+                    stroke-dasharray="{{ r.ring.dash }} {{ r.ring.gap }}"></circle>
+          {% endif %}
+          <text x="{{ r.ring.c }}" y="{{ r.ring.c|add:4 }}">{{ r.ring.text }}</text>
+          {% if r.score is not None %}<text class="of" x="{{ r.ring.c }}" y="{{ r.ring.c|add:20 }}">/ 100</text>{% endif %}
+        </svg>
+      </div>
+      {% if r.p.kunlar %}<div class="note kdays">{{ r.p.ish_kunlar }} kun baholandi{% if r.p.yetarli_emas %}, {{ r.p.yetarli_emas }} kunda ma'lumot yetarli emas{% endif %}</div>{% endif %}
+
+      {% if r.spark %}
+        <div class="kblock">
+          <div class="kblock-h"><span>Ish bali · {{ r.spark.n }} kun</span><span class="num">{{ r.spark.first }} → <b>{{ r.spark.last }}</b></span></div>
+          <svg class="kspark c{{ r.idx }}" viewBox="0 0 {{ r.spark.w }} {{ r.spark.h }}" preserveAspectRatio="none" role="img"
+               aria-label="Kunlik ish bali: {{ r.spark.first }} dan {{ r.spark.last }} gacha (0–100 shkala)">
+            <path class="area" d="{{ r.spark.area }}"></path><path class="line" d="{{ r.spark.line }}"></path>
+          </svg>
+        </div>
+      {% endif %}
+
+      {% if r.b %}
+        <div class="kblock">
+          <div class="kblock-h">
+            <span>Minus ulushi</span>
+            {% if r.meter %}<span class="num"><b>{{ r.share }}%</b> <span class="st-{{ r.meter.status }}">{{ r.meter.label }}</span></span>{% else %}<span class="sec">—</span>{% endif %}
+          </div>
+          {% if r.meter %}
+            <div class="meter" role="img" aria-label="{{ r.share }}%, chegara {{ r.meter.chegara_txt }}%">
+              <div class="meter-fill {{ r.meter.status }}" style="width: {{ r.meter.fill }}%"></div>
+              <div class="meter-mark" style="left: {{ r.meter.mark }}%"></div>
+            </div>
+            <div class="meter-legend"><span>{{ r.neg }} / {{ r.active }} faol tovar minusda</span><span>chegara {{ r.meter.chegara_txt }}%</span></div>
+          {% else %}
+            <div class="note">Do'kon hali tekshirilmagan.</div>
+          {% endif %}
+        </div>
+
+        <div class="kblock">
+          <div class="kblock-h"><span>Ochiq minuslar</span><span class="num"><b>{{ r.comp.total }}</b> ta</span></div>
+          {% if r.comp.total %}
+            <div class="stack" role="img" aria-label="{% for s in r.comp.segs %}{{ s.label }} {{ s.n }}{% if not forloop.last %}, {% endif %}{% endfor %}">
+              {% for s in r.comp.segs %}{% if s.n %}<span class="seg {{ s.key }}" style="flex: {{ s.n }} 1 0" title="{{ s.label }}: {{ s.n }}"></span>{% endif %}{% endfor %}
+            </div>
+            <div class="stack-legend">
+              {% for s in r.comp.segs %}<span class="{% if not s.n %}zero{% endif %}"><i class="seg {{ s.key }}"></i>{{ s.label }} <b class="num">{{ s.n }}</b></span>{% endfor %}
+            </div>
+          {% else %}
+            <div class="note">Ochiq minus yo'q.</div>
+          {% endif %}
+        </div>
+
+        <div class="mini">
+          <div><b>{{ r.st.yangi }}</b>yangi minus</div>
+          <div><b>{{ r.st.tuzatilgan }}</b>yo'qolgan minus</div>
+          <div class="{% if r.st.kechikkan %}bad{% endif %}"><b>{{ r.st.kechikkan }}</b>muddati o'tgan</div>
+          <div class="{% if r.st.qayta %}bad{% endif %}"><b>{{ r.st.qayta }}</b>qayta minus</div>
+          <div><b>{{ r.prints.noyob }}</b>tovar chop etildi</div>
+        </div>
+        {% if r.st.qayta %}<div class="note minus kgap">{{ r.st.qayta }} ta tuzatilgan tovar {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushdi — bu tuzatishlar ballda hisoblanmadi</div>{% endif %}
+
+        <div class="kblock">
+          <div class="kblock-h"><span>Hujjatlar hajmi</span><span class="sec">ball bermaydi</span></div>
+          {% if r.vol_bars %}
+            <div class="hrows kvol">
+              {% for v in r.vol_bars %}
+                <div class="hrow"><div class="top"><span class="nm">{{ v.label }}</span><span class="vl">{{ v.value }} ta</span></div>
+                  <div class="track"><div class="fill" style="width: {{ v.bar }}%"></div></div></div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="note">Bu davrda hujjat yo'q.</div>
+          {% endif %}
+        </div>
+      {% endif %}
+      <div class="note kgap kfoot">Ishlangan / qo'shimcha soat: — · Sevimli HR ulanmagan</div>
     </a>
   {% empty %}
     <div class="card empty">Tovaroved qo'shilmagan. <a href="{% url 'kpi:boglash' %}">Qo'shish</a></div>
   {% endfor %}
   </div>
 
+  {# ------------------------------------------------------ ma'lumot holati #}
   <h2>Ma'lumot holati</h2>
   <div class="card">
-    <div class="kv">
-      <div><div class="k">Oxirgi minus tekshiruvi</div><div class="v">{% if status.last_scan %}{{ status.last_scan.at|date:"d.m H:i" }} <span class="sec">({% if status.last_scan.full %}to'liq{% else %}o'zgarganlar{% endif %})</span>{% else %}hali yo'q{% endif %}</div></div>
+    <div class="kstatus">
+      <div><span class="sdot {% if status.last_scan %}ok{% endif %}"></span><span class="k">Oxirgi minus tekshiruvi</span>
+        <span class="v">{% if status.last_scan %}{{ status.last_scan.at|date:"d.m H:i" }} <span class="sec">({% if status.last_scan.full %}to'liq{% else %}o'zgarganlar{% endif %})</span>{% else %}hali yo'q{% endif %}</span></div>
       {% for s in status.rows %}
-        <div><div class="k">{{ s.name }}</div><div class="v">{% if s.at %}{{ s.at|date:"d.m H:i" }}{% else %}hali yo'q{% endif %}{% if s.error %} <span class="badge err" title="{{ s.error }}">xato</span>{% endif %}</div></div>
+        <div><span class="sdot {% if s.error %}bad{% elif s.at %}ok{% endif %}"></span><span class="k">{{ s.name }}</span>
+          <span class="v">{% if s.at %}{{ s.at|date:"d.m H:i" }}{% else %}hali yo'q{% endif %}{% if s.error %} <span class="badge err" title="{{ s.error }}">xato</span>{% endif %}</span></div>
       {% endfor %}
-      <div><div class="k">Davomat (Sevimli HR)</div><div class="v"><span class="badge off">ulanmagan</span></div></div>
+      <div><span class="sdot"></span><span class="k">Davomat (Sevimli HR)</span><span class="v"><span class="badge off">ulanmagan</span></span></div>
     </div>
     <div class="sec" style="margin-top: 12px;">
       Minuslar har qoldiq yangilanishida (bir necha daqiqada) tekshiriladi. Ish soatlarining {{ rule.min_qamrov }}% idan kamida
@@ -99,4 +232,31 @@
       Do'konga mas'ullik — xatoni aynan shu xodim qilgani degani emas; ehtimoliy sabablar faqat taxmin va ballga kirmaydi.
     </div>
   </div>
+  {% endlocalize %}
+
+  <script>
+  (function () {
+    var box = document.querySelector("[data-kpi-trend]");
+    if (!box) return;
+    // Telefonda grafik yonga suriladi — eng oxirgi (eng muhim) qismi ko'rinib tursin
+    var sc = box.querySelector(".kpi-chart-scroll");
+    if (sc) sc.scrollLeft = sc.scrollWidth;
+    // Sichqoncha (yoki barmoq) ostidagi nuqtaning to'liq izohi — chiziqlarni
+    // yopmasin deb kursorning yon tomonida chiqadi
+    var tip = box.querySelector(".trend-tip");
+    box.querySelectorAll(".hov").forEach(function (g) {
+      g.addEventListener("mouseenter", function () {
+        var src = box.querySelector('[data-tip="' + g.dataset.i + '"]');
+        if (!src) return;
+        tip.innerHTML = src.innerHTML;
+        tip.hidden = false;
+        var r = g.getBoundingClientRect(), b = box.getBoundingClientRect();
+        var x = r.left - b.left + r.width / 2, w = tip.offsetWidth;
+        var left = x > b.width / 2 ? x - w - 14 : x + 14;
+        tip.style.left = Math.max(0, Math.min(left, b.width - w)) + "px";
+      });
+      g.addEventListener("mouseleave", function () { tip.hidden = true; });
+    });
+  })();
+  </script>
 {% endblock %}

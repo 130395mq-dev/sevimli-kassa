@@ -30,9 +30,11 @@ STEPS = [
     # (nomi, necha daqiqada bir)
     ("kpi:minus", 4),
     ("kpi:xodimlar", 360),
-    ("kpi:hujjatlar", 15),
-    ("kpi:ochirilgan", 30),
+    # Audit (chop etish, o'chirilganlar) hujjatlardan OLDIN: hujjatlarni orqaga
+    # to'ldirish vaqt chegarasini to'liq yeb qo'ymasin
     ("kpi:chop", 15),
+    ("kpi:ochirilgan", 30),
+    ("kpi:hujjatlar", 15),
     ("kpi:sabab", 15),
     ("kpi:hisob", 15),
 ]

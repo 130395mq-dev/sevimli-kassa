@@ -21,9 +21,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from catalog.models import SyncState, Warehouse
-from dashboard import access
+from dashboard import access, grafik
 
-from . import hisob, ms
+from . import hisob, korinish, ms
 from .models import (Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan,
                      MsXodim, Tovaroved)
 
@@ -133,19 +133,31 @@ def bosh(request):
         return _forbid(request)
     key, start, end = davr_range(request.GET.get("davr", "bugun"))
     now = timezone.now()
-    last_scan = MinusScan.objects.order_by("-at").first()
-    cards = []
-    for tov in Tovaroved.objects.filter(active=True).select_related("ms_xodim"):
+    rule = KpiQoida.current()
+    # Rang tovarovedga bog'langan (qo'shilgan tartibi), reytingdagi o'rniga emas
+    color = {pk: n % korinish.PALETTE
+             for n, pk in enumerate(Tovaroved.objects.order_by("pk").values_list("pk", flat=True))}
+    cards, series_defs, seen = [], [], set()
+    for tov in Tovaroved.objects.filter(active=True).select_related("ms_xodim").order_by("pk"):
         b = _current_assignment(tov)
         p = hisob.period(tov, start, end)
-        row = {"tov": tov, "b": b, "p": p}
+        score = p["umumiy"] if p["umumiy"] is not None else p["ish"]
+        row = {"tov": tov, "b": b, "p": p, "idx": color.get(tov.pk, 0),
+               "score": score, "ring": korinish.score_ring(score)}
         if b:
             wh = str(b.warehouse_ms_id)
             row["st"] = _issue_stats(wh, start, end, now)
-            neg, active = ((last_scan.per_wh or {}).get(wh) or [None, None]) if last_scan else (None, None)
+            neg, active = korinish.latest_counts(wh)
             row["neg"], row["active"] = neg, active
             row["share"] = round(neg * 100 / active, 2) if neg is not None and active else None
+            row["meter"] = korinish.share_meter(row["share"], rule.minus_ulush_chegara)
+            row["comp"] = korinish.composition(wh, now)
             row["vol"] = _volume(wh, start, end)
+            row["vol_bars"] = grafik.bars_h([{"label": v["nomi"], "value": v["n"]} for v in row["vol"] if v["n"]])
+            if wh not in seen:
+                seen.add(wh)
+                series_defs.append((wh, f"{tov.name} · {b.warehouse_name}" if b.warehouse_name else tov.name, row["idx"]))
+        row["spark"] = korinish.score_spark(tov, start, end)
         row["prints"] = _prints(tov.ms_uid, start, end)
         cards.append(row)
 
@@ -154,9 +166,23 @@ def bosh(request):
         return (p["umumiy"] is None, -(p["umumiy"] or 0), p["ish"] is None, -(p["ish"] or 0), r["tov"].name)
 
     cards.sort(key=rank)
+    with_store = [r for r in cards if r["b"]]
+    scores = [r["score"] for r in cards if r["score"] is not None]
+    jami = {
+        "ochiq": sum(r["st"]["ochiq"] for r in with_store),
+        "kech": sum(r["st"]["ochiq_kech"] for r in with_store),
+        "oldingi": sum(r["st"]["oldingi"] for r in with_store),
+        "yangi": sum(r["st"]["yangi"] for r in with_store),
+        "tuzatilgan": sum(r["st"]["tuzatilgan"] for r in with_store),
+        "qayta": sum(r["st"]["qayta"] for r in with_store),
+        "ball": korinish.num_txt(sum(scores) / len(scores)) if scores else None,
+        "ball_n": len(scores),
+    }
+    jami["ball_status"] = korinish.status_of(sum(scores) / len(scores) if scores else None)
     return render(request, "kpi/bosh.html", {
         "cards": cards, "davr": key, "davrlar": DAVRLAR, "start": start, "end": end,
-        "status": _status(), "rule": KpiQoida.current(),
+        "status": _status(), "rule": rule, "jami": jami,
+        "trend": korinish.minus_trend(series_defs, start, end, now, rule.minus_ulush_chegara),
     })
 
 
