@@ -1,0 +1,78 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}KPI qoidasi — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Qoida{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>KPI qoidasi <span class="sec">v{{ rule.version }}</span></h1>
+  <div class="sub">O'zgartirsangiz yangi versiya yoziladi. Eski kunlar o'z versiyasi bilan qoladi (xohlasangiz qayta hisoblanadi).</div>
+
+  {% if messages %}{% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}{% endif %}
+
+  <nav class="tabs">
+    <a href="{% url 'kpi:bosh' %}">Reyting</a>
+    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a class="on" href="{% url 'kpi:qoida' %}">Qoida</a>
+  </nav>
+
+  <form method="post" class="card">
+    {% csrf_token %}
+    <h3 style="margin-top: 0;">Umumiy baho</h3>
+    <div class="fields">
+      <label><span>Ish natijasi, %</span><input type="number" min="0" name="w_ish" value="{{ rule.w_ish }}"></label>
+      <label><span>Davomat, %</span><input type="number" min="0" name="w_davomat" value="{{ rule.w_davomat }}"></label>
+      <label><span>Tasdiqlangan qo'shimcha soat uchun ball (1 soat)</span><input name="qoshimcha_ball_soat" value="{{ rule.qoshimcha_ball_soat }}"></label>
+      <label><span>Qo'shimcha soat bonusi chegarasi (kuniga)</span><input name="qoshimcha_ball_max" value="{{ rule.qoshimcha_ball_max }}"></label>
+    </div>
+    <div class="note">Shunchaki kech chiqish bonus bermaydi — faqat HR'da tasdiqlangan qo'shimcha soat (HR ulanganda).</div>
+
+    <h3>Ish natijasi mezonlari (vazn)</h3>
+    <div class="fields">
+      <label><span>Minusdagi tovarlar ulushi</span><input type="number" min="0" name="w_minus_ulush" value="{{ rule.w_minus_ulush }}"></label>
+      <label><span>Minuslarni muddatida tuzatish</span><input type="number" min="0" name="w_muddat" value="{{ rule.w_muddat }}"></label>
+      <label><span>Ochiq muammolar muddatdan o'tmagani</span><input type="number" min="0" name="w_ochiq" value="{{ rule.w_ochiq }}"></label>
+      <label><span>Sennik o'z vaqtida <span class="sec">— hozircha baholanmaydi</span></span><input type="number" min="0" name="w_sennik" value="{{ rule.w_sennik }}"></label>
+    </div>
+    <div class="note">Spisaniya, vozvrat va hujjatlar soni ball bermaydi — faqat ish hajmi sifatida ko'rsatiladi.</div>
+
+    <h3>Minuslar</h3>
+    <div class="fields">
+      <label><span>Minus ulushi chegarasi, % <span class="sec">— shunda 0 ball</span></span><input name="minus_ulush_chegara" value="{{ rule.minus_ulush_chegara }}"></label>
+      <label><span>Yangi minusni tuzatish muddati, soat</span><input type="number" min="0" name="tuzatish_soat" value="{{ rule.tuzatish_soat }}"></label>
+      <label><span>Kuzatuvdan oldingi minuslar muddati, soat</span><input type="number" min="0" name="oldingi_tuzatish_soat" value="{{ rule.oldingi_tuzatish_soat }}"></label>
+      <label><span>Tuzatilgan tovar shu kun ichida yana minusga tushsa — tuzatish hisoblanmaydi</span><input type="number" min="0" name="qayta_paydo_kun" value="{{ rule.qayta_paydo_kun }}"></label>
+      <label><span>Faol tovar ta'rifi</span>
+        <select name="faol_tovar">{% for k, n in faol %}<option value="{{ k }}" {% if rule.faol_tovar == k %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+      </label>
+      <label><span>Faol tovar: sotuv davri, kun</span><input type="number" min="1" name="faol_sotuv_kun" value="{{ rule.faol_sotuv_kun }}"></label>
+    </div>
+
+    <h3>Ma'lumot yetarliligi</h3>
+    <div class="fields">
+      <label><span>Ish kuni boshlanishi (soat)</span><input type="number" min="0" max="23" name="kun_boshi" value="{{ rule.kun_boshi }}"></label>
+      <label><span>Ish kuni tugashi (soat)</span><input type="number" min="1" max="24" name="kun_oxiri" value="{{ rule.kun_oxiri }}"></label>
+      <label><span>Minimal tekshiruv qamrovi, %</span><input type="number" min="0" max="100" name="min_qamrov" value="{{ rule.min_qamrov }}"></label>
+    </div>
+
+    <h3>Saqlash</h3>
+    <div class="fields">
+      <label style="grid-column: 1 / -1;"><span>O'zgarish izohi</span><input name="izoh" maxlength="255" placeholder="nima o'zgardi va nega"></label>
+      <label class="check"><input type="checkbox" name="qayta" value="1"> <span>Oxirgi <input type="number" name="qayta_kun" value="7" min="1" max="62" style="width: 70px; display: inline; margin: 0 4px;"> kunni yangi qoida bilan qayta hisoblash</span></label>
+    </div>
+    <button type="submit">Yangi versiya sifatida saqlash</button>
+  </form>
+
+  <h2>Versiyalar</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Versiya</th><th>Qachon</th><th>Kim</th><th>Ish / davomat</th><th>Izoh</th></tr>
+    {% for v in versions %}
+      <tr><td>v{{ v.version }}</td><td>{{ v.created_at|date:"d.m.Y H:i" }}</td><td>{{ v.created_by|default:"—" }}</td><td>{{ v.w_ish }} / {{ v.w_davomat }}</td><td>{{ v.izoh }}</td></tr>
+    {% endfor %}
+  </table></div>
+{% endblock %}

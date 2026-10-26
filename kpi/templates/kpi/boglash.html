@@ -1,0 +1,110 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Bog'lash — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Bog'lash{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Tovarovedlarni bog'lash</h1>
+  <div class="sub">MoySklad xodimi ↔ do'kon ↔ Sevimli HR xodimi. Do'kon almashsa eski natijalar eski do'konda qoladi.</div>
+
+  {% if messages %}{% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}{% endif %}
+
+  <nav class="tabs">
+    <a href="{% url 'kpi:bosh' %}">Reyting</a>
+    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a class="on" href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a href="{% url 'kpi:qoida' %}">Qoida</a>
+  </nav>
+
+  <form method="post" style="margin-bottom: 16px;">
+    {% csrf_token %}<input type="hidden" name="action" value="xodimlar">
+    <button type="submit" class="small ghost">MoySklad xodimlarini yangilash</button>
+    <span class="sec">{{ xodimlar|length }} ta xodim ro'yxatda · faqat o'qiladi</span>
+  </form>
+
+  {% for t in rows %}
+  <div class="card">
+    <form method="post" autocomplete="off">
+      {% csrf_token %}<input type="hidden" name="action" value="save"><input type="hidden" name="id" value="{{ t.pk }}">
+      <div class="fields">
+        <label><span>Ismi</span><input name="name" value="{{ t.name }}" required maxlength="255"></label>
+        <label><span>MoySklad xodimi</span>
+          <select name="ms_xodim">
+            <option value="">— tanlang —</option>
+            {% for x in xodimlar %}<option value="{{ x.pk }}" {% if t.ms_xodim_id == x.pk %}selected{% endif %}>{{ x.name }}{% if x.uid %} ({{ x.uid }}){% endif %}</option>{% endfor %}
+          </select>
+        </label>
+        <label><span>Sevimli HR xodim ID <span class="sec">— HR ulanganda</span></span><input name="hr_id" value="{{ t.hr_xodim_id }}" maxlength="64"></label>
+        <label><span>HR'dagi ismi</span><input name="hr_name" value="{{ t.hr_xodim_nomi }}" maxlength="255"></label>
+        <label><span>Smena boshlanishi</span><input type="time" name="smena_boshi" value="{{ t.smena_boshi|time:'H:i' }}"></label>
+        <label><span>Smena tugashi</span><input type="time" name="smena_oxiri" value="{{ t.smena_oxiri|time:'H:i' }}"></label>
+        <label><span>Holat</span><select name="active"><option value="1" {% if t.active %}selected{% endif %}>Faol</option><option value="0" {% if not t.active %}selected{% endif %}>Faol emas</option></select></label>
+      </div>
+      <button type="submit" class="small">Saqlash</button>
+    </form>
+
+    <h3 style="margin: 18px 0 8px;">Do'kon</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Do'kon</th><th>Boshlanish</th><th>Tugash</th><th></th></tr>
+      {% for b in t.biriktirishlar.all %}
+        <tr><td>{{ b.warehouse_name }}</td><td>{{ b.boshlanish|date:"d.m.Y" }}</td>
+          <td>{% if b.tugash %}{{ b.tugash|date:"d.m.Y" }}{% else %}hozir ham{% endif %}</td>
+          <td>{% if not b.tugash %}<form method="post" style="display: flex; gap: 6px;">{% csrf_token %}<input type="hidden" name="action" value="tugat"><input type="hidden" name="id" value="{{ t.pk }}"><input type="hidden" name="b" value="{{ b.pk }}"><input type="date" name="tugash" value="{{ today|date:'Y-m-d' }}" style="margin: 0;"><button class="small ghost" type="submit">Yopish</button></form>{% endif %}</td></tr>
+      {% empty %}
+        <tr><td colspan="4" class="empty">Hali do'konga biriktirilmagan.</td></tr>
+      {% endfor %}
+    </table></div>
+    <form method="post" class="davr" style="margin-top: 10px;">
+      {% csrf_token %}<input type="hidden" name="action" value="biriktir"><input type="hidden" name="id" value="{{ t.pk }}">
+      <label>Do'kon
+        <select name="warehouse" required>
+          <option value="">— tanlang —</option>
+          {% for m in markets %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Qaysi sanadan <input type="date" name="boshlanish" value="{{ today|date:'Y-m-d' }}" required></label>
+      <button type="submit" class="small">Biriktirish</button>
+      <span class="sec">Avvalgi do'kon shu sanadan oldingi kun bilan avtomatik yopiladi.</span>
+    </form>
+
+    <h3 style="margin: 18px 0 8px;">Panelga kirish</h3>
+    {% if t.user %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="login_off"><input type="hidden" name="id" value="{{ t.pk }}">
+        Login: <b>{{ t.user.username }}</b> — {% if t.user.is_active %}<span class="badge ok">kira oladi</span>{% else %}<span class="badge off">to'xtatilgan</span>{% endif %}
+        <button type="submit" class="small ghost">{% if t.user.is_active %}Kirishni to'xtatish{% else %}Yana yoqish{% endif %}</button>
+      </form>
+      <div class="note">Tovaroved faqat o'z kartasi va o'z do'koni minuslarini ko'radi; hech narsani o'zgartira olmaydi.</div>
+    {% else %}
+      <form method="post" class="davr" autocomplete="off">
+        {% csrf_token %}<input type="hidden" name="action" value="login"><input type="hidden" name="id" value="{{ t.pk }}">
+        <label>Login <input name="username" pattern="[A-Za-z0-9_.\-]{3,30}" required style="margin: 0;"></label>
+        <label>Parol <input type="password" name="password1" minlength="{{ min_password }}" required autocomplete="new-password" style="margin: 0;"></label>
+        <label>Yana bir marta <input type="password" name="password2" minlength="{{ min_password }}" required autocomplete="new-password" style="margin: 0;"></label>
+        <button type="submit" class="small ghost">Login yaratish</button>
+      </form>
+      <div class="note">Ixtiyoriy. Login bo'lmasa tovaroved panelga kirmaydi — natijalarni faqat siz ko'rasiz.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>Yangi tovaroved</h2>
+  <form method="post" class="card" autocomplete="off">
+    {% csrf_token %}<input type="hidden" name="action" value="save">
+    <div class="fields">
+      <label><span>Ismi</span><input name="name" required maxlength="255" placeholder="masalan: G'iyos"></label>
+      <label><span>MoySklad xodimi</span>
+        <select name="ms_xodim">
+          <option value="">— tanlang —</option>
+          {% for x in xodimlar %}<option value="{{ x.pk }}">{{ x.name }}{% if x.uid %} ({{ x.uid }}){% endif %}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    {% if not xodimlar %}<div class="note" style="margin-bottom: 10px;">MoySklad xodimlari ro'yxati bo'sh — yuqoridagi «MoySklad xodimlarini yangilash» tugmasini bosing.</div>{% endif %}
+    <button type="submit">Qo'shish</button>
+  </form>
+{% endblock %}
