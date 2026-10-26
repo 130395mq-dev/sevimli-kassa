@@ -269,6 +269,11 @@ def minus(request, pk):
     })
 
 
+def _has_history(tov: Tovaroved) -> bool:
+    return (tov.user_id is not None or tov.biriktirishlar.exists() or tov.kunlar.exists()
+            or tov.minuslar.exists())
+
+
 def _time(v: str):
     try:
         return time.fromisoformat(v) if v else None
@@ -296,7 +301,11 @@ def boglash(request):
                     n = hujjatlar.sync_employees(client)
                     messages.success(request, f"MoySklad'dan {n} ta xodim o'qildi (faqat o'qish).")
                 except Exception as exc:
-                    messages.error(request, f"MoySklad javob bermadi: {type(exc).__name__}")
+                    # Sabab ko'rinsin (masalan 403 — tokenda xodimlarni ko'rish huquqi yo'q).
+                    # Xato matnida token bo'lmaydi.
+                    status = getattr(exc, "status", "")
+                    messages.error(request, f"MoySklad javob bermadi {status}: {str(exc)[:200]}. "
+                                            "Loginni qo'lda yozsangiz ham bo'ladi.")
             return redirect("kpi:boglash")
 
         if action == "save":
@@ -320,6 +329,18 @@ def boglash(request):
         tov = Tovaroved.objects.filter(pk=request.POST.get("id")).first()
         if tov is None:
             messages.error(request, "Tovaroved topilmadi.")
+            return redirect("kpi:boglash")
+
+        if action == "ochir":
+            # Faqat xato yaratilgan, hech qanday tarixi yo'q yozuv o'chadi.
+            # Tarixi bor tovaroved o'chirilmaydi — natijalar yo'qolmasin.
+            if _has_history(tov):
+                messages.error(request, f"«{tov.name}» da tarix bor (do'kon, natija yoki login) — "
+                                        "o'chirib bo'lmaydi. Kerak bo'lmasa «Faol emas» qiling.")
+            else:
+                name = tov.name
+                tov.delete()
+                messages.success(request, f"«{name}» o'chirildi.")
             return redirect("kpi:boglash")
 
         if action == "biriktir":
@@ -380,8 +401,11 @@ def boglash(request):
             messages.success(request, "Kirish " + ("yoqildi." if tov.user.is_active else "to'xtatildi."))
         return redirect("kpi:boglash")
 
+    rows = list(Tovaroved.objects.select_related("ms_xodim", "user").prefetch_related("biriktirishlar"))
+    for t in rows:
+        t.ochsa_boladi = not _has_history(t)
     return render(request, "kpi/boglash.html", {
-        "rows": Tovaroved.objects.select_related("ms_xodim", "user").prefetch_related("biriktirishlar"),
+        "rows": rows,
         "xodimlar": MsXodim.objects.filter(archived=False),
         "markets": markets, "today": _today(), "min_password": _MIN_PASSWORD,
     })
