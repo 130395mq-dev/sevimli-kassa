@@ -580,6 +580,24 @@ class KirishTest(Base):
         self.assertEqual(old.tugash, date(2026, 10, 19))
         self.assertIsNone(new.tugash)
 
+    def test_xato_yaratilgan_tovaroved_ochiriladi(self):
+        c = self.c(self.owner)
+        xato = Tovaroved.objects.create(name="wew")
+        self.assertContains(c.get("/kpi/boglash/"), "O'chirish")
+        c.post("/kpi/boglash/", {"action": "ochir", "id": xato.pk})
+        self.assertFalse(Tovaroved.objects.filter(pk=xato.pk).exists())
+
+    def test_login_qolda_yoziladi(self):
+        c = self.c(self.owner)
+        c.post("/kpi/boglash/", {"action": "save", "name": "G'iyos", "ms_xodim": "", "ms_uid": "giyos@sevimli_uz"})
+        self.assertEqual(Tovaroved.objects.get(name="G'iyos").ms_uid, "giyos@sevimli_uz")
+
+    def test_tarixi_bor_tovaroved_ochirilmaydi(self):
+        c = self.c(self.owner)
+        r = c.post("/kpi/boglash/", {"action": "ochir", "id": self.tov.pk}, follow=True)
+        self.assertTrue(Tovaroved.objects.filter(pk=self.tov.pk).exists())
+        self.assertContains(r, "da tarix bor")
+
     def test_qoida_yangi_versiya(self):
         c = self.c(self.owner)
         c.post("/kpi/qoida/", {f: getattr(self.rule, f) for f in KpiQoida.PARAMS} | {"w_ish": 70, "w_davomat": 30})
