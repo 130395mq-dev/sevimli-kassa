@@ -5,9 +5,11 @@ HR'dagi maxsus API (api/kpi.py, HR repozitoriyasida):
   * GET /api/kpi/xodimlar/ — faol xodimlar (ID, ism, lavozim, filial, smena);
   * GET /api/kpi/davomat/?dan=…&gacha=…&xodim=1,2 — har kun: amaldagi smena
     rejasi, kirish/chiqish, dam kuni, kechirilgan kechikish/erta ketish.
-Kirish: `Authorization: Bearer <kalit>` (HR'da KPI_API_TOKEN, bu yerda
-SEVIMLI_HR_TOKEN — bir xil qiymat). Maosh, jarima, telefon, rasm — so'ralmaydi
-va HR ularni bermaydi.
+Kirish: `Authorization: Bearer <kalit>`. Kalitni HR o'zi yaratadi va faqat
+super admin ko'radigan sahifada ko'rsatadi (sevimlihr.uz/api/kpi/kalit/);
+egasi uni panelning «Bog'lash» sahifasiga qo'yadi (HrUlanish jadvali). Railway
+o'zgaruvchisi SEVIMLI_HR_TOKEN berilsa — u ustun. Maosh, jarima, telefon,
+rasm — so'ralmaydi va HR ularni bermaydi.
 
 Xavfsizlik:
   * kalit sozlanmaguncha HR'ga birorta ham so'rov yuborilmaydi;
@@ -26,7 +28,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from . import ms
-from .models import HrDavomat, HrXodim, Tovaroved
+from .models import HrDavomat, HrUlanish, HrXodim, Tovaroved
 
 TIMEOUT = (5, 20)
 OYNA_KUN = 7          # har safar oxirgi 7 kun qayta olinadi (HR'da kechroq tuzatiladi)
@@ -37,22 +39,47 @@ class HrError(Exception):
     """HR bilan aloqa xatosi — matnida kalit bo'lmaydi."""
 
 
+class HrKalitXato(HrError):
+    """HR kalitni rad etdi (401)."""
+
+
+def token() -> str:
+    env = (getattr(settings, "SEVIMLI_HR_TOKEN", "") or "").strip()
+    if env:
+        return env
+    row = HrUlanish.objects.order_by("-pk").first()
+    return (row.kalit or "").strip() if row else ""
+
+
+def from_env() -> bool:
+    return bool((getattr(settings, "SEVIMLI_HR_TOKEN", "") or "").strip())
+
+
 def configured() -> bool:
-    return bool(getattr(settings, "SEVIMLI_HR_TOKEN", "") and getattr(settings, "SEVIMLI_HR_URL", ""))
+    return bool(getattr(settings, "SEVIMLI_HR_URL", "") and token())
+
+
+def save_token(kalit: str) -> None:
+    HrUlanish.objects.all().delete()
+    HrUlanish.objects.create(kalit=kalit.strip())
+
+
+def forget_token() -> None:
+    HrUlanish.objects.all().delete()
 
 
 def _get(path: str, **params) -> dict:
     url = settings.SEVIMLI_HR_URL.rstrip("/") + path
-    headers = {"Authorization": f"Bearer {settings.SEVIMLI_HR_TOKEN}", "Accept": "application/json",
+    headers = {"Authorization": f"Bearer {token()}", "Accept": "application/json",
                "User-Agent": "SevimliKassa-KPI/0.1"}
     try:
         r = requests.get(url, params=params, headers=headers, timeout=TIMEOUT)
     except requests.RequestException as exc:
         raise HrError(f"Sevimli HR javob bermadi ({type(exc).__name__})") from None
     if r.status_code == 401:
-        raise HrError("Sevimli HR kalitni qabul qilmadi (401) — ikki tomondagi kalit bir xilmi?")
+        raise HrKalitXato("Sevimli HR kalitni qabul qilmadi — kalit noto'g'ri (HR sahifasidan qayta nusxa oling)")
     if r.status_code == 404:
-        raise HrError("Sevimli HR'da bu API yo'q yoki yoqilmagan (404) — HR'da KPI_API_TOKEN sozlanganmi?")
+        raise HrError("Sevimli HR'da bu API topilmadi (404)")
     if r.status_code != 200:
         raise HrError(f"Sevimli HR xatosi: {r.status_code}")
     try:

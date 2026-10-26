@@ -917,3 +917,57 @@ class HrTest(Base):
             r = c.get("/kpi/?davr=bugun")
         self.assertContains(r, "Davomat (Sevimli HR)")
         self.assertNotContains(r, "Sevimli HR ulanmagan")
+
+
+@override_settings(SEVIMLI_HR_TOKEN="", SEVIMLI_HR_URL="https://hr.test")
+class HrUlashTest(Base):
+    """Kalitni egasi panelda kiritadi (Railway'siz). Kalit sahifada qayta ko'rinmaydi."""
+
+    KALIT = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+
+    def setUp(self):
+        super().setUp()
+        self.owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        self.c = Client()
+        self.c.force_login(self.owner)
+
+    def test_ulash_tekshiradi_va_kalitni_ko_rsatmaydi(self):
+        self.assertFalse(hr.configured())
+        r = self.c.get("/kpi/boglash/")
+        self.assertContains(r, "https://hr.test/api/kpi/kalit/")
+        data = {"xodimlar": [{"id": 7, "ism": "G'iyosiddin", "filial": "Shahar"}]}
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp(data)) as get:
+            r = self.c.post("/kpi/boglash/", {"action": "hr_kalit", "hr_kalit": f"  {self.KALIT} "}, follow=True)
+        self.assertEqual(get.call_args[1]["headers"]["Authorization"], f"Bearer {self.KALIT}")
+        self.assertContains(r, "Sevimli HR ulandi: 1 ta xodim")
+        self.assertNotContains(r, self.KALIT)
+        self.assertTrue(hr.configured())
+        self.assertEqual(HrXodim.objects.count(), 1)
+        # Uzish — kalit o'chadi, HR'ga so'rov yuborilmaydi
+        self.c.post("/kpi/boglash/", {"action": "hr_uz"})
+        self.assertFalse(hr.configured())
+
+    def test_noto_g_ri_kalit_saqlanmaydi(self):
+        with mock.patch("kpi.hr.requests.get", return_value=hr_resp({}, 401)):
+            r = self.c.post("/kpi/boglash/", {"action": "hr_kalit", "hr_kalit": self.KALIT}, follow=True)
+        self.assertContains(r, "kalit noto")
+        self.assertFalse(hr.configured())
+        with mock.patch("kpi.hr.requests.get") as get:
+            r = self.c.post("/kpi/boglash/", {"action": "hr_kalit", "hr_kalit": "qisqa"}, follow=True)
+        get.assert_not_called()
+        self.assertFalse(hr.configured())
+
+    def test_hr_ishlamasa_kalit_saqlanadi(self):
+        import requests as rq
+        with mock.patch("kpi.hr.requests.get", side_effect=rq.Timeout()):
+            r = self.c.post("/kpi/boglash/", {"action": "hr_kalit", "hr_kalit": self.KALIT}, follow=True)
+        self.assertContains(r, "Kalit saqlandi")
+        self.assertTrue(hr.configured())
+
+    def test_server_o_zgaruvchisi_ustun(self):
+        hr.save_token(self.KALIT)
+        with override_settings(SEVIMLI_HR_TOKEN="env-kalit-1234567890"):
+            self.assertEqual(hr.token(), "env-kalit-1234567890")
+            self.c.post("/kpi/boglash/", {"action": "hr_uz"})
+            self.assertTrue(hr.configured())
+        self.assertEqual(hr.token(), self.KALIT)

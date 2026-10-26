@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -344,9 +345,32 @@ def boglash(request):
                                             "Loginni qo'lda yozsangiz ham bo'ladi.")
             return redirect("kpi:boglash")
 
+        if action == "hr_kalit":
+            kalit = (request.POST.get("hr_kalit") or "").strip()
+            if len(kalit) < 20 or len(kalit) > 255 or any(ch.isspace() for ch in kalit):
+                messages.error(request, "Kalit noto'g'ri ko'rinishda. Sevimli HR sahifasidagi kalitni to'liq nusxa oling.")
+                return redirect("kpi:boglash")
+            hr.save_token(kalit)
+            try:
+                n = hr.sync_xodimlar()
+            except hr.HrKalitXato as exc:
+                hr.forget_token()
+                messages.error(request, str(exc))
+            except hr.HrError as exc:
+                messages.error(request, f"Kalit saqlandi, lekin hozir tekshirib bo'lmadi: {exc}. Keyinroq «Sevimli HR xodimlarini yangilash» ni bosing.")
+            else:
+                messages.success(request, f"Sevimli HR ulandi: {n} ta xodim o'qildi. Endi har tovarovedga HR xodimini tanlang.")
+            return redirect("kpi:boglash")
+
+        if action == "hr_uz":
+            if not hr.from_env():
+                hr.forget_token()
+                messages.success(request, "Sevimli HR kaliti o'chirildi — HR'ga so'rov yuborilmaydi.")
+            return redirect("kpi:boglash")
+
         if action == "hr_xodimlar":
             if not hr.configured():
-                messages.error(request, "Sevimli HR kaliti (SEVIMLI_HR_TOKEN) sozlanmagan.")
+                messages.error(request, "Avval Sevimli HR kalitini kiriting.")
             else:
                 try:
                     n = hr.sync_xodimlar()
@@ -460,7 +484,8 @@ def boglash(request):
     return render(request, "kpi/boglash.html", {
         "rows": rows,
         "xodimlar": MsXodim.objects.filter(archived=False),
-        "hr_on": hr.configured(), "hr_xodimlar": HrXodim.objects.filter(faol=True),
+        "hr_on": hr.configured(), "hr_env": hr.from_env(), "hr_url": settings.SEVIMLI_HR_URL,
+        "hr_xodimlar": HrXodim.objects.filter(faol=True),
         "markets": markets, "today": _today(), "min_password": _MIN_PASSWORD,
     })
 

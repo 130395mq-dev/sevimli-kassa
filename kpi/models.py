@@ -62,6 +62,21 @@ class HrXodim(models.Model):
         return f"{self.ism} — {self.filial}" if self.filial else self.ism
 
 
+class HrUlanish(models.Model):
+    """Sevimli HR kaliti — egasi panelda (Bog'lash) kiritadi. Kalit sahifada
+    qayta ko'rsatilmaydi va logga yozilmaydi. Bitta qator."""
+
+    kalit = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Sevimli HR ulanishi"
+        verbose_name_plural = "Sevimli HR ulanishi"
+
+    def __str__(self) -> str:
+        return "Sevimli HR kaliti"
+
+
 class HrDavomat(models.Model):
     """Sevimli HR'dagi bir kunlik davomat (nusxa). KPI shu nusxadan hisoblanadi —
     HR vaqtincha javob bermasa ham oldingi kunlar saqlanib qoladi."""
