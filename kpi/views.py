@@ -219,6 +219,9 @@ def xodim(request, pk):
                     .filter(Q(store_ms_id=b.warehouse_ms_id) | Q(target_ms_id=b.warehouse_ms_id))
                     .order_by("-created")[:150])
     prints = list(ChopEtish.objects.filter(uid=tov.ms_uid, moment__gte=s, moment__lt=e)[:150]) if tov.ms_uid else []
+    # Reytingdagi kartaning «qayta minus» soni bilan bir xil: hozirgi do'kon bo'yicha
+    qayta_rows = (qayta.rows({str(b.warehouse_ms_id): b.warehouse_name}, s, min(e, timezone.now()))
+                  if b else [])
     davomat = []
     if hr.configured() and tov.hr_xodim_id:
         baho = {d.sana: (d.tarkib or {}).get("davomat") or {} for d in days}
@@ -228,7 +231,8 @@ def xodim(request, pk):
     return render(request, "kpi/xodim.html", {
         "hr_on": hr.configured(), "davomat": davomat,
         "tov": tov, "b": b, "p": hisob.period(tov, start, end), "days": days, "issues": issues,
-        "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(),
+        "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(), "qayta_rows": qayta_rows,
+        "qayta_kun": KpiQoida.current().qayta_paydo_kun,
         "davr": key, "davrlar": DAVRLAR, "start": start, "end": end, "owner": _owner(request),
         "names": {str(k): v for k, v in Warehouse.objects.values_list("ms_id", "name")},
         "now": timezone.now(),

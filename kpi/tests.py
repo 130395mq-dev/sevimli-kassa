@@ -1055,3 +1055,23 @@ class QaytaMinusTest(Base):
         self.assertEqual(qayta.gap_text(timedelta(days=1, hours=3)), "1 kun 3 soatdan keyin")
         self.assertEqual(qayta.gap_text(timedelta(days=2)), "2 kundan keyin")
         self.assertEqual(qayta.gap_text(None), "")
+
+    def test_xodim_sahifasida_ham_ko_rinadi(self):
+        r = self.get(f"/kpi/xodim/{self.tov.pk}/?davr=hafta")
+        self.assertEqual(len(r.context["qayta_rows"]), 1)
+        self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
+        self.assertContains(r, "23 soatdan keyin")
+        self.assertContains(r, "3 kun ichida yana minusga tushgan")
+        self.assertContains(r, "format=csv")                     # egasiga Excel havolasi
+        self.assertEqual(r.context["qayta_rows"][0]["i"].pk, self.old.pk)   # «xato emas» kirmaydi
+        # Tovarovedning o'zi ham o'z sahifasida ko'radi (Excel havolasisiz)
+        u = User.objects.create_user("unzavod.tov2", password="parol-12345")
+        self.tov.user = u
+        self.tov.save()
+        c = Client()
+        c.force_login(u)
+        with mock.patch("kpi.views._today", return_value=date(2026, 10, 27)), \
+             mock.patch("kpi.views.timezone.now", return_value=T(day=27, h=12)):
+            r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=hafta")
+        self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
+        self.assertNotContains(r, "format=csv")
