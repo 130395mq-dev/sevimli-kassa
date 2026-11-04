@@ -79,6 +79,7 @@
 
   <h2>Muammoli tovarlar (minuslar)</h2>
   <div class="note" style="margin-bottom: 8px;">Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>
+  {% if owner %}<div style="margin-bottom: 8px;"><a href="{% url 'kpi:qayta' %}?davr={{ davr }}&amp;tov={{ tov.pk }}">Shu xodimning qayta minusga tushgan tovarlari →</a></div>{% endif %}
   <div class="tablewrap">
   <table>
     <tr><th>Tovar</th><th>Do'kon</th><th class="right">Qoldiq</th><th>Birinchi ko'rildi</th><th>Muddat</th><th>Holat</th></tr>
