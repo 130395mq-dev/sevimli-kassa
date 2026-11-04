@@ -6,11 +6,6 @@
 
 {% block body %}
   {% include "kpi/_style.html" %}
-  <style>
-    table.qayta td.tovar { min-width: 230px; white-space: normal; }
-    table.qayta td.yechim .sec { max-width: 210px; white-space: normal; }
-    table.qayta a.vaqt { color: var(--ink); }
-  </style>
   <h1>Qayta minusga tushgan tovarlar</h1>
   <div class="sub">Tuzatilgan (yo'qolgan) minus {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushgan — bu tuzatish ballda hisoblanmaydi</div>
 
@@ -47,21 +42,5 @@
 
   <div class="note" style="margin-bottom: 8px;">Mas'ul — minus paydo bo'lganda shu do'konga biriktirilgan tovaroved. Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>
 
-  <div class="tablewrap">
-  <table class="qayta">
-    <tr><th>Tovar</th><th>Do'kon / mas'ul</th><th>Birinchi minus</th><th>Tuzatildi</th><th>Yana minus</th><th>Hozir</th></tr>
-    {% for r in rows %}
-      <tr>
-        <td class="tovar"><a href="{% url 'kpi:minus' r.i.pk %}"><b>{{ r.i.name|default:r.i.product_ms_id }}</b></a><div class="sec">{{ r.i.code }}{% if r.i.barcode %} · {{ r.i.barcode }}{% endif %}</div></td>
-        <td>{{ r.i.warehouse_name }}<div class="sec"><b>{{ r.i.tovaroved.name|default:"mas'ul biriktirilmagan" }}</b></div></td>
-        <td class="tight">{% if r.i.pre_tracking %}<span class="sec">kuzatuvdan oldin</span>{% else %}{{ r.i.first_seen|date:"d.m H:i" }}{% endif %}<div class="sec minus">eng past {{ r.i.min_qty|floatformat:"-3" }}</div></td>
-        <td class="tight yechim">{{ r.i.closed_at|date:"d.m H:i" }}<div class="sec">{{ r.i.get_resolution_display|default:"aniqlanmoqda" }}</div></td>
-        <td class="tight">{% if r.again %}<a class="vaqt" href="{% url 'kpi:minus' r.again.pk %}">{{ r.again.first_seen|date:"d.m H:i" }}</a><div class="sec minus">{{ r.gap }}</div>{% else %}—{% endif %}</td>
-        <td>{% if r.again %}{% if r.again.status == "open" %}<span class="badge err">hozir ham minusda</span><div class="sec num minus">{{ r.again.last_qty|floatformat:"-3" }}</div>{% else %}<span class="badge ok">yana yo'qoldi</span>{% endif %}{% else %}—{% endif %}</td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="6" class="empty">Bu davrda qayta minusga tushgan tovar yo'q.</td></tr>
-    {% endfor %}
-  </table>
-  </div>
+  {% include "kpi/_qayta_jadval.html" %}
 {% endblock %}
