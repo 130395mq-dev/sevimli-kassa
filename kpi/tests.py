@@ -636,10 +636,12 @@ class SahifaTest(Base):
         owner = User.objects.create_user("egasi", password="egasi-parol-1")
         c = Client()
         c.force_login(owner)
-        r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=oy")
-        self.assertContains(r, "qanday hisoblandi")
-        self.assertContains(r, "Sevimli HR hali ulanmagan")
-        r = c.get("/kpi/?davr=oy")
+        # «Shu oy» — ma'lumot kuni (oktabr) bilan bir oy: sinov kalendarga bog'liq bo'lmasin
+        with mock.patch("kpi.views._today", return_value=date(2026, 10, 26)):
+            r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=oy")
+            self.assertContains(r, "qanday hisoblandi")
+            self.assertContains(r, "Sevimli HR hali ulanmagan")
+            r = c.get("/kpi/?davr=oy")
         self.assertContains(r, "Unzavod tovaroved")
         self.assertContains(r, "davomat ulanmagan")
         r = c.get("/kpi/minuslar/")
