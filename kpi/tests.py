@@ -16,7 +16,7 @@ from django.test import Client, TestCase, override_settings
 
 from catalog.models import Product, SyncState, Warehouse
 
-from . import davomat, hisob, hr, hujjatlar, ishlar, korinish, minus, ms, sabab
+from . import davomat, hisob, hr, hujjatlar, ishlar, korinish, minus, ms, qayta, sabab
 from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
                      MinusScan, Tovaroved)
 
@@ -971,3 +971,107 @@ class HrUlashTest(Base):
             self.c.post("/kpi/boglash/", {"action": "hr_uz"})
             self.assertTrue(hr.configured())
         self.assertEqual(hr.token(), self.KALIT)
+
+
+class QaytaMinusTest(Base):
+    """Reytingdagi «N tasi … kunda yana minusga tushdi» — bosiladigan ro'yxat."""
+
+    def setUp(self):
+        super().setUp()
+        self.owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        self.c = Client()
+        self.c.force_login(self.owner)
+        # Haqiqiy kuzatuv: P1 tuzatiladi, keyingi kuni yana minusga tushadi
+        self.scan({(WH1, P2): Decimal(1)}, T(h=9))
+        self.scan({(WH1, P1): Decimal(-2)}, T(h=10), full=False)
+        self.scan({(WH1, P1): Decimal(0)}, T(h=11), full=False)
+        self.scan({(WH1, P1): Decimal(-1)}, T(day=27, h=10), full=False)
+        self.old = MinusIssue.objects.get(product_ms_id=P1, status=MinusIssue.CLOSED)
+        common = dict(product_ms_id=P2, first_seen=T(h=8), last_seen=T(h=9), first_qty=-1, min_qty=-1,
+                      last_qty=-1, deadline=T(day=27), status=MinusIssue.CLOSED, closed_at=T(h=12), reopened=True)
+        # Hisobga kirmaydi: «tovaroved xatosi emas» deb tasdiqlangan va kuzatilmaydigan do'kon
+        MinusIssue.objects.create(warehouse_ms_id=WH1, name="Tasdiqlangan", confirmed_cause="xato_emas", **common)
+        MinusIssue.objects.create(warehouse_ms_id=WH2, name="Boshqa do'kon", **common)
+
+    def get(self, url):
+        with mock.patch("kpi.views._today", return_value=date(2026, 10, 27)), \
+             mock.patch("kpi.views.timezone.now", return_value=T(day=27, h=12)):
+            return self.c.get(url)
+
+    def test_ro_yxat_reyting_soni_bilan_bir_xil(self):
+        self.assertTrue(self.old.reopened)
+        r = self.get("/kpi/?davr=hafta")
+        self.assertContains(r, "1 tasi 3 kunda yana minusga tushdi")
+        self.assertContains(r, "/kpi/qayta-minus/?davr=hafta")
+        r = self.get("/kpi/qayta-minus/?davr=hafta")
+        self.assertEqual(r.context["total"], 1)
+        row = r.context["rows"][0]
+        self.assertEqual(row["i"].pk, self.old.pk)
+        self.assertEqual(row["again"].previous_id, self.old.pk)
+        self.assertEqual(row["gap"], "23 soatdan keyin")
+        for text in ("Cola 2L", "101", "Unzavod tovaroved", "hozir ham minusda", "26.10 11:00", "27.10 10:00"):
+            self.assertContains(r, text)
+        self.assertNotContains(r, "Tasdiqlangan")
+        self.assertNotContains(r, "Boshqa do&#x27;kon")
+
+    def test_davr_tashqarisida_yo_q(self):
+        r = self.get("/kpi/qayta-minus/?davr=bugun")       # 27.10 da yopilgan qayta minus yo'q
+        self.assertEqual(r.context["total"], 0)
+        self.assertContains(r, "qayta minusga tushgan tovar yo'q")
+
+    def test_filtrlar(self):
+        other = Tovaroved.objects.create(name="Boshqa tovaroved")
+        self.assertEqual(self.get(f"/kpi/qayta-minus/?davr=hafta&tov={other.pk}").context["total"], 0)
+        self.assertEqual(self.get(f"/kpi/qayta-minus/?davr=hafta&tov={self.tov.pk}").context["total"], 1)
+        self.assertEqual(self.get(f"/kpi/qayta-minus/?davr=hafta&dokon={WH1}").context["total"], 1)
+        # Noto'g'ri qiymatlar e'tiborsiz — sahifa yiqilmaydi
+        r = self.get("/kpi/qayta-minus/?davr=hafta&dokon=xato&tov=abc")
+        self.assertEqual((r.status_code, r.context["total"], r.context["dokon"], r.context["tov_id"]), (200, 1, "", 0))
+
+    def test_excel_csv(self):
+        r = self.get("/kpi/qayta-minus/?davr=hafta&format=csv")
+        self.assertEqual(r["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("qayta-minus-20261021-20261027.csv", r["Content-Disposition"])
+        text = r.content.decode("utf-8")
+        self.assertTrue(text.startswith("\ufeff"))
+        lines = text.strip().splitlines()
+        self.assertEqual(len(lines), 3)                       # sarlavha + ustunlar + 1 qator
+        cols = lines[2].split(";")
+        self.assertEqual(cols[:5], ["Unzavod", "Unzavod tovaroved", '"=""101"""', "", "Cola 2L"])
+        self.assertIn("hozir ham minusda", lines[2])
+        self.assertIn("23 soatdan keyin", lines[2])
+
+    def test_tovaroved_ko_ra_olmaydi(self):
+        u = User.objects.create_user("unzavod.tov", password="parol-12345")
+        self.tov.user = u
+        self.tov.save()
+        c = Client()
+        c.force_login(u)
+        self.assertEqual(c.get("/kpi/qayta-minus/").status_code, 403)
+
+    def test_oraliq_matni(self):
+        self.assertEqual(qayta.gap_text(timedelta(minutes=40)), "40 daqiqadan keyin")
+        self.assertEqual(qayta.gap_text(timedelta(hours=5, minutes=10)), "5 soatdan keyin")
+        self.assertEqual(qayta.gap_text(timedelta(days=1, hours=3)), "1 kun 3 soatdan keyin")
+        self.assertEqual(qayta.gap_text(timedelta(days=2)), "2 kundan keyin")
+        self.assertEqual(qayta.gap_text(None), "")
+
+    def test_xodim_sahifasida_ham_ko_rinadi(self):
+        r = self.get(f"/kpi/xodim/{self.tov.pk}/?davr=hafta")
+        self.assertEqual(len(r.context["qayta_rows"]), 1)
+        self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
+        self.assertContains(r, "23 soatdan keyin")
+        self.assertContains(r, "3 kun ichida yana minusga tushgan")
+        self.assertContains(r, "format=csv")                     # egasiga Excel havolasi
+        self.assertEqual(r.context["qayta_rows"][0]["i"].pk, self.old.pk)   # «xato emas» kirmaydi
+        # Tovarovedning o'zi ham o'z sahifasida ko'radi (Excel havolasisiz)
+        u = User.objects.create_user("unzavod.tov2", password="parol-12345")
+        self.tov.user = u
+        self.tov.save()
+        c = Client()
+        c.force_login(u)
+        with mock.patch("kpi.views._today", return_value=date(2026, 10, 27)), \
+             mock.patch("kpi.views.timezone.now", return_value=T(day=27, h=12)):
+            r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=hafta")
+        self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
+        self.assertNotContains(r, "format=csv")

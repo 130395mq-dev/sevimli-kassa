@@ -18,13 +18,14 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.db.models import Count, Q, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from catalog.models import SyncState, Warehouse
 from dashboard import access, grafik
 
-from . import hisob, hr, korinish, ms
+from . import hisob, hr, korinish, ms, qayta
 from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
                      MinusScan, MsXodim, Tovaroved)
 
@@ -218,6 +219,9 @@ def xodim(request, pk):
                     .filter(Q(store_ms_id=b.warehouse_ms_id) | Q(target_ms_id=b.warehouse_ms_id))
                     .order_by("-created")[:150])
     prints = list(ChopEtish.objects.filter(uid=tov.ms_uid, moment__gte=s, moment__lt=e)[:150]) if tov.ms_uid else []
+    # Reytingdagi kartaning «qayta minus» soni bilan bir xil: hozirgi do'kon bo'yicha
+    qayta_rows = (qayta.rows({str(b.warehouse_ms_id): b.warehouse_name}, s, min(e, timezone.now()))
+                  if b else [])
     davomat = []
     if hr.configured() and tov.hr_xodim_id:
         baho = {d.sana: (d.tarkib or {}).get("davomat") or {} for d in days}
@@ -227,7 +231,8 @@ def xodim(request, pk):
     return render(request, "kpi/xodim.html", {
         "hr_on": hr.configured(), "davomat": davomat,
         "tov": tov, "b": b, "p": hisob.period(tov, start, end), "days": days, "issues": issues,
-        "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(),
+        "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(), "qayta_rows": qayta_rows,
+        "qayta_kun": KpiQoida.current().qayta_paydo_kun,
         "davr": key, "davrlar": DAVRLAR, "start": start, "end": end, "owner": _owner(request),
         "names": {str(k): v for k, v in Warehouse.objects.values_list("ms_id", "name")},
         "now": timezone.now(),
@@ -259,6 +264,54 @@ def minuslar(request):
     return render(request, "kpi/minuslar.html", {
         "rows": qs.select_related("tovaroved").order_by("deadline")[:300], "total": total,
         "holat": holat, "dokon": dokon, "q": q, "stores": stores, "now": now,
+    })
+
+
+def _tracked_stores() -> dict[str, str]:
+    """Reyting sahifasidagi do'konlar: faol tovarovedlarning hozirgi do'konlari."""
+    out: dict[str, str] = {}
+    for tov in Tovaroved.objects.filter(active=True).order_by("pk"):
+        b = _current_assignment(tov)
+        if b:
+            out.setdefault(str(b.warehouse_ms_id), b.warehouse_name or str(b.warehouse_ms_id))
+    return out
+
+
+@login_required
+def qayta_minuslar(request):
+    """Tuzatilgandan keyin qisqa vaqtda yana minusga tushgan tovarlar."""
+    if not _owner(request):
+        return _forbid(request)
+    key, start, end = davr_range(request.GET.get("davr", "hafta"))
+    now = timezone.now()
+    s, e = _bounds(start, end)
+    e = min(e, now)
+    stores = _tracked_stores()
+    dokon = request.GET.get("dokon", "")
+    if dokon not in stores:
+        dokon = ""
+    tovs = list(Tovaroved.objects.filter(active=True).order_by("name"))
+    try:
+        tov_id = int(request.GET.get("tov") or 0)
+    except ValueError:
+        tov_id = 0
+    if tov_id not in {t.pk for t in tovs}:
+        tov_id = 0
+    data = qayta.rows(stores, s, e, dokon, tov_id or None)
+    rule = KpiQoida.current()
+    if request.GET.get("format") == "csv":
+        title = (f"Qayta minus ({rule.qayta_paydo_kun} kun ichida yana minusga tushgan) — "
+                 f"{start:%d.%m.%Y}" + (f"–{end:%d.%m.%Y}" if start != end else ""))
+        resp = HttpResponse("\ufeff" + qayta.csv_text(data, title), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="qayta-minus-{start:%Y%m%d}-{end:%Y%m%d}.csv"'
+        return resp
+    keep = request.GET.copy()
+    keep.pop("format", None)
+    return render(request, "kpi/qayta.html", {
+        "rows": data, "total": len(data), "rule": rule,
+        "davr": key, "davrlar": DAVRLAR, "start": start, "end": end,
+        "stores": sorted(stores.items(), key=lambda x: x[1]), "dokon": dokon,
+        "tovs": tovs, "tov_id": tov_id, "keep": keep.urlencode(),
     })
 
 

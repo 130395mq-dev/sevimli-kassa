@@ -56,7 +56,7 @@
     <div class="tile good">
       <div class="label">Yo'qolgan minuslar</div>
       <div class="value">{{ jami.tuzatilgan }}</div>
-      <div class="note">{% if jami.qayta %}<span class="minus">{{ jami.qayta }} tasi {{ rule.qayta_paydo_kun }} kunda yana minusga tushdi</span>{% else %}tuzatilgan yoki qoldig'i to'ldirilgan{% endif %}</div>
+      <div class="note">{% if jami.qayta %}<a class="minus" href="{% url 'kpi:qayta' %}?davr={{ davr }}">{{ jami.qayta }} tasi {{ rule.qayta_paydo_kun }} kunda yana minusga tushdi →</a>{% else %}tuzatilgan yoki qoldig'i to'ldirilgan{% endif %}</div>
     </div>
     <div class="tile">
       <div class="label">O'rtacha ball</div>

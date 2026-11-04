@@ -77,6 +77,10 @@
   </table>
   </div>
 
+  <h2>Qayta minusga tushgan tovarlar ({{ qayta_rows|length }})</h2>
+  <div class="note" style="margin-bottom: 8px;">Tuzatilgan minus {{ qayta_kun }} kun ichida yana minusga tushgan — bu tuzatishlar ballda hisoblanmadi.{% if owner and b and qayta_rows %} <a href="{% url 'kpi:qayta' %}?davr={{ davr }}&amp;dokon={{ b.warehouse_ms_id }}&amp;format=csv">⤓ Excel (CSV)</a>{% endif %}</div>
+  {% include "kpi/_qayta_jadval.html" with rows=qayta_rows %}
+
   <h2>Muammoli tovarlar (minuslar)</h2>
   <div class="note" style="margin-bottom: 8px;">Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>
   <div class="tablewrap">

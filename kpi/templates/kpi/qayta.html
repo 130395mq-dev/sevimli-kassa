@@ -1,0 +1,46 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Qayta minus — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Qayta minus{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Qayta minusga tushgan tovarlar</h1>
+  <div class="sub">Tuzatilgan (yo'qolgan) minus {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushgan — bu tuzatish ballda hisoblanmaydi</div>
+
+  <nav class="tabs">
+    <a href="{% url 'kpi:bosh' %}?davr={{ davr }}">Reyting</a>
+    <a class="on" href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a href="{% url 'kpi:qoida' %}">Qoida</a>
+  </nav>
+
+  <form method="get" class="davr">
+    <label>Davr
+      <select name="davr">
+        {% for k, n in davrlar %}<option value="{{ k }}" {% if k == davr %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Do'kon
+      <select name="dokon">
+        <option value="">— hammasi —</option>
+        {% for id, name in stores %}<option value="{{ id }}" {% if dokon == id %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Mas'ul
+      <select name="tov">
+        <option value="">— hammasi —</option>
+        {% for t in tovs %}<option value="{{ t.pk }}" {% if tov_id == t.pk %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="small">Ko'rsatish</button>
+    <span class="sec">{{ start|date:"d.m.Y" }}{% if start != end %} – {{ end|date:"d.m.Y" }}{% endif %} · <b>{{ total }} ta</b></span>
+    {% if total %}<a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>{% endif %}
+  </form>
+
+  <div class="note" style="margin-bottom: 8px;">Mas'ul — minus paydo bo'lganda shu do'konga biriktirilgan tovaroved. Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>
+
+  {% include "kpi/_qayta_jadval.html" %}
+{% endblock %}
