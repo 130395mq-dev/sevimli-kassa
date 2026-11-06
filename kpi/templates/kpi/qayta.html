@@ -9,13 +9,7 @@
   <h1>Qayta minusga tushgan tovarlar</h1>
   <div class="sub">Tuzatilgan (yo'qolgan) minus {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushgan — bu tuzatish ballda hisoblanmaydi</div>
 
-  <nav class="tabs">
-    <a href="{% url 'kpi:bosh' %}?davr={{ davr }}">Reyting</a>
-    <a class="on" href="{% url 'kpi:minuslar' %}">Minuslar</a>
-    <a href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida</a>
-  </nav>
+  {% include "kpi/_tabs.html" with on="minus" %}
 
   <form method="get" class="davr">
     <label>Davr
@@ -37,7 +31,7 @@
     </label>
     <button type="submit" class="small">Ko'rsatish</button>
     <span class="sec">{{ start|date:"d.m.Y" }}{% if start != end %} – {{ end|date:"d.m.Y" }}{% endif %} · <b>{{ total }} ta</b></span>
-    {% if total %}<a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>{% endif %}
+    {% if total and owner %}<a class="chip" href="?{% if keep %}{{ keep }}&amp;{% endif %}format=csv">⤓ Excel (CSV)</a>{% endif %}
   </form>
 
   <div class="note" style="margin-bottom: 8px;">Mas'ul — minus paydo bo'lganda shu do'konga biriktirilgan tovaroved. Do'kon bo'yicha mas'ullik — xatoni aynan shu xodim qilgani degani emas.</div>

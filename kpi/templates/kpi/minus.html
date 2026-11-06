@@ -3,7 +3,7 @@
 
 {% block title %}Minus — {{ i.name }}{% endblock %}
 {% block nav_kpi %}{% if owner %}on{% endif %}{% endblock %}
-{% block nav_kpi_men %}{% if not owner %}on{% endif %}{% endblock %}
+{% block nav_kpi_men %}{% endblock %}
 {% block crumb %}Nazorat · Minus{% endblock %}
 
 {% block body %}
@@ -15,7 +15,7 @@
     <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
   {% endfor %}{% endif %}
 
-  {% if owner %}<nav class="tabs"><a href="{% url 'kpi:minuslar' %}">← Minuslar</a></nav>{% endif %}
+  {% include "kpi/_tabs.html" with on="minus" %}
 
   <div class="card">
     <div class="kv">

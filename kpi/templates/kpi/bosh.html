@@ -15,19 +15,13 @@
     <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
   {% endfor %}{% endif %}
 
-  <nav class="tabs" aria-label="Tovarovedlar">
-    <a class="on" href="{% url 'kpi:bosh' %}">Reyting</a>
-    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
-    <a href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida (v{{ rule.version }})</a>
-  </nav>
+  {% include "kpi/_tabs.html" with on="reyting" %}
 
   {% if not status.enabled %}
     <div class="alert warn"><span>!</span><div>
       <b>Hali hech bir tovaroved do'konga biriktirilmagan.</b>
       Biriktirilmaguncha dastur MoySklad'ga birorta ham so'rov yubormaydi va hech narsa hisoblamaydi.
-      <a href="{% url 'kpi:boglash' %}">Bog'lash sahifasiga o'tish →</a>
+      {% if owner %}<a href="{% url 'kpi:boglash' %}">Bog'lash sahifasiga o'tish →</a>{% endif %}
     </div></div>
   {% endif %}
 
@@ -217,7 +211,7 @@
       </div>
     </a>
   {% empty %}
-    <div class="card empty">Tovaroved qo'shilmagan. <a href="{% url 'kpi:boglash' %}">Qo'shish</a></div>
+    <div class="card empty">Tovaroved qo'shilmagan.{% if owner %} <a href="{% url 'kpi:boglash' %}">Qo'shish</a>{% endif %}</div>
   {% endfor %}
   </div>
 
