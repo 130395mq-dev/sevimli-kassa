@@ -546,6 +546,10 @@
       .wrap { padding: 18px 14px 48px; }
       h1 { font-size: 23px; }
       .topsep, header.top .clock { display: none; }
+      #theme-toggle span { display: none; }
+      /* Tovaroved telefonda: chap menyu o'rniga KPI yorliqlari (Reyting, Mening ishim, Minuslar) */
+      body.role-tov aside.nav, body.role-tov #menu-toggle { display: none; }
+      body.role-tov header.top .crumb { display: none; }
     }
 
     /* -------------------------------------------- ikki ustunli tarmoq */
@@ -785,6 +789,7 @@
     .bx-bar .chip.on { background: var(--accent); color: var(--accent-ink);
                        border-color: var(--accent); font-weight: 600; }
     .bx-bar .iconbtn { margin-left: auto; text-decoration: none; }
+    .iconbtn.tov-exit { text-decoration: none; }
     .bx-facts {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px; margin-bottom: 22px;
@@ -812,7 +817,7 @@
     }
   </style>
 </head>
-<body data-open-detail="{{ detail|default:'' }}">
+<body data-open-detail="{{ detail|default:'' }}"{% if panel_tovaroved %} class="role-tov"{% endif %}>
 
 {# ---------------------------------------------------------- ikonkalar #}
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
@@ -845,9 +850,12 @@
       </div>
     </div>
 
-    {% if panel_tovaroved %}{# tovaroved faqat o'z KPI'sini ko'radi (dashboard/access.py) #}
+    {% if panel_tovaroved %}{# tovaroved hammaning KPI'sini ko'radi, faqat ko'rish (dashboard/access.py) #}
     <nav aria-label="Nazorat">
       <div class="group">Nazorat</div>
+      <a class="item {% if request.path == '/kpi/' or '/kpi/minus' in request.path or '/kpi/qayta' in request.path %}on{% endif %}" href="/kpi/">
+        <svg class="icon" aria-hidden="true"><use href="#i-store"/></svg>
+        <span class="txt">Reyting</span></a>
       <a class="item {% block nav_kpi_men %}{% endblock %}" href="/kpi/men/">
         <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
         <span class="txt">Mening ishim</span></a>
@@ -905,10 +913,10 @@
 
     <div class="spacer"></div>
     <div class="foot">
-      <div class="row">
+      {% if not panel_tovaroved %}<div class="row">
         <span class="dot ok" data-aloqa="moysklad" title="MoySklad aloqasi"></span>
         <span class="txt">MoySklad bilan bog'langan</span>
-      </div>
+      </div>{% endif %}
       <div class="row" style="margin-top: 8px;">
         <svg class="icon" aria-hidden="true" style="width:15px;height:15px;flex:0 0 15px"><use href="#i-return"/></svg>
         <a href="/chiqish/"><span class="txt">Chiqish</span><span class="sr-only">Chiqish</span></a>
@@ -924,7 +932,7 @@
         <span class="sr-only">Menyuni yig'ish</span>
       </button>
       <span class="crumb">{% block crumb %}{% endblock %}</span>
-      {% aloqa_strip %}
+      {% if not panel_tovaroved %}{% aloqa_strip %}{% endif %}{# tovarovedga kassa/MoySklad aloqasi kerak emas #}
       <span class="topsep" aria-hidden="true"></span>
       <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="true">
         <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>
@@ -936,6 +944,7 @@
         <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
         <span class="sr-only">{{ request.user.username|default:"Foydalanuvchi" }}</span>
       </span>
+      {% if panel_tovaroved %}<a class="iconbtn tov-exit" href="/chiqish/">Chiqish</a>{% endif %}
     </header>
     <div class="wrap">
       {% block body %}{% endblock %}
