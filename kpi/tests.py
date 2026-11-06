@@ -567,19 +567,30 @@ class KirishTest(Base):
                     f"/kpi/xodim/{self.tov.pk}/", f"/kpi/minus/{self.i_other.pk}/"):
             self.assertEqual(c.get(url).status_code, 200, url)
 
-    def test_tovaroved_faqat_o_zini_ko_radi(self):
+    def test_tovaroved_hammaning_kpisini_ko_radi_faqat_ko_rish(self):
+        """Egasining qarori (2026-11-06): KPI hammaga ochiq, lekin faqat ko'rish."""
         c = self.c(self.tu)
-        self.assertRedirects(c.get("/"), "/kpi/men/", fetch_redirect_response=False)
+        self.assertRedirects(c.get("/"), "/kpi/", fetch_redirect_response=False)
         self.assertRedirects(c.get("/kpi/men/"), f"/kpi/xodim/{self.tov.pk}/", fetch_redirect_response=False)
-        self.assertEqual(c.get(f"/kpi/xodim/{self.tov.pk}/").status_code, 200)
-        self.assertEqual(c.get(f"/kpi/xodim/{self.other.pk}/").status_code, 403)
-        self.assertEqual(c.get(f"/kpi/minus/{self.i_own.pk}/").status_code, 200)
-        self.assertEqual(c.get(f"/kpi/minus/{self.i_other.pk}/").status_code, 403)
-        for url in ("/kpi/", "/kpi/minuslar/", "/kpi/boglash/", "/kassalar/", "/cheklar/", "/smenalar/"):
+        for url in ("/kpi/", "/kpi/minuslar/", "/kpi/qayta-minus/", f"/kpi/xodim/{self.tov.pk}/",
+                    f"/kpi/xodim/{self.other.pk}/", f"/kpi/minus/{self.i_own.pk}/", f"/kpi/minus/{self.i_other.pk}/"):
+            self.assertEqual(c.get(url).status_code, 200, url)
+        # Sozlash, chop etish auditi va savdo sahifalari — faqat egasida
+        for url in ("/kpi/boglash/", "/kpi/qoida/", "/kpi/chop-etish/", "/kassalar/", "/cheklar/", "/smenalar/",
+                    "/aloqa.json"):
             self.assertEqual(c.get(url).status_code, 403, url)
-        r = c.post(f"/kpi/minus/{self.i_own.pk}/", {"cause": "boshqa"})
+        # Hech narsani o'zgartira olmaydi
+        r = c.post(f"/kpi/minus/{self.i_other.pk}/", {"cause": "boshqa"})
         self.assertEqual(r.status_code, 403)
-        self.assertEqual(MinusIssue.objects.get(pk=self.i_own.pk).confirmed_cause, "")
+        self.assertEqual(MinusIssue.objects.get(pk=self.i_other.pk).confirmed_cause, "")
+        # Sozlash yorliqlari va kassa aloqa chiroqlari ko'rinmaydi, chiqish tugmasi bor
+        r = c.get("/kpi/")
+        self.assertNotContains(r, "/kpi/boglash/")
+        self.assertNotContains(r, "/kpi/qoida/")
+        self.assertNotContains(r, 'data-aloqa="moysklad"')
+        self.assertContains(r, "Mening ishim")
+        self.assertContains(r, 'href="/chiqish/"')
+        self.assertContains(r, 'class="role-tov"')
 
     def test_market_boshqaruvchisi_bo_limni_ko_rmaydi(self):
         from sales.models import PanelManager
@@ -1043,13 +1054,19 @@ class QaytaMinusTest(Base):
         self.assertIn("hozir ham minusda", lines[2])
         self.assertIn("23 soatdan keyin", lines[2])
 
-    def test_tovaroved_ko_ra_olmaydi(self):
+    def test_tovaroved_ko_radi_lekin_excel_yo_q(self):
         u = User.objects.create_user("unzavod.tov", password="parol-12345")
         self.tov.user = u
         self.tov.save()
         c = Client()
         c.force_login(u)
-        self.assertEqual(c.get("/kpi/qayta-minus/").status_code, 403)
+        with mock.patch("kpi.views._today", return_value=date(2026, 10, 27)), \
+             mock.patch("kpi.views.timezone.now", return_value=T(day=27, h=12)):
+            r = c.get("/kpi/qayta-minus/?davr=hafta")
+            self.assertEqual(r.context["total"], 1)
+            self.assertNotContains(r, "format=csv")
+            r = c.get("/kpi/qayta-minus/?davr=hafta&format=csv")     # Excel faqat egasida
+        self.assertEqual(r["Content-Type"].split(";")[0], "text/html")
 
     def test_oraliq_matni(self):
         self.assertEqual(qayta.gap_text(timedelta(minutes=40)), "40 daqiqadan keyin")
