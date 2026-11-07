@@ -14,6 +14,10 @@
   </h1>
   <div class="sub">{{ sale.created_at|date:"d.m.Y H:i" }} · {{ point }} · {{ sale.shift.register.name }}</div>
 
+  {% for m in messages %}
+    <div class="alert ok"><span>✓</span><div>{{ m }}</div></div>
+  {% endfor %}
+
   <div class="card">
     <div class="kv">
       <div><div class="k">Kassir</div><div class="v">{{ sale.shift.cashier|default:"—" }}</div></div>
@@ -28,7 +32,14 @@
       <div><div class="k">MoySklad</div><div class="v">
         {% if sale.sync_status == "sent" %}<span class="badge ok">yozildi</span>
         {% elif sale.sync_status == "stuck" %}<span class="badge err">xato</span>
-        {% else %}<span class="badge warn">navbatda</span>{% endif %}</div></div>
+        {% else %}<span class="badge warn">navbatda</span>{% endif %}
+        {% if sale.sync_status != "sent" and not panel_manager %}
+          <form method="post" style="display: inline;">{% csrf_token %}
+            <input type="hidden" name="action" value="send_now">
+            <button type="submit" class="small ghost">Hozir yuborish</button>
+          </form>
+          {% if sale.sync_error %}<div class="sec">{{ sale.sync_error|truncatechars:200 }}</div>{% endif %}
+        {% endif %}</div></div>
       {% if sale.origin %}
         <div><div class="k">Asl chek</div><div class="v">
           <a href="{% url 'dashboard:receipt' sale.origin_id %}">#{% firstof sale.origin.receipt_number sale.origin.number %}</a>

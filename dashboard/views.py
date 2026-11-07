@@ -1073,6 +1073,13 @@ def receipt(request, pk: int):
     )
     if not sale:
         raise Http404("Chek topilmadi")
+    # «Hozir yuborish» — MoySklad'ga yozilmagan chekni kutish muddatisiz
+    # navbatga qo'yadi. Faqat egasi (boshqaruvchi emas).
+    if request.method == "POST" and request.POST.get("action") == "send_now":
+        if access.manager_of(request.user) is None and sender.requeue_one(sale.pk):
+            messages.success(request, "Chek navbatga qo'yildi — bir daqiqa ichida MoySklad'ga "
+                                      "yozilishga uriniladi. Sahifani yangilab ko'ring.")
+        return redirect("dashboard:receipt", pk=sale.pk)
     lines = tovarlar.receipt_lines(sale)
     payments = list(sale.payments.select_related("method").order_by("pk"))
     return render(request, "dashboard/chek.html", {

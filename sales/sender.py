@@ -142,6 +142,17 @@ def send_due(limit: int = 100, writer: SaleWriter | None = None, now=None) -> di
     return result
 
 
+def requeue_one(sale_id: int) -> bool:
+    """Bitta yozilmagan chekni DARHOL navbatga qo'yadi (egasi chek sahifasida
+    «Hozir yuborish» ni bosadi, 2026-11-07). Kutish muddati (1…60 daqiqa)
+    bekor bo'ladi — yozuvchi uni keyingi aylanishda oladi. Yozilgan (sent)
+    chekka tegilmaydi."""
+    return bool(
+        Sale.objects.filter(pk=sale_id, sync_status__in=[Sale.NEW, Sale.FAILED, Sale.STUCK])
+        .update(sync_status=Sale.NEW, sync_attempts=0, next_attempt_at=None)
+    )
+
+
 def requeue_stuck() -> int:
     """Tiqilgan cheklarni navbatga qaytaradi. Qaytaradi: nechta."""
     return Sale.objects.filter(sync_status=Sale.STUCK).update(
