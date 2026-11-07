@@ -95,6 +95,43 @@ class AllocateTest(TestCase):
         self.assertEqual(allocate(50, []), [])
         self.assertEqual(allocate(50, [0, 0]), [0, 0])
 
+    def test_deyarli_toliq_ball_manfiy_qator_bermaydi(self):
+        """kasssa2, smena #111, chek №194 (2026-11-07): 56 757 ball + 0,82 naqd.
+
+        Avval qoldiq (5 tiyin) oxirgi 100 000 tiyinlik qatorga tushib
+        100 003 bo'lardi — qator narxi −3, MoySklad 412 bilan rad etardi.
+        """
+        amounts = [1525782, 1600000, 1600000, 150000, 200000, 200000, 300000, 100000]
+        out = allocate(5675700, amounts)
+        self.assertEqual(sum(out), 5675700)
+        for cut, amount in zip(out, amounts):
+            self.assertGreaterEqual(amount - cut, 0)
+
+    def test_hech_qator_manfiy_bolmaydi(self):
+        import random
+        rnd = random.Random(20261107)
+        for _ in range(3000):
+            amounts = [rnd.choice([0, 1, 99, 100, 1000, rnd.randint(1, 3_000_000)])
+                       for _ in range(rnd.randint(1, 9))]
+            total = sum(amounts)
+            if not total:
+                continue
+            reduction = rnd.choice([total, total - 1, total - rnd.randint(0, 100),
+                                    rnd.randint(1, total)])
+            reduction = max(reduction, 1)
+            out = allocate(reduction, amounts)
+            self.assertEqual(sum(out), reduction, (reduction, amounts))
+            for cut, amount in zip(out, amounts):
+                self.assertTrue(0 <= cut <= amount, (reduction, amounts, out))
+
+    def test_sigsa_avvalgidek_qoldiq_oxirgi_qatorga(self):
+        # Oddiy chek: natija o'zgarmaydi (avval yozilgan hujjatlar bilan bir xil)
+        self.assertEqual(allocate(100, [333, 333, 334]), [33, 33, 34])
+        self.assertEqual(allocate(7, [10, 20, 30]), [1, 2, 4])
+
+    def test_toliq_ball_hamma_qator_nol(self):
+        self.assertEqual(allocate(300, [100, 200]), [100, 200])
+
 
 @override_settings(MOYSKLAD_RETAIL_CUSTOMER_ID=RETAIL_CUSTOMER)
 class WriterTest(TestCase):

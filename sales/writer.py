@@ -159,6 +159,13 @@ def allocate(reduction: int, amounts: list[int]) -> list[int]:
 
     Qoldiq oxirgi qatorga tushadi, shuning uchun yig'indi **aniq** to'g'ri
     chiqadi. Yaxlitlash tufayli bir tiyin yo'qolishi mumkin emas.
+
+    Hech bir qatorga o'z summasidan KO'P chegirma tushmaydi (2026-11-07):
+    chek deyarli to'liq ball bilan to'langanda (56 757 ball + 0,82 naqd)
+    yaxlitlash qoldig'i (5 tiyin) oxirgi 1 000 so'mlik qatorga sig'masdi —
+    narx −3 tiyin chiqib, MoySklad 412 «price не может быть отрицательным»
+    bilan rad etardi. Endi oxirgi qatorga sig'magan qoldiq oldingi
+    qatorlarga o'tadi; sig'gan holatda natija avvalgidek.
     """
     if reduction <= 0 or not amounts:
         return [0] * len(amounts)
@@ -168,7 +175,16 @@ def allocate(reduction: int, amounts: list[int]) -> list[int]:
         return [0] * len(amounts)
 
     out = [amount * reduction // total for amount in amounts]
-    out[-1] += reduction - sum(out)
+    rest = reduction - sum(out)
+    for i in range(len(out) - 1, -1, -1):
+        if rest <= 0:
+            break
+        take = min(rest, max(amounts[i] - out[i], 0))
+        out[i] += take
+        rest -= take
+    # Chegirma chek summasidan katta bo'lsagina (bunday chek bo'lmasligi
+    # kerak) qoldiq avvalgidek oxirgi qatorga — summa baribir aniq qoladi
+    out[-1] += rest
     return out
 
 
