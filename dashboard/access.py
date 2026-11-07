@@ -57,9 +57,12 @@ MANAGER_PAGES = frozenset({
 #: POST faqat kirish/chiqish uchun — boshqaruvchi hech narsani o'zgartirmaydi.
 _MANAGER_POST = frozenset({"login", "logout"})
 
-#: Tovaroved (o'z logini bilan, kpi.Tovaroved.user) — faqat o'z KPI sahifalari,
-#: faqat ko'rish. Bu sahifalar ichida ham faqat o'z ma'lumoti (kpi/views.py).
-TOVAROVED_PAGES = frozenset({"login", "logout", "kpi:men", "kpi:xodim", "kpi:minus"})
+#: Tovaroved (o'z logini bilan, kpi.Tovaroved.user) — KPI sahifalari, faqat
+#: ko'rish. Egasining qarori (2026-11-06): hamma tovarovedning KPI'si hammaga
+#: ochiq (reyting, xodim sahifalari, minuslar). Bog'lash, qoida, chop etish va
+#: o'zgartirish — faqat egasida (kpi/views.py).
+TOVAROVED_PAGES = frozenset({"login", "logout", "kpi:men", "kpi:bosh", "kpi:xodim", "kpi:minus",
+                             "kpi:minuslar", "kpi:qayta"})
 
 
 def manager_of(user) -> PanelManager | None:
@@ -191,7 +194,7 @@ class PanelAccessMiddleware:
             except Resolver404:
                 return self.get_response(request)
             if name == "dashboard:points":
-                return redirect("kpi:men")  # kirgandan keyin bosh sahifa — o'z KPI'si
+                return redirect("kpi:bosh")  # kirgandan keyin bosh sahifa — hammaning reytingi
             if name not in TOVAROVED_PAGES:
                 return forbidden(request)
             if request.method not in ("GET", "HEAD") and name not in _MANAGER_POST:

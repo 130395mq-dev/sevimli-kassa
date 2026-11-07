@@ -1,8 +1,9 @@
 """Tovarovedlar KPI — panel sahifalari.
 
-Kirish: egasi hammasini ko'radi. Tovaroved (o'z logini bilan) — faqat o'z
-kartasi va o'z do'koni minuslari (dashboard/access.py). Market boshqaruvchisi
-bu bo'limni ko'rmaydi.
+Kirish: egasi hammasini ko'radi va o'zgartiradi. Tovaroved (o'z logini bilan)
+hammaning KPI'sini KO'RADI (reyting, xodim sahifalari, minuslar) — egasining
+2026-11-06 qarori; bog'lash, qoida, chop etish, Excel va sabab tasdiqlash —
+faqat egasida (dashboard/access.py). Market boshqaruvchisi bu bo'limni ko'rmaydi.
 """
 
 from __future__ import annotations
@@ -57,6 +58,11 @@ def _bounds(start: date, end: date):
 
 def _owner(request) -> bool:
     return access.manager_of(request.user) is None and access.tovaroved_of(request.user) is None
+
+
+def _viewer(request) -> bool:
+    """KPI'ni ko'ra oladi: egasi yoki tovaroved (faqat ko'rish)."""
+    return _owner(request) or access.tovaroved_of(request.user) is not None
 
 
 def _forbid(request):
@@ -134,7 +140,7 @@ def _prints(uid, start, end) -> dict:
 
 @login_required
 def bosh(request):
-    if not _owner(request):
+    if not _viewer(request):
         return _forbid(request)
     key, start, end = davr_range(request.GET.get("davr", "bugun"))
     now = timezone.now()
@@ -186,7 +192,7 @@ def bosh(request):
     jami["ball_status"] = korinish.status_of(sum(scores) / len(scores) if scores else None)
     return render(request, "kpi/bosh.html", {
         "cards": cards, "davr": key, "davrlar": DAVRLAR, "start": start, "end": end,
-        "status": _status(), "rule": rule, "jami": jami,
+        "status": _status(), "rule": rule, "jami": jami, "owner": _owner(request),
         "trend": korinish.minus_trend(series_defs, start, end, now, rule.minus_ulush_chegara),
     })
 
@@ -202,8 +208,7 @@ def men(request):
 @login_required
 def xodim(request, pk):
     tov = get_object_or_404(Tovaroved, pk=pk)
-    me = access.tovaroved_of(request.user)
-    if not _owner(request) and (me is None or me.pk != tov.pk):
+    if not _viewer(request):
         return _forbid(request)
     key, start, end = davr_range(request.GET.get("davr", "oy"))
     s, e = _bounds(start, end)
@@ -234,6 +239,7 @@ def xodim(request, pk):
         "docs": docs, "prints": prints, "history": tov.biriktirishlar.all(), "qayta_rows": qayta_rows,
         "qayta_kun": KpiQoida.current().qayta_paydo_kun,
         "davr": key, "davrlar": DAVRLAR, "start": start, "end": end, "owner": _owner(request),
+        "own_page": getattr(access.tovaroved_of(request.user), "pk", None) == tov.pk,
         "names": {str(k): v for k, v in Warehouse.objects.values_list("ms_id", "name")},
         "now": timezone.now(),
     })
@@ -241,7 +247,7 @@ def xodim(request, pk):
 
 @login_required
 def minuslar(request):
-    if not _owner(request):
+    if not _viewer(request):
         return _forbid(request)
     holat = request.GET.get("holat", "open")
     dokon = request.GET.get("dokon", "")
@@ -263,7 +269,7 @@ def minuslar(request):
                     key=lambda x: x[1])
     return render(request, "kpi/minuslar.html", {
         "rows": qs.select_related("tovaroved").order_by("deadline")[:300], "total": total,
-        "holat": holat, "dokon": dokon, "q": q, "stores": stores, "now": now,
+        "holat": holat, "dokon": dokon, "q": q, "stores": stores, "now": now, "owner": _owner(request),
     })
 
 
@@ -280,8 +286,9 @@ def _tracked_stores() -> dict[str, str]:
 @login_required
 def qayta_minuslar(request):
     """Tuzatilgandan keyin qisqa vaqtda yana minusga tushgan tovarlar."""
-    if not _owner(request):
+    if not _viewer(request):
         return _forbid(request)
+    owner = _owner(request)
     key, start, end = davr_range(request.GET.get("davr", "hafta"))
     now = timezone.now()
     s, e = _bounds(start, end)
@@ -299,7 +306,7 @@ def qayta_minuslar(request):
         tov_id = 0
     data = qayta.rows(stores, s, e, dokon, tov_id or None)
     rule = KpiQoida.current()
-    if request.GET.get("format") == "csv":
+    if request.GET.get("format") == "csv" and owner:
         title = (f"Qayta minus ({rule.qayta_paydo_kun} kun ichida yana minusga tushgan) — "
                  f"{start:%d.%m.%Y}" + (f"–{end:%d.%m.%Y}" if start != end else ""))
         resp = HttpResponse("\ufeff" + qayta.csv_text(data, title), content_type="text/csv; charset=utf-8")
@@ -311,7 +318,7 @@ def qayta_minuslar(request):
         "rows": data, "total": len(data), "rule": rule,
         "davr": key, "davrlar": DAVRLAR, "start": start, "end": end,
         "stores": sorted(stores.items(), key=lambda x: x[1]), "dokon": dokon,
-        "tovs": tovs, "tov_id": tov_id, "keep": keep.urlencode(),
+        "tovs": tovs, "tov_id": tov_id, "keep": keep.urlencode(), "owner": owner,
     })
 
 
@@ -319,11 +326,8 @@ def qayta_minuslar(request):
 def minus(request, pk):
     issue = get_object_or_404(MinusIssue.objects.select_related("tovaroved", "product"), pk=pk)
     owner = _owner(request)
-    if not owner:
-        me = access.tovaroved_of(request.user)
-        own = {str(w) for w in me.biriktirishlar.values_list("warehouse_ms_id", flat=True)} if me else set()
-        if str(issue.warehouse_ms_id) not in own:
-            return _forbid(request)
+    if not _viewer(request):
+        return _forbid(request)
     if request.method == "POST":
         if not owner:
             return _forbid(request)

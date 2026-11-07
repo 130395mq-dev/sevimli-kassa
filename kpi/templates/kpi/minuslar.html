@@ -9,13 +9,7 @@
   <h1>Minuslar</h1>
   <div class="sub">MoySklad'da manfiy qoldiq — har biri uchun tekshiruv kartasi</div>
 
-  <nav class="tabs">
-    <a href="{% url 'kpi:bosh' %}">Reyting</a>
-    <a class="on" href="{% url 'kpi:minuslar' %}">Minuslar</a>
-    <a href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida</a>
-  </nav>
+  {% include "kpi/_tabs.html" with on="minus" %}
 
   <form method="get" class="davr">
     <label>Do'kon

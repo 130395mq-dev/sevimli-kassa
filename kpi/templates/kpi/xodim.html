@@ -3,7 +3,7 @@
 
 {% block title %}{{ tov.name }} — Tovarovedlar{% endblock %}
 {% block nav_kpi %}{% if owner %}on{% endif %}{% endblock %}
-{% block nav_kpi_men %}{% if not owner %}on{% endif %}{% endblock %}
+{% block nav_kpi_men %}{% if panel_tovaroved and panel_tovaroved.pk == tov.pk %}on{% endif %}{% endblock %}
 {% block crumb %}Nazorat · {{ tov.name }}{% endblock %}
 
 {% block body %}
@@ -14,7 +14,7 @@
     {% if tov.ms_uid %} · MoySklad logini: <span class="code">{{ tov.ms_uid }}</span>{% endif %}
   </div>
 
-  {% if owner %}<nav class="tabs"><a href="{% url 'kpi:bosh' %}">← Reyting</a></nav>{% endif %}
+  {% include "kpi/_tabs.html" with on=own_page|yesno:"men,," %}
 
   <form method="get" class="davr">
     <label>Davr
