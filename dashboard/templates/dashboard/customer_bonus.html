@@ -10,7 +10,12 @@
   <div class="sub">
     {{ cust.phone|default:"telefon yo'q" }}
     {% if cust.discount_card %} · karta {{ cust.discount_card }}{% endif %}
+    {% if cust.birthday_text %} · tug'ilgan kuni {{ cust.birthday_text }}{% if cust.is_birthday %} <span class="badge ok">bugun!</span>{% endif %}{% endif %}
   </div>
+
+  {% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}
 
   <div class="card" style="display:flex;gap:26px;flex-wrap:wrap;">
     <div>
@@ -30,6 +35,15 @@
       <div style="font-size:24px;font-weight:700;">{{ receipts|som }}</div>
     </div>
   </div>
+
+  <form method="post" class="davr" style="margin-top:14px;">
+    {% csrf_token %}<input type="hidden" name="action" value="birthday">
+    <label>Tug'ilgan kuni
+      <input name="birthday" value="{{ cust.birthday_text }}" placeholder="KK.OO yoki KK.OO.YYYY" pattern="\s*\d{1,2}\s*[./-]\s*\d{1,2}(\s*[./-]\s*\d{2,4})?\s*" style="margin:0;width:170px;">
+    </label>
+    <button type="submit" class="small ghost">Saqlash</button>
+    <span class="sec">Tug'ilgan kunida kassir tabriklaydi va chekda tabrik so'zi chiqadi. Kassada ham kiritsa bo'ladi.</span>
+  </form>
 
   <p style="margin:16px 0 8px;">
     <a href="{% url 'dashboard:bonus' %}">‹ Bonus ro'yxatiga qaytish</a>
