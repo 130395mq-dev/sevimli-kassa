@@ -66,9 +66,22 @@ def find_by_phone(phone: str) -> list[Customer]:
     return [c for c in qs if phone_key(c.phone) == key]
 
 
-def register(name: str, phone: str, card: str) -> tuple[Customer, bool]:
-    """Kassadan kelgan yangi mijoz. Qaytaradi: (mijoz, eski_yozuv_tiklandimi)."""
+def register(name: str, phone: str, card: str,
+             birthday: str = "") -> tuple[Customer, bool]:
+    """Kassadan kelgan yangi mijoz. Qaytaradi: (mijoz, eski_yozuv_tiklandimi).
+
+    `birthday` — «KK.OO[.YYYY]» matni; noto'g'ri bo'lsa RegistrationError.
+    Eski yozuv tiklansa va unda tug'ilgan kun yo'q bo'lsa — shu yoziladi.
+    """
+    from . import tugilgan_kun
+
     name, phone, card = (name or "").strip(), (phone or "").strip(), (card or "").strip()
+    birth = None
+    if (birthday or "").strip():
+        try:
+            birth = tugilgan_kun.parse(birthday)
+        except tugilgan_kun.BirthdayError as e:
+            raise RegistrationError(str(e), status=400) from e
     with transaction.atomic():
         if card:
             owner = Customer.objects.filter(archived=False, discount_card=card).first()
@@ -92,12 +105,18 @@ def register(name: str, phone: str, card: str) -> tuple[Customer, bool]:
                 old.discount_card = card
                 if not old.ms_local:
                     old.ms_card_pending = True
-                old.save(update_fields=["discount_card", "ms_card_pending"])
+                if birth and not old.birth_day:
+                    old.birth_day, old.birth_month, old.birth_year = birth
+                old.save(update_fields=["discount_card", "ms_card_pending",
+                                        "birth_day", "birth_month", "birth_year"])
                 logger.info("Mijoz kartasi tiklandi: #%s %s (karta …%s)", old.pk, old.name, card[-4:])
                 return old, True
         cust = Customer.objects.create(
             ms_id=uuid.uuid4(), ms_local=True,
             name=name, phone=phone, discount_card=card,
+            birth_day=birth[0] if birth else None,
+            birth_month=birth[1] if birth else None,
+            birth_year=birth[2] if birth else None,
         )
     logger.info("Yangi mijoz kassadan: #%s %s", cust.pk, cust.name)
     return cust, False

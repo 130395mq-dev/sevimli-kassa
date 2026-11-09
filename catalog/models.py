@@ -216,6 +216,13 @@ class Customer(models.Model):
         default=False,
         help_text="MoySklad'da hali yaratilmagan: ms_id vaqtinchalik (lokal)",
     )
+    # Tug'ilgan kun (SEVIMLI BONUS, egasi 2026-11-08): kassada karta
+    # ochilganda so'raladi; tug'ilgan kunida kassir tabriklaydi va chekda
+    # tabrik so'zi chiqadi. Yil ixtiyoriy — ko'p mijoz aytmaydi.
+    birth_day = models.PositiveSmallIntegerField(null=True, blank=True)
+    birth_month = models.PositiveSmallIntegerField(null=True, blank=True)
+    birth_year = models.PositiveSmallIntegerField(null=True, blank=True)
+
     ms_card_pending = models.BooleanField(
         default=False,
         help_text="Karta/telefon MoySklad'ga hali yozilmagan",
@@ -237,6 +244,34 @@ class Customer(models.Model):
     def advance_sum(self) -> float:
         """Avans so'mda. Avans yo'q bo'lsa 0."""
         return max(self.balance, 0) / 100
+
+    # --- tug'ilgan kun (catalog/tugilgan_kun.py)
+
+    @property
+    def birthday_text(self) -> str:
+        """«12.05» yoki «12.05.1990»; kiritilmagan bo'lsa «»."""
+        from . import tugilgan_kun
+
+        return tugilgan_kun.text(self.birth_day, self.birth_month, self.birth_year)
+
+    def is_birthday(self, today=None) -> bool:
+        """Bugun mijozning tug'ilgan kunimi (Toshkent sanasi bo'yicha)."""
+        from django.utils import timezone
+
+        from . import tugilgan_kun
+
+        return tugilgan_kun.is_today(self.birth_day, self.birth_month,
+                                     today or timezone.localdate())
+
+    def set_birthday(self, text: str) -> None:
+        """Kassir yozgan matndan saqlaydi; bo'sh matn — o'chiradi.
+        Noto'g'ri sana — tugilgan_kun.BirthdayError."""
+        from . import tugilgan_kun
+
+        if not (text or "").strip():
+            self.birth_day = self.birth_month = self.birth_year = None
+            return
+        self.birth_day, self.birth_month, self.birth_year = tugilgan_kun.parse(text)
 
 
 class Organization(models.Model):

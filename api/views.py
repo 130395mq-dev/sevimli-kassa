@@ -950,6 +950,11 @@ def _customer_dict(c: Customer) -> dict:
         "bonus_points": c.bonus_points,
         "accumulation_discount": float(c.accumulation_discount),
         "personal_discount": float(c.personal_discount),
+        # Tug'ilgan kun (2026-11-08): kassa «12.05» ko'rinishida ko'rsatadi,
+        # bugun bo'lsa ekranda belgi va chekda tabrik chiqaradi. Sana server
+        # (Toshkent) bo'yicha — kassa soati adashgan bo'lsa ham to'g'ri.
+        "birthday": c.birthday_text,
+        "is_birthday": c.is_birthday(),
     }
 
 
@@ -970,12 +975,13 @@ def create_customer(request):
     name = (data.get("name") or "").strip()
     phone = (data.get("phone") or "").strip()
     card = (data.get("card") or "").strip()
+    birthday = (data.get("birthday") or "").strip()
 
     if len(name) < 2:
         return error("Ism kamida 2 harf bo'lishi kerak")
 
     try:
-        customer, restored = mijozlar.register(name, phone, card)
+        customer, restored = mijozlar.register(name, phone, card, birthday=birthday)
     except mijozlar.RegistrationError as e:
         return error(str(e), status=e.status)
 
@@ -987,6 +993,29 @@ def create_customer(request):
         customer.refresh_from_db()
 
     return JsonResponse({"customer": _customer_dict(customer), "restored": restored})
+
+
+@csrf_exempt
+@require_POST
+@register_required
+def customer_birthday(request):
+    """Mavjud mijozga tug'ilgan kunini yozish (kassadan, karta urilganda
+    «Tug'ilgan kuni yo'q» belgisi bosilsa). {"id": .., "birthday": "12.05"}.
+    Bo'sh matn — o'chiradi. Qaytaradi: yangilangan mijoz."""
+    from catalog import tugilgan_kun
+
+    data = body(request)
+    customer = Customer.objects.filter(pk=data.get("id"), archived=False).first()
+    if not customer:
+        return error("Mijoz topilmadi", status=404)
+    try:
+        customer.set_birthday(str(data.get("birthday") or ""))
+    except tugilgan_kun.BirthdayError as e:
+        return error(str(e))
+    customer.save(update_fields=["birth_day", "birth_month", "birth_year"])
+    logger.info("Mijoz #%s tug'ilgan kuni: %s (kassa %s)", customer.pk,
+                customer.birthday_text or "o'chirildi", request.register.code)
+    return JsonResponse({"customer": _customer_dict(customer)})
 
 
 # ------------------------------------------------------------------ smena

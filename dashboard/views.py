@@ -1003,6 +1003,18 @@ def customer_bonus(request, pk: int):
     cust = Customer.objects.filter(pk=pk).first()
     if not cust:
         raise Http404("Mijoz topilmadi")
+    # Tug'ilgan kunini paneldan ham kiritish/tuzatish mumkin (2026-11-08)
+    if request.method == "POST" and request.POST.get("action") == "birthday":
+        from catalog import tugilgan_kun
+
+        try:
+            cust.set_birthday(request.POST.get("birthday", ""))
+        except tugilgan_kun.BirthdayError as e:
+            messages.error(request, str(e))
+        else:
+            cust.save(update_fields=["birth_day", "birth_month", "birth_year"])
+            messages.success(request, f"Tug'ilgan kuni saqlandi: {cust.birthday_text or 'o‘chirildi'}")
+        return redirect("dashboard:customer-bonus", pk=cust.pk)
     entries = cust.bonus_entries.select_related("sale")[:200]
     agg = cust.bonus_entries.aggregate(
         earned=Sum("delta", filter=Q(kind=BonusEntry.EARN)),
