@@ -163,9 +163,11 @@ class Biriktirish(models.Model):
 class MinusScan(models.Model):
     """Har qoldiq yangilanishidan keyingi minus tekshiruvi.
 
-    `per_wh` — {ombor_id: [manfiy_soni, faol_tovar_soni]}. Shu yozuvlar kun
-    davomidagi qamrovni ko'rsatadi: tekshiruv bo'lmagan soatlar — ma'lumot
-    uzilishi, o'sha kun «yetarli emas» bo'lishi mumkin.
+    `per_wh` — {ombor_id: [manfiy_soni, faol_tovar_soni, tugagan_sotuv_tovarlari,
+    sotuv_tovarlari_jami, narx_holatlari]} (2026-11-10 gacha faqat birinchi
+    ikkitasi — eski yozuvlar shunday qoladi, o'qiydigan joylar `[:2]` oladi).
+    Shu yozuvlar kun davomidagi qamrovni ko'rsatadi: tekshiruv bo'lmagan
+    soatlar — ma'lumot uzilishi, o'sha kun «yetarli emas» bo'lishi mumkin.
     """
 
     at = models.DateTimeField(db_index=True)
@@ -373,6 +375,68 @@ class ChopEtish(models.Model):
         verbose_name_plural = "Chop etishlar"
 
 
+class TovarHolat(models.Model):
+    """Do'kondagi tovar holati — tekshiruvda topilgan, tuzatilguncha ochiq turadi
+    (egasi, 2026-11-10 — KPI kuchaytirish):
+
+      * nol — oxirgi N kunda shu do'kon kassalarida sotilgan tovar omborda 0
+        (sotuv yo'qotilmoqda);
+      * narxsiz — omborda bor, lekin chakana narxi 0 (kassada sotib bo'lmaydi);
+      * arzon — chakana narxi tannarxdan (MoySklad buyPrice) past.
+
+    MinusIssue kabi: bitta do'kon + tovar + tur uchun bir vaqtda bitta ochiq yozuv.
+    Minus (manfiy qoldiq) bu yerga kirmaydi — u MinusIssue da baholanadi."""
+
+    NOL, NARXSIZ, ARZON = "nol", "narxsiz", "arzon"
+    KINDS = [
+        (NOL, "Sotuvdagi tovar tugagan (qoldiq 0)"),
+        (NARXSIZ, "Omborda bor, chakana narxi yo'q"),
+        (ARZON, "Chakana narxi tannarxdan past"),
+    ]
+    OPEN, CLOSED = "open", "closed"
+    STATUS = [(OPEN, "Ochiq"), (CLOSED, "Yopilgan")]
+
+    kind = models.CharField(max_length=8, choices=KINDS, db_index=True)
+    warehouse_ms_id = models.UUIDField(db_index=True)
+    warehouse_name = models.CharField(max_length=255, blank=True)
+    product = models.ForeignKey(
+        "catalog.Product", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+    product_ms_id = models.UUIDField(db_index=True)
+    name = models.CharField(max_length=512, blank=True)
+    code = models.CharField(max_length=64, blank=True)
+
+    first_seen = models.DateTimeField(db_index=True)
+    last_seen = models.DateTimeField()
+    status = models.CharField(max_length=8, choices=STATUS, default=OPEN, db_index=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    # Kuzatuv (yoki shu mezon) boshlanganda allaqachon shunday edi
+    pre_tracking = models.BooleanField(default=False)
+    tovaroved = models.ForeignKey(
+        Tovaroved, null=True, blank=True, on_delete=models.SET_NULL, related_name="tovar_holatlari",
+        verbose_name="Mas'ul (do'kon bo'yicha)",
+    )
+    #: nol: oxirgi davrda shu do'konda sotilgan dona (muhimlik uchun)
+    sotuv_dona = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+    #: narxsiz/arzon: topilgan paytdagi narxlar (tiyin)
+    sale_price = models.BigIntegerField(default=0)
+    buy_price = models.BigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-first_seen"]
+        verbose_name = "Tovar holati"
+        verbose_name_plural = "Tovar holatlari"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind", "warehouse_ms_id", "product_ms_id"],
+                condition=Q(status="open"), name="kpi_one_open_holat",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()}: {self.name} @ {self.warehouse_name}"
+
+
 class KpiQoida(models.Model):
     """KPI qoidasi. O'zgartirilganda YANGI versiya yoziladi (eskisi qoladi) —
     har kunlik natija qaysi versiya bilan hisoblangani ma'lum."""
@@ -390,23 +454,43 @@ class KpiQoida(models.Model):
     w_ish = models.PositiveSmallIntegerField("Ish natijasi og'irligi, %", default=80)
     w_davomat = models.PositiveSmallIntegerField("Davomat og'irligi, %", default=20)
 
-    w_minus_ulush = models.PositiveSmallIntegerField("Minus ulushi", default=40)
-    w_muddat = models.PositiveSmallIntegerField("Muddatida tuzatish", default=30)
-    w_ochiq = models.PositiveSmallIntegerField("Ochiq muammolar muddati", default=30)
-    w_sennik = models.PositiveSmallIntegerField("Sennik o'z vaqtida", default=0)
+    # Og'irliklar — egasi 2026-11-10 («KPI ni yana kuchaytirish kerak»):
+    # minus 25 / muddat 20 / ochiq 15 / tovar yo'qligi 15 / narx-hujjat 10 /
+    # sennik 15 (sennik hali baholanmaydi — vazni hisobga kirmaydi).
+    w_minus_ulush = models.PositiveSmallIntegerField("Minus ulushi", default=25)
+    w_muddat = models.PositiveSmallIntegerField("Muddatida tuzatish", default=20)
+    w_ochiq = models.PositiveSmallIntegerField("Ochiq muammolar muddati", default=15)
+    w_sennik = models.PositiveSmallIntegerField("Sennik o'z vaqtida", default=15)
+    w_nol = models.PositiveSmallIntegerField("Tovar yo'qligi (sotuvdagi tovar 0 qoldiqda)", default=15)
+    w_narx = models.PositiveSmallIntegerField("Narx va hujjat nazorati", default=10)
 
     minus_ulush_chegara = models.DecimalField(
-        "Minus ulushi chegarasi, %", max_digits=5, decimal_places=2, default=5,
+        "Minus ulushi chegarasi, %", max_digits=5, decimal_places=2, default=3,
         help_text="Faol tovarlarning shuncha foizi minusda bo'lsa — bu mezon 0 ball",
     )
-    tuzatish_soat = models.PositiveIntegerField("Yangi minusni tuzatish muddati, soat", default=24)
+    # Muddat ISH SOATIDA: tun (kun_oxiri..kun_boshi) hisoblanmaydi — kechqurun
+    # chiqqan minusning muddati ertalabga «yonib» ketmaydi (egasi, 2026-11-10).
+    tuzatish_soat = models.PositiveIntegerField("Yangi minusni tuzatish muddati, ish soati", default=12)
     oldingi_tuzatish_soat = models.PositiveIntegerField(
-        "Kuzatuvdan oldingi minuslar muddati, soat", default=72,
+        "Kuzatuvdan oldingi minuslar muddati, ish soati", default=72,
     )
-    # Egasi (2026-10-26): tuzatilgan tovar 1-2-3 kunda yana minusga tushsa —
+    # Egasi (2026-10-26): tuzatilgan tovar qisqa vaqtda yana minusga tushsa —
     # bu tuzatish ballda hisoblanmaydi (muddatida tuzatilmagan deb olinadi).
+    # 2026-11-10: 3 kun → 7 kun.
     qayta_paydo_kun = models.PositiveSmallIntegerField(
-        "Tuzatilgan tovar shu kun ichida yana minusga tushsa — tuzatish hisoblanmaydi", default=3,
+        "Tuzatilgan tovar shu kun ichida yana minusga tushsa — tuzatish hisoblanmaydi", default=7,
+    )
+    # Tovar yo'qligi: oxirgi `faol_sotuv_kun` kunda shu do'kon kassalarida
+    # sotilgan tovarlarning shuncha foizi 0 qoldiqda bo'lsa — 0 ball.
+    nol_chegara = models.DecimalField(
+        "Tovar yo'qligi chegarasi, %", max_digits=5, decimal_places=2, default=10,
+        help_text="Sotuvdagi tovarlarning shuncha foizi 0 qoldiqda bo'lsa — bu mezon 0 ball",
+    )
+    # Narx va hujjat nazorati: 100 dan har holat uchun shuncha ball ayiriladi
+    # (narxsiz tovar, tannarxdan past narx, chegaradan ortiq qo'lda qoldiq tuzatish).
+    narx_jarima = models.PositiveSmallIntegerField("Narx/hujjat: har holat uchun jarima, ball", default=10)
+    tuzatish_hujjat_chegara = models.PositiveSmallIntegerField(
+        "Kuniga ruxsat etilgan qo'lda qoldiq tuzatish (oprixodovaniye + spisaniya)", default=3,
     )
     faol_tovar = models.CharField("Faol tovar ta'rifi", max_length=8, choices=FAOL, default=FAOL_QOLDIQ)
     faol_sotuv_kun = models.PositiveSmallIntegerField("Faol tovar: sotuv davri, kun", default=30)
@@ -433,8 +517,9 @@ class KpiQoida(models.Model):
         return f"v{self.version}"
 
     PARAMS = [
-        "w_ish", "w_davomat", "w_minus_ulush", "w_muddat", "w_ochiq", "w_sennik",
+        "w_ish", "w_davomat", "w_minus_ulush", "w_muddat", "w_ochiq", "w_sennik", "w_nol", "w_narx",
         "minus_ulush_chegara", "tuzatish_soat", "oldingi_tuzatish_soat", "qayta_paydo_kun",
+        "nol_chegara", "narx_jarima", "tuzatish_hujjat_chegara",
         "faol_tovar", "faol_sotuv_kun", "kun_boshi", "kun_oxiri", "min_qamrov",
         "qoshimcha_ball_soat", "qoshimcha_ball_max",
     ]

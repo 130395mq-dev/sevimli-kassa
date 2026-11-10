@@ -18,7 +18,7 @@ from catalog.models import Product, SyncState, Warehouse
 
 from . import davomat, hisob, hr, hujjatlar, ishlar, korinish, minus, ms, qayta, sabab
 from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
-                     MinusScan, Tovaroved)
+                     MinusScan, Tovaroved, TovarHolat)
 
 WH1 = "11111111-1111-1111-1111-111111111111"
 WH2 = "22222222-2222-2222-2222-222222222222"
@@ -74,7 +74,9 @@ class MinusTest(Base):
         self.scan({(WH1, P1): Decimal(-3), (WH1, P2): Decimal(5)}, T(h=9))
         i = MinusIssue.objects.get()
         self.assertTrue(i.pre_tracking)
-        self.assertEqual(i.deadline, T(h=9) + timedelta(hours=self.rule.oldingi_tuzatish_soat))
+        # 72 ISH soati, 8–22 ish kuni (14 soat): 26.10 09:00 → 13 + 14×4 = 69, qoldiq 3 → 31.10 11:00
+        self.assertEqual(i.deadline, minus.work_deadline(T(h=9), self.rule.oldingi_tuzatish_soat, 8, 22))
+        self.assertEqual(i.deadline, T(day=31, h=11))
         self.assertEqual(i.tovaroved, self.tov)
         self.assertEqual(i.name, "Cola 2L")
 
@@ -118,14 +120,24 @@ class MinusTest(Base):
         self.assertEqual(new.status, MinusIssue.OPEN)
         self.assertEqual(MinusIssue.objects.filter(status=MinusIssue.OPEN).count(), 1)
 
-    def test_standart_oyna_3_kun(self):
-        self.assertEqual(self.rule.qayta_paydo_kun, 3)
+    def test_standart_oyna_7_kun(self):
+        # Egasi, 2026-11-10: 3 kun → 7 kun
+        self.assertEqual(self.rule.qayta_paydo_kun, 7)
 
-    def test_3_kundan_keyin_qaytsa_eski_tuzatish_o_z_kuchida(self):
+    def test_oyna_ichida_qaytsa_tuzatish_hisoblanmaydi(self):
         self.scan({(WH1, P2): Decimal(1)}, T(h=9))
         self.scan({(WH1, P1): Decimal(-2)}, T(h=10), full=False)
         self.scan({(WH1, P1): Decimal(0)}, T(h=11), full=False)
-        self.scan({(WH1, P1): Decimal(-1)}, T(day=30, h=12), full=False)   # 4 kundan keyin
+        self.scan({(WH1, P1): Decimal(-1)}, T(day=31, h=12), full=False)   # 5 kundan keyin — 7 kun ichida
+        old, new = MinusIssue.objects.order_by("first_seen")
+        self.assertTrue(old.reopened)
+        self.assertEqual(new.previous, old)
+
+    def test_7_kundan_keyin_qaytsa_eski_tuzatish_o_z_kuchida(self):
+        self.scan({(WH1, P2): Decimal(1)}, T(h=9))
+        self.scan({(WH1, P1): Decimal(-2)}, T(h=10), full=False)
+        self.scan({(WH1, P1): Decimal(0)}, T(h=11), full=False)
+        self.scan({(WH1, P1): Decimal(-1)}, datetime(2026, 11, 3, 12, tzinfo=ms.TASHKENT), full=False)   # 8 kundan keyin
         old, new = MinusIssue.objects.order_by("first_seen")
         self.assertFalse(old.reopened)
         self.assertEqual(new.previous, old)                                 # tarix uchun bog'langan
@@ -207,9 +219,9 @@ class HisobTest(Base):
         self.assertEqual(k.ish_ball, 100)
 
     def test_minus_ulushi_formulasi(self):
-        self.fill_scans(26, neg=2, active=100)  # 2% — chegara 5% → 60 ball
+        self.fill_scans(26, neg=2, active=100)  # 2% — chegara 3% (egasi, 2026-11-10) → 33.33 ball
         m = {x["key"]: x for x in self.kun().tarkib["mezonlar"]}
-        self.assertEqual(Decimal(m["minus_ulush"]["ball"]), 60)
+        self.assertEqual(Decimal(m["minus_ulush"]["ball"]), Decimal("33.33"))
         self.assertIn("formula", m["minus_ulush"])
 
     def issue(self, **kw):
@@ -754,7 +766,7 @@ class KorinishTest(Base):
         with mock.patch("kpi.views.timezone.now", return_value=T(h=13)):
             r = c.get("/kpi/?davr=bugun")
         self.assertContains(r, 'class="chart kchart desk"')
-        self.assertContains(r, "chegara 5%")
+        self.assertContains(r, "chegara 3%")
         self.assertContains(r, "Ochiq minuslar")
         self.assertContains(r, "Unzavod tovaroved")
         self.assertNotContains(r, "Grafik kamida")
@@ -1014,7 +1026,7 @@ class QaytaMinusTest(Base):
     def test_ro_yxat_reyting_soni_bilan_bir_xil(self):
         self.assertTrue(self.old.reopened)
         r = self.get("/kpi/?davr=hafta")
-        self.assertContains(r, "1 tasi 3 kunda yana minusga tushdi")
+        self.assertContains(r, "1 tasi 7 kunda yana minusga tushdi")
         self.assertContains(r, "/kpi/qayta-minus/?davr=hafta")
         r = self.get("/kpi/qayta-minus/?davr=hafta")
         self.assertEqual(r.context["total"], 1)
@@ -1080,7 +1092,7 @@ class QaytaMinusTest(Base):
         self.assertEqual(len(r.context["qayta_rows"]), 1)
         self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
         self.assertContains(r, "23 soatdan keyin")
-        self.assertContains(r, "3 kun ichida yana minusga tushgan")
+        self.assertContains(r, "7 kun ichida yana minusga tushgan")
         self.assertContains(r, "format=csv")                     # egasiga Excel havolasi
         self.assertEqual(r.context["qayta_rows"][0]["i"].pk, self.old.pk)   # «xato emas» kirmaydi
         # Tovarovedning o'zi ham o'z sahifasida ko'radi (Excel havolasisiz)
@@ -1094,3 +1106,545 @@ class QaytaMinusTest(Base):
             r = c.get(f"/kpi/xodim/{self.tov.pk}/?davr=hafta")
         self.assertContains(r, "Qayta minusga tushgan tovarlar (1)")
         self.assertNotContains(r, "format=csv")
+
+
+# ---------------------------------------------------------------------------
+# KPI kuchaytirish (egasi, 2026-11-10): ish soatidagi muddat, tovar holati
+# (tugagan / narxsiz / tannarxdan past), yangi mezonlar va qoida versiyasi.
+
+class IshSoatiMuddatTest(TestCase):
+    def test_kechqurun_chiqqan_minus_ertasi_kunga(self):
+        # 8–22 ish kuni: 21:00 dan 12 soat → bugun 1 soat, ertaga 11 soat → 19:00
+        self.assertEqual(minus.work_deadline(T(h=21), 12, 8, 22), T(day=27, h=19))
+
+    def test_kun_ichida_sig_sa_shu_kun(self):
+        self.assertEqual(minus.work_deadline(T(h=10), 12, 8, 22), T(h=22))
+        self.assertEqual(minus.work_deadline(T(h=9, m=30), 2, 8, 22), T(h=11, m=30))
+
+    def test_ish_kunidan_oldin_va_keyin_boshlansa(self):
+        self.assertEqual(minus.work_deadline(T(h=6), 2, 8, 22), T(h=10))        # ertalab 8 dan sanaladi
+        self.assertEqual(minus.work_deadline(T(h=22, m=30), 1, 8, 22), T(day=27, h=9))   # tun o'tkazib yuboriladi
+
+    def test_bir_necha_kun(self):
+        # 14 soatlik kun: 09:00 dan 72 soat → 13 + 14 + 14 + 14 + 14 = 69, qoldiq 3 → 6-kun 11:00
+        self.assertEqual(minus.work_deadline(T(h=9), 72, 8, 22), T(day=31, h=11))
+
+    def test_ish_kuni_sozlanmagan_bo_lsa_oddiy_soat(self):
+        self.assertEqual(minus.work_deadline(T(h=21), 12, 0, 0), T(h=21) + timedelta(hours=12))
+        self.assertEqual(minus.work_deadline(T(h=21), 12, 22, 8), T(h=21) + timedelta(hours=12))
+
+    def test_natija_utc_da_lekin_vaqt_bir_xil(self):
+        d = minus.work_deadline(T(h=21), 12, 8, 22)
+        self.assertEqual(d.utcoffset(), timedelta(0))
+        self.assertEqual(d.astimezone(ms.TASHKENT).hour, 19)
+
+
+class TovarHolatTest(Base):
+    """Qoldiq tekshiruvi tovar holatlarini ham yuritadi."""
+
+    def setUp(self):
+        super().setUp()
+        from catalog.models import RetailStore
+        from sales.models import Register, Sale, SaleItem, Shift
+
+        # Narxlar: P1 10 000 (tannarx 8 000), P2 ham — holatsiz boshlanadi
+        for p in (self.p1, self.p2):
+            p.sale_price, p.buy_price = 10_000_00, 8_000_00
+            p.save()
+        store = RetailStore.objects.create(ms_id="33333333-3333-3333-3333-333333333333", name="Unzavod nuqta",
+                                           store_ms_id=WH1)
+        reg = Register.objects.create(code="unz1", name="Unzavod 1", store=store)
+        shift = Shift.objects.create(register=reg, number=1, cashier="Kassir", opened_at=T(day=20, h=8))
+        self.sale = Sale.objects.create(shift=shift, number=1, created_at=T(day=25, h=12), gross_total=30_000_00,
+                                        net_total=30_000_00)
+        SaleItem.objects.create(sale=self.sale, position=1, product=self.p1, ms_product_id=P1, name="Cola 2L",
+                                quantity=Decimal("3.000"), price=10_000_00, total=30_000_00)
+
+    def holat(self, kind, pid=P1, status=None):
+        qs = TovarHolat.objects.filter(kind=kind, product_ms_id=pid)
+        if status:
+            qs = qs.filter(status=status)
+        return qs
+
+    def test_sotuvdagi_tovar_tugagan(self):
+        # To'liq tekshiruv: P1 (oxirgi 30 kunda sotilgan) ro'yxatda yo'q — qoldig'i 0
+        scan = self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        h = self.holat(TovarHolat.NOL).get()
+        self.assertEqual(h.status, TovarHolat.OPEN)
+        self.assertTrue(h.pre_tracking)                       # mezon endi kiritildi — kuzatuvdan oldingi
+        self.assertEqual(h.sotuv_dona, Decimal("3.000"))
+        self.assertEqual((h.name, h.tovaroved), ("Cola 2L", self.tov))
+        # [minus, faol, 0 qoldiqdagi sotuv tovarlari, sotuv tovarlari, narx holatlari]
+        self.assertEqual(scan.per_wh[WH1], [0, 1, 1, 1, 0])
+        self.assertFalse(self.holat(TovarHolat.NOL, P2).exists())   # P2 sotilmagan — «tugagan» emas
+
+        # O'zgarganlar: qoldiq keldi — yopiladi; sotuv tovarlari soni oldingidan olinadi
+        scan = self.scan({(WH1, P1): Decimal(2)}, T(h=10), full=False)
+        h.refresh_from_db()
+        self.assertEqual((h.status, h.closed_at), (TovarHolat.CLOSED, T(h=10)))
+        self.assertEqual(scan.per_wh[WH1], [0, 1, 0, 1, 0])
+
+        # Yana 0 keldi — yangi (kuzatuvdagi) holat
+        self.scan({(WH1, P1): Decimal(0)}, T(h=11), full=False)
+        again = self.holat(TovarHolat.NOL, status=TovarHolat.OPEN).get()
+        self.assertNotEqual(again.pk, h.pk)
+        self.assertFalse(again.pre_tracking)
+        self.assertEqual(self.holat(TovarHolat.NOL).count(), 2)
+
+        # Takroriy tekshiruv dublikat yaratmaydi, oxirgi ko'rilgan vaqt yangilanadi
+        self.scan({(WH1, P1): Decimal(0)}, T(h=12), full=False)
+        again.refresh_from_db()
+        self.assertEqual((self.holat(TovarHolat.NOL).count(), again.last_seen), (2, T(h=12)))
+
+    def test_minusga_tushsa_tugagan_yopiladi(self):
+        self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        self.scan({(WH1, P1): Decimal(-1)}, T(h=10), full=False)
+        self.assertEqual(self.holat(TovarHolat.NOL).get().status, TovarHolat.CLOSED)
+        self.assertEqual(MinusIssue.objects.filter(product_ms_id=P1, status=MinusIssue.OPEN).count(), 1)
+
+    def test_sotuvdan_chiqsa_to_liq_tekshiruvda_yopiladi(self):
+        self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        self.sale.created_at = T(day=25, h=12) - timedelta(days=40)     # endi 30 kunlik sotuvda yo'q
+        self.sale.save(update_fields=["created_at"])
+        self.scan({(WH1, P2): Decimal(5)}, T(h=15))
+        self.assertEqual(self.holat(TovarHolat.NOL).get().status, TovarHolat.CLOSED)
+
+    def test_kassasiz_do_kon_tugagan_hisoblanmaydi(self):
+        stores = {WH1: "Unzavod", WH2: "Ulgurji"}
+        scan = self.scan({(WH1, P2): Decimal(5), (WH2, P2): Decimal(5)}, T(h=9), stores=stores)
+        self.assertEqual(scan.per_wh[WH2][2:4], [0, 0])
+        self.assertFalse(TovarHolat.objects.filter(warehouse_ms_id=WH2, kind=TovarHolat.NOL).exists())
+
+    def test_narxsiz_va_tannarxdan_past(self):
+        self.p2.sale_price = 0
+        self.p2.save()
+        scan = self.scan({(WH1, P1): Decimal(1), (WH1, P2): Decimal(5)}, T(h=9))
+        h = self.holat(TovarHolat.NARXSIZ, P2).get()
+        self.assertEqual((h.status, h.sale_price, h.buy_price, h.pre_tracking), (TovarHolat.OPEN, 0, 8_000_00, True))
+        self.assertEqual(scan.per_wh[WH1][4], 1)
+
+        # Narx qo'yildi (qoldiq o'zgarmagan — ro'yxatda yo'q) — yopiladi
+        self.p2.sale_price = 9_000_00
+        self.p2.save()
+        self.scan({(WH1, P1): Decimal(1)}, T(h=10), full=False)
+        h.refresh_from_db()
+        self.assertEqual(h.status, TovarHolat.CLOSED)
+
+        # Tannarxdan past narx — yangi holat. Bu tur birinchi marta topildi
+        # (tannarxlar endi to'ldi) — «kuzatuvdan oldingi»
+        self.p2.sale_price = 5_000_00
+        self.p2.save()
+        scan = self.scan({(WH1, P2): Decimal(5)}, T(h=11), full=False)
+        a = self.holat(TovarHolat.ARZON, P2).get()
+        self.assertEqual((a.status, a.sale_price, a.buy_price, a.pre_tracking), (TovarHolat.OPEN, 5_000_00, 8_000_00, True))
+        self.assertEqual(scan.per_wh[WH1][4], 1)
+        # Keyingisi — kuzatuv davrida paydo bo'lgan
+        self.p1.sale_price = 7_000_00
+        self.p1.save()
+        scan = self.scan({(WH1, P1): Decimal(4)}, T(h=11, m=30), full=False)
+        self.assertFalse(self.holat(TovarHolat.ARZON, P1).get().pre_tracking)
+        self.assertEqual(scan.per_wh[WH1][4], 2)
+        self.p1.sale_price = 10_000_00
+        self.p1.save()
+
+        # Omborda qolmadi — narx holati ham yopiladi (omborda bor tovar uchun edi)
+        self.scan({(WH1, P2): Decimal(0)}, T(h=12), full=False)
+        a.refresh_from_db()
+        self.assertEqual(a.status, TovarHolat.CLOSED)
+        self.assertFalse(TovarHolat.objects.filter(status=TovarHolat.OPEN).exclude(kind=TovarHolat.NOL).exists())
+
+    def test_xizmat_arxiv_va_qaytarish_tugagan_emas(self):
+        from sales.models import Sale, SaleItem
+
+        P3, P4, P5 = (f"aaaaaaaa-0000-0000-0000-00000000000{n}" for n in (3, 4, 5))
+        Product.objects.create(ms_id=P3, name="Yetkazib berish", kind=Product.KIND_SERVICE, sale_price=100)
+        Product.objects.create(ms_id=P4, name="Eski tovar", archived=True, sale_price=100)
+        Product.objects.create(ms_id=P5, name="Qaytgan tovar", sale_price=100)
+        for n, pid in enumerate((P3, P4), start=2):
+            SaleItem.objects.create(sale=self.sale, position=n, ms_product_id=pid, name="x",
+                                    quantity=Decimal(1), price=100, total=100)
+        ret = Sale.objects.create(shift=self.sale.shift, kind=Sale.RETURN, number=1, created_at=T(day=25, h=13))
+        SaleItem.objects.create(sale=ret, position=1, ms_product_id=P5, name="x", quantity=Decimal(1), price=100, total=100)
+        scan = self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        # Faqat P1: xizmat va arxiv tovarning qoldig'i yuritilmaydi, qaytarish — sotuv emas
+        self.assertEqual([str(h.product_ms_id) for h in TovarHolat.objects.filter(kind=TovarHolat.NOL)], [P1])
+        self.assertEqual(scan.per_wh[WH1][2:4], [1, 1])
+
+    def test_arxivlangan_tovar_narx_holatiga_kirmaydi(self):
+        self.p2.sale_price, self.p2.archived = 0, True
+        self.p2.save()
+        self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        self.assertFalse(TovarHolat.objects.exclude(kind=TovarHolat.NOL).exists())
+
+    def test_birinchi_tekshiruvda_ko_p_yozuv_va_takror(self):
+        """Yuzlab holat bitta tekshiruvda yoziladi; takroriy tekshiruv dublikat bermaydi."""
+        from sales.models import SaleItem
+
+        ids = [f"bbbbbbbb-0000-0000-0000-{n:012d}" for n in range(600)]
+        Product.objects.bulk_create([Product(ms_id=i, name=f"T{n}", code=str(n), sale_price=0)
+                                     for n, i in enumerate(ids)])
+        SaleItem.objects.bulk_create([SaleItem(sale=self.sale, position=10 + n, ms_product_id=i, name=f"T{n}",
+                                               quantity=Decimal(2), price=100, total=200)
+                                      for n, i in enumerate(ids[:300])])
+        values = {(WH1, i): Decimal(3) for i in ids[300:]}       # 300 tasi omborda bor (narxsiz), 300 tasi tugagan
+        scan = self.scan(values, T(h=9))
+        self.assertEqual(scan.per_wh[WH1], [0, 300, 301, 301, 300])   # +P1 (setUp) ham tugagan
+        self.assertEqual(TovarHolat.objects.filter(status=TovarHolat.OPEN).count(), 601)
+        self.scan(values, T(h=9, m=5))
+        self.assertEqual(TovarHolat.objects.count(), 601)
+        self.assertEqual(set(TovarHolat.objects.values_list("last_seen", flat=True)), {T(h=9, m=5)})
+        # Hammasi tuzatildi: narx qo'yildi, tovar keldi
+        Product.objects.filter(ms_id__in=ids).update(sale_price=500)
+        self.scan({(WH1, i): Decimal(3) for i in ids} | {(WH1, P1): Decimal(1)}, T(h=15))
+        self.assertFalse(TovarHolat.objects.filter(status=TovarHolat.OPEN).exists())
+        self.assertEqual(TovarHolat.objects.filter(status=TovarHolat.CLOSED, closed_at=T(h=15)).count(), 601)
+
+    def test_tekshiruv_so_rovlar_soni_cheklangan(self):
+        """Holatlar soni ko'paysa ham so'rovlar soni o'smaydi (har qatorga alohida yozilmaydi)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from sales.models import SaleItem
+
+        ids = [f"bbbbbbbb-0000-0000-0000-{n:012d}" for n in range(400)]
+        Product.objects.bulk_create([Product(ms_id=i, name=f"T{n}", sale_price=0) for n, i in enumerate(ids)])
+        SaleItem.objects.bulk_create([SaleItem(sale=self.sale, position=10 + n, ms_product_id=i, name=f"T{n}",
+                                               quantity=Decimal(2), price=100, total=200)
+                                      for n, i in enumerate(ids[:200])])
+        values = {(WH1, i): Decimal(3) for i in ids[200:]}
+        with CaptureQueriesContext(connection) as ctx:
+            self.scan(values, T(h=9))
+        self.assertLess(len(ctx), 40)
+        with CaptureQueriesContext(connection) as ctx:
+            self.scan(values, T(h=15))
+        self.assertLess(len(ctx), 40)
+
+    def test_tannarx_noma_lum_bo_lsa_arzon_emas(self):
+        self.p2.buy_price = 0
+        self.p2.sale_price = 100
+        self.p2.save()
+        self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        self.assertFalse(self.holat(TovarHolat.ARZON, P2).exists())
+
+    def test_eski_tekshiruvdan_keyin_to_liq(self):
+        """Mezon kiritilmasdan oldingi tekshiruv (2 ustun) — keyingisi to'liq bo'ladi,
+        sotuvdagi tovarlar ro'yxati shunda hisoblanadi."""
+        MinusScan.objects.create(at=T(h=8, m=50), per_wh={WH1: [0, 300]})
+        client = FakeClient({"report/stock/bystore/current": lambda p: [
+            {"assortmentId": P2, "storeId": WH1, "stock": 5}]})
+        scan = minus.observe(client, T(h=9))
+        self.assertTrue(scan.full)
+        self.assertNotIn("changedSince", client.calls[0][1])
+        self.assertEqual(scan.per_wh[WH1], [0, 1, 1, 1, 0])
+
+    def test_holat_sahifasi(self):
+        self.p2.sale_price = 0
+        self.p2.save()
+        self.scan({(WH1, P2): Decimal(5)}, T(h=9))
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        r = c.get("/kpi/tovar-holat/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["total"], 2)
+        self.assertEqual(r.context["counts"], {"nol": 1, "narxsiz": 1, "arzon": 0})
+        for text in ("Cola 2L", "Cola 2.5L", "tugagan", "narxsiz", "Unzavod tovaroved", "kuzatuvdan oldin",
+                     "30 kunda sotilgan", "narx yo'q"):
+            self.assertContains(r, text)
+        r = c.get("/kpi/tovar-holat/?tur=narxsiz")
+        self.assertEqual([str(h.product_ms_id) for h in r.context["rows"]], [P2])
+        h = r.context["rows"][0]
+        # Kuzatuvdan oldingi narx holati: 72 ish soati; test «hozir»i ancha keyin — kechikkan
+        self.assertEqual(h.muddat, T(day=31, h=11))
+        self.assertTrue(h.kechikkan)
+        self.assertContains(r, "kechikkan")
+        self.assertContains(r, "31.10 11:00")
+        self.assertEqual(c.get(f"/kpi/tovar-holat/?dokon={WH1}&tur=nol").context["total"], 1)
+        r = c.get("/kpi/tovar-holat/?holat=closed")
+        self.assertContains(r, "Yozuv yo")
+        self.assertEqual(c.get("/kpi/minuslar/?dokon=xato").status_code, 200)       # avval 500 berardi
+        # Noto'g'ri qiymatlar e'tiborsiz — sahifa yiqilmaydi
+        r = c.get("/kpi/tovar-holat/?tur=xato&holat=xato&dokon=xato")
+        self.assertEqual((r.status_code, r.context["total"], r.context["dokon"], r.context["tur"]), (200, 2, "", ""))
+        self.assertEqual(c.get(f"/kpi/tovar-holat/?dokon={WH2}").context["total"], 2)   # holati yo'q do'kon — filtr emas
+        # Tovaroved o'z logini bilan ko'radi
+        u = User.objects.create_user("unzavod.tov", password="parol-12345")
+        self.tov.user = u
+        self.tov.save()
+        c2 = Client()
+        c2.force_login(u)
+        self.assertEqual(c2.get("/kpi/tovar-holat/").context["total"], 2)
+        # Reyting kartasida ham
+        with mock.patch("kpi.views.timezone.now", return_value=T(h=13)):
+            r = c.get("/kpi/?davr=bugun")
+        self.assertContains(r, "sotuvdagi tovar tugagan")
+        self.assertContains(r, 'href="/kpi/tovar-holat/"')            # yorliq
+        # Karta o'zi havola: ichida boshqa <a> bo'lsa brauzer kartani ikkiga bo'lib yuboradi
+        import re
+        cards = re.findall(r'<a class="card kcard".*?</a>', r.content.decode(), flags=re.S)
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].count("<a "), 1)
+        self.assertIn("sotuvdagi tovar tugagan", cards[0])
+
+
+class YangiMezonlarTest(Base):
+    """«Tovar yo'qligi» va «Narx va hujjat nazorati» ballari."""
+
+    def scans(self, day=26, nol=5, selling=100, narx=0, hours=range(8, 22), shape=5):
+        for h in hours:
+            row = [1, 100, nol, selling, narx][:shape]
+            MinusScan.objects.create(at=T(day=day, h=h, m=5), per_wh={WH1: row})
+
+    def kun(self, day=26, now=None):
+        b = Biriktirish.objects.get()
+        return hisob.compute(b, date(2026, 10, day), self.rule, now=now or T(day=27, h=12))
+
+    def mezon(self, key, **kw):
+        return {x["key"]: x for x in self.kun(**kw).tarkib["mezonlar"]}[key]
+
+    def test_tovar_yo_qligi_formulasi(self):
+        self.scans(nol=5, selling=100)                         # 5% — chegara 10% → 50 ball
+        m = self.mezon("nol")
+        self.assertEqual((Decimal(m["ball"]), m["vazn"]), (50, 15))
+        self.assertEqual(m["kirish"]["sotuv_tovar"], 100)
+        self.assertIn("100 × (1 − 5.00% / 10%", m["formula"])
+
+    def test_chegara_va_undan_ko_p_nol_ball(self):
+        self.scans(nol=12, selling=100)
+        self.assertEqual(Decimal(self.mezon("nol")["ball"]), 0)
+
+    def test_eski_tekshiruvlar_bilan_baholanmaydi(self):
+        self.scans(shape=2)                                    # mezon kiritilmasdan oldingi kun
+        m = self.mezon("nol")
+        self.assertIsNone(m["ball"])
+        self.assertIn("noma'lum", m["sabab"])
+        # Ish natijasi qolgan mezonlardan chiqadi (0 ham, bo'sh ham emas)
+        self.assertIsNotNone(self.kun().ish_ball)
+
+    def test_kassasiz_do_kon_baholanmaydi(self):
+        self.scans(nol=0, selling=0)
+        self.assertIsNone(self.mezon("nol")["ball"])
+
+    def test_narx_va_hujjat_formulasi(self):
+        self.scans()
+        common = dict(warehouse_ms_id=WH1, warehouse_name="Unzavod", first_seen=T(h=9), last_seen=T(h=20))
+        TovarHolat.objects.create(kind=TovarHolat.NARXSIZ, product_ms_id=P1, name="Cola 2L", **common)
+        TovarHolat.objects.create(kind=TovarHolat.ARZON, product_ms_id=P2, name="Cola 2.5L", **common)
+        # Kun ichida yopilgan narx holati — kun oxirida ochiq emas, sanalmaydi
+        TovarHolat.objects.create(kind=TovarHolat.ARZON, product_ms_id="aaaaaaaa-0000-0000-0000-000000000003",
+                                  name="Fanta", status=TovarHolat.CLOSED, closed_at=T(h=15), **common)
+        # Tugagan tovar bu mezonga kirmaydi (o'zining mezoni bor)
+        TovarHolat.objects.create(kind=TovarHolat.NOL, product_ms_id="aaaaaaaa-0000-0000-0000-000000000004",
+                                  name="Sprite", **common)
+        # 5 ta qo'lda qoldiq tuzatish (chegara 3 → 2 ortiq); dastur yaratgani sanalmaydi
+        for n in range(5):
+            Hujjat.objects.create(kind=Hujjat.ENTER if n % 2 else Hujjat.LOSS, ms_id=f"cccccccc-0000-0000-0000-00000000000{n}",
+                                  created=T(h=10 + n), store_ms_id=WH1, creator_checked=True, creator_source="app")
+        Hujjat.objects.create(kind=Hujjat.ENTER, ms_id="cccccccc-0000-0000-0000-000000000009", created=T(h=16),
+                              store_ms_id=WH1, creator_checked=True, creator_source="jsonapi")
+        Hujjat.objects.create(kind=Hujjat.SUPPLY, ms_id="cccccccc-0000-0000-0000-000000000008", created=T(h=16),
+                              store_ms_id=WH1, creator_checked=True, creator_source="app")
+        # Kim yaratgani hali tekshirilmagan — jarima berilmaydi; o'chirilgan va boshqa do'kon — sanalmaydi
+        Hujjat.objects.create(kind=Hujjat.LOSS, ms_id="cccccccc-0000-0000-0000-000000000007", created=T(h=17),
+                              store_ms_id=WH1, creator_checked=False)
+        Hujjat.objects.create(kind=Hujjat.LOSS, ms_id="cccccccc-0000-0000-0000-000000000006", created=T(h=17),
+                              store_ms_id=WH1, creator_checked=True, creator_source="app", deleted_at=T(h=18))
+        Hujjat.objects.create(kind=Hujjat.LOSS, ms_id="cccccccc-0000-0000-0000-000000000005", created=T(h=17),
+                              store_ms_id=WH2, creator_checked=True, creator_source="app")
+        m = self.mezon("narx")
+        # 100 − 10 × (1 narxsiz + 1 tannarxdan past + 2 ortiqcha tuzatish) = 60
+        self.assertEqual((Decimal(m["ball"]), m["vazn"]), (60, 10))
+        k = m["kirish"]
+        self.assertEqual((k["narxsiz"], k["arzon"], k["tuzatish_hujjat"], k["ortiq"]), (["Cola 2L"], ["Cola 2.5L"], 5, 2))
+        self.assertIn("100 − 10 × (1 narxsiz + 1 tannarxdan past + 2 ortiqcha tuzatish) = 60.00", m["formula"])
+
+    def test_narx_holatiga_tuzatish_muddati_beriladi(self):
+        self.scans(day=26)
+        self.scans(day=27)
+        common = dict(warehouse_ms_id=WH1, warehouse_name="Unzavod", last_seen=T(day=27, h=20))
+        # 26.10 20:00 da chiqdi: 12 ish soati (8–22) → 27.10 18:00 gacha vaqt bor
+        TovarHolat.objects.create(kind=TovarHolat.NARXSIZ, product_ms_id=P1, name="Cola 2L", first_seen=T(h=20), **common)
+        # Kuzatuvdan oldingi: 72 ish soati → 31.10 gacha
+        TovarHolat.objects.create(kind=TovarHolat.ARZON, product_ms_id=P2, name="Cola 2.5L", first_seen=T(h=9),
+                                  pre_tracking=True, **common)
+        m = self.mezon("narx", day=26, now=T(day=28, h=12))
+        self.assertEqual(Decimal(m["ball"]), 100)                 # ikkalasining ham muddati o'tmagan
+        self.assertEqual((m["kirish"]["kutilmoqda"], m["kirish"]["narxsiz_soni"]), (2, 0))
+        m = self.mezon("narx", day=27, now=T(day=28, h=12))
+        self.assertEqual(Decimal(m["ball"]), 90)                  # yangisi 18:00 da kechikdi
+        self.assertEqual((m["kirish"]["narxsiz"], m["kirish"]["arzon"], m["kirish"]["kutilmoqda"]), (["Cola 2L"], [], 1))
+        # Shu kunning o'zida, muddatdan oldin so'ralsa — hali jarima yo'q
+        m = self.mezon("narx", day=27, now=T(day=27, h=17))
+        self.assertEqual(Decimal(m["ball"]), 100)
+        self.assertEqual(hisob.narx_deadline(TovarHolat.objects.get(product_ms_id=P2), self.rule), T(day=31, h=11))
+
+    def test_holatsiz_kun_100(self):
+        self.scans()
+        m = self.mezon("narx")
+        self.assertEqual(Decimal(m["ball"]), 100)
+
+    def test_tekshiruv_yetarli_bo_lmasa_baholanmaydi(self):
+        self.scans(hours=range(8, 11))
+        self.assertIsNone(self.mezon("narx")["ball"])
+        self.assertIsNone(self.mezon("nol")["ball"])
+
+    def test_jarima_100_dan_oshmaydi(self):
+        self.scans()
+        for n in range(12):
+            TovarHolat.objects.create(kind=TovarHolat.NARXSIZ, warehouse_ms_id=WH1, first_seen=T(h=9), last_seen=T(h=20),
+                                      product_ms_id=f"aaaaaaaa-0000-0000-0000-0000000000{n:02d}", name=f"T{n}")
+        self.assertEqual(Decimal(self.mezon("narx")["ball"]), 0)
+
+    def test_ish_natijasi_vaznlar_bilan(self):
+        # minus 1% (chegara 3%) → 66.67 (vazn 25); nol 5% → 50 (15); narx 100 (10); muddat/ochiq/sennik — yo'q
+        self.scans(nol=5, selling=100)
+        k = self.kun()
+        expected = (Decimal("66.67") * 25 + 50 * 15 + 100 * 10) / 50
+        self.assertEqual(k.ish_ball, hisob.q2(expected))
+
+
+class KunQoidasiTest(Base):
+    """Har kun O'Z qoida versiyasi bilan baholanadi — yangi (qattiqroq) qoida
+    eski kunlarni orqaga qarab qayta baholamaydi."""
+
+    def setUp(self):
+        super().setUp()
+        # Eski qoida (kuzatuv boshidan), yangisi 27.10 da kuchga kirgan
+        KpiQoida.objects.all().delete()
+        self.v1 = KpiQoida.objects.create(version=1, w_minus_ulush=40, w_muddat=30, w_ochiq=30, w_sennik=0,
+                                          w_nol=0, w_narx=0, minus_ulush_chegara=5, tuzatish_soat=24,
+                                          qayta_paydo_kun=3)
+        KpiQoida.objects.filter(pk=self.v1.pk).update(created_at=T(day=1))
+        self.v2 = KpiQoida.objects.create(version=2)
+        KpiQoida.objects.filter(pk=self.v2.pk).update(created_at=T(day=27, h=16))
+        for day in (26, 27):
+            for h in range(8, 22):
+                MinusScan.objects.create(at=T(day=day, h=h, m=5), per_wh={WH1: [2, 100, 5, 100, 0]})
+
+    def test_qoida_kuchga_kirgan_kundan_amal_qiladi(self):
+        self.assertEqual(hisob.rule_for(date(2026, 10, 26)).version, 1)
+        self.assertEqual(hisob.rule_for(date(2026, 10, 27)).version, 2)      # yaratilgan kunning o'zi
+        self.assertEqual(hisob.rule_for(date(2026, 10, 30)).version, 2)
+        self.assertEqual(hisob.rule_for(date(2026, 9, 1)).version, 1)        # birinchi qoidadan oldin — eng eskisi
+        # Ataylab yangiroq versiya bilan qayta hisoblangan kun — o'sha versiyada qoladi
+        self.assertEqual(hisob.rule_for(date(2026, 10, 26), computed_version=2).version, 2)
+        self.assertEqual(hisob.rule_for(date(2026, 10, 27), computed_version=1).version, 2)
+
+    def test_kechqurun_saqlangan_qoida_ertasi_kundan(self):
+        # Ish kuni (8–22) tugagandan keyin saqlangan qoida o'tib bo'lgan kunni qayta baholamaydi
+        KpiQoida.objects.filter(pk=self.v2.pk).update(created_at=T(day=27, h=23, m=30))
+        self.v2.refresh_from_db()
+        self.assertEqual(hisob.rule_start(self.v2), date(2026, 10, 28))
+        self.assertEqual(hisob.rule_for(date(2026, 10, 27)).version, 1)
+        self.assertEqual(hisob.rule_for(date(2026, 10, 28)).version, 2)
+        KpiQoida.objects.filter(pk=self.v2.pk).update(created_at=T(day=27, h=21, m=59))
+        self.v2.refresh_from_db()
+        self.assertEqual(hisob.rule_start(self.v2), date(2026, 10, 27))
+
+    def test_oxirgi_kunlar_o_z_versiyasi_bilan_qayta_hisoblanadi(self):
+        hisob.recompute_recent(now=T(day=28, h=12))
+        old = KpiKun.objects.get(sana=date(2026, 10, 26))
+        new = KpiKun.objects.get(sana=date(2026, 10, 27))
+        self.assertEqual((old.qoida_version, new.qoida_version), (1, 2))
+        m_old = {x["key"]: x for x in old.tarkib["mezonlar"]}
+        m_new = {x["key"]: x for x in new.tarkib["mezonlar"]}
+        # 2% minus: eski qoida (chegara 5%) → 60, yangi (3%) → 33.33
+        self.assertEqual((Decimal(m_old["minus_ulush"]["ball"]), Decimal(m_new["minus_ulush"]["ball"])),
+                         (60, Decimal("33.33")))
+        # Eski kunda yangi mezonlar vazni 0 — ish natijasi faqat minus ulushidan
+        self.assertEqual((m_old["nol"]["vazn"], m_old["narx"]["vazn"]), (0, 0))
+        self.assertEqual(old.ish_ball, 60)
+        # Yangi kunda: (33.33×25 + nol 50×15 + narx 100×10) / 50
+        self.assertEqual(new.ish_ball, hisob.q2((Decimal("33.33") * 25 + 50 * 15 + 100 * 10) / 50))
+        # Takroriy hisoblash natijani o'zgartirmaydi
+        hisob.recompute_recent(now=T(day=28, h=12, m=15))
+        self.assertEqual(KpiKun.objects.get(sana=date(2026, 10, 26)).ish_ball, 60)
+
+    def test_ataylab_qayta_hisoblangan_kun_yangi_versiyada_qoladi(self):
+        hisob.recompute_day(date(2026, 10, 26), self.v2, now=T(day=28, h=12))     # Qoida sahifasidagi belgi
+        hisob.recompute_recent(now=T(day=28, h=12))
+        self.assertEqual(KpiKun.objects.get(sana=date(2026, 10, 26)).qoida_version, 2)
+
+    def test_qayta_minus_oynasi_kunning_qoidasi_bilan(self):
+        """Tuzatilgan tovar 5 kundan keyin qaytdi: yangi qoida (7 kun) bo'yicha belgi
+        qo'yiladi, lekin eski kun (3 kunlik qoida) orqaga qarab jazolanmaydi."""
+        common = dict(warehouse_ms_id=WH1, product_ms_id=P1, name="Cola 2L", first_qty=-1, min_qty=-1, last_qty=-1)
+        old = MinusIssue.objects.create(first_seen=T(day=25, h=12), last_seen=T(day=26, h=9), deadline=T(day=26, h=12),
+                                        status=MinusIssue.CLOSED, closed_at=T(day=26, h=9),
+                                        resolution=MinusIssue.RES_KIRIM, reopened=True, **common)
+        MinusIssue.objects.create(first_seen=T(day=31, h=10), last_seen=T(day=31, h=10), deadline=T(day=31, h=22),
+                                  previous=old, **common)
+        m = {x["key"]: x for x in hisob.compute(Biriktirish.objects.get(), date(2026, 10, 26), self.v1,
+                                                 now=T(day=31, h=12)).tarkib["mezonlar"]}["muddat"]
+        self.assertEqual(Decimal(m["ball"]), 100)             # 3 kunlik oynadan tashqarida — tuzatish o'z kuchida
+        m = {x["key"]: x for x in hisob.compute(Biriktirish.objects.get(), date(2026, 10, 26), self.v2,
+                                                 now=T(day=31, h=12)).tarkib["mezonlar"]}["muddat"]
+        self.assertEqual(Decimal(m["ball"]), 0)               # 7 kunlik oyna ichida
+        self.assertIn("7 kun ichida", m["kirish"]["kechikkan"][0])
+
+
+class QoidaKuchaytirishTest(Base):
+    def test_yangi_qoida_standartlari(self):
+        r = self.rule
+        self.assertEqual((r.w_minus_ulush, r.w_muddat, r.w_ochiq, r.w_nol, r.w_narx, r.w_sennik), (25, 20, 15, 15, 10, 15))
+        self.assertEqual((r.minus_ulush_chegara, r.tuzatish_soat, r.qayta_paydo_kun), (3, 12, 7))
+        self.assertEqual((r.nol_chegara, r.narx_jarima, r.tuzatish_hujjat_chegara), (10, 10, 3))
+
+    def test_migratsiya_joriy_qoidadan_yangi_versiya_yozadi(self):
+        import importlib
+        from django.apps import apps
+
+        mig = importlib.import_module("kpi.migrations.0003_kuchaytirish")
+        # Ishlab turgan bazadagi eski qoida (egasi kun_boshi ni o'zgartirgan)
+        KpiQoida.objects.all().delete()
+        KpiQoida.objects.create(version=3, w_minus_ulush=40, w_muddat=30, w_ochiq=30, w_sennik=0,
+                                minus_ulush_chegara=5, tuzatish_soat=24, qayta_paydo_kun=3, kun_boshi=9, izoh="eski")
+        mig.yangi_qoida(apps, None)
+        new = KpiQoida.current()
+        self.assertEqual((new.version, new.created_by), (4, "tizim"))
+        self.assertEqual((new.w_minus_ulush, new.w_muddat, new.w_ochiq, new.w_nol, new.w_narx, new.w_sennik), (25, 20, 15, 15, 10, 15))
+        self.assertEqual((new.minus_ulush_chegara, new.tuzatish_soat, new.qayta_paydo_kun), (3, 12, 7))
+        self.assertEqual(new.kun_boshi, 9)                     # egasining boshqa sozlamasi saqlanadi
+        old = KpiQoida.objects.get(version=3)
+        self.assertEqual((old.w_minus_ulush, old.minus_ulush_chegara, old.qayta_paydo_kun), (40, 5, 3))   # eskisi o'zgarmaydi
+        self.assertEqual((old.w_nol, old.w_narx), (0, 0))      # u paytda bu mezonlar yo'q edi
+        self.assertIn("Kuchaytirilgan", new.izoh)
+        # Qoida bo'lmasa — hech narsa yozilmaydi
+        KpiQoida.objects.all().delete()
+        mig.yangi_qoida(apps, None)
+        self.assertFalse(KpiQoida.objects.exists())
+
+    def test_qoida_sahifasi_yangi_maydonlar(self):
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        r = c.get("/kpi/qoida/")
+        for name in ("w_nol", "w_narx", "nol_chegara", "narx_jarima", "tuzatish_hujjat_chegara"):
+            self.assertContains(r, f'name="{name}"')
+        self.assertContains(r, "ish soati")
+        data = {f: getattr(self.rule, f) for f in KpiQoida.PARAMS}
+        c.post("/kpi/qoida/", data | {"w_nol": 20, "nol_chegara": "8,5", "tuzatish_hujjat_chegara": 2})
+        new = KpiQoida.current()
+        self.assertEqual((new.version, new.w_nol, new.nol_chegara, new.tuzatish_hujjat_chegara), (2, 20, Decimal("8.5"), 2))
+        r = c.post("/kpi/qoida/", data | {"nol_chegara": "0"}, follow=True)
+        self.assertContains(r, "Tovar yo&#x27;qligi chegarasi 0 dan katta")
+        self.assertEqual(KpiQoida.current().version, 2)
+
+    def test_kechqurun_saqlansa_ertadan_amal_qilishi_aytiladi(self):
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        data = {f: getattr(self.rule, f) for f in KpiQoida.PARAMS}
+        kech = datetime(2026, 11, 10, 23, 15, tzinfo=ms.TASHKENT)
+        with mock.patch("django.utils.timezone.now", return_value=kech), \
+             mock.patch("kpi.views._today", return_value=date(2026, 11, 10)):
+            r = c.post("/kpi/qoida/", data | {"w_nol": 20}, follow=True)
+        self.assertContains(r, "ertadan amal qiladi")
+        self.assertContains(r, "Qaysi kundan amal qiladi")
+        self.assertContains(r, "11.11.2026")
+        self.assertEqual(hisob.rule_start(KpiQoida.current()), date(2026, 11, 11))
+        kunduzi = datetime(2026, 11, 12, 10, 0, tzinfo=ms.TASHKENT)
+        with mock.patch("django.utils.timezone.now", return_value=kunduzi), \
+             mock.patch("kpi.views._today", return_value=date(2026, 11, 12)):
+            r = c.post("/kpi/qoida/", data | {"w_nol": 25}, follow=True)
+        self.assertNotContains(r, "ertadan amal qiladi")
+        self.assertEqual(hisob.rule_start(KpiQoida.current()), date(2026, 11, 12))

@@ -28,7 +28,7 @@ from dashboard import access, grafik
 
 from . import hisob, hr, korinish, ms, qayta
 from .models import (Biriktirish, ChopEtish, HrDavomat, HrXodim, Hujjat, KpiKun, KpiQoida, MinusIssue,
-                     MinusScan, MsXodim, Tovaroved)
+                     MinusScan, MsXodim, Tovaroved, TovarHolat)
 
 DAVRLAR = [("bugun", "Bugun"), ("kecha", "Kecha"), ("hafta", "Oxirgi 7 kun"),
            ("oy", "Shu oy"), ("otgan_oy", "O'tgan oy")]
@@ -163,6 +163,9 @@ def bosh(request):
             row["share"] = round(neg * 100 / active, 2) if neg is not None and active else None
             row["meter"] = korinish.share_meter(row["share"], rule.minus_ulush_chegara)
             row["comp"] = korinish.composition(wh, now)
+            row["holat"] = korinish.latest_holat(wh)
+            row["nol_meter"] = (korinish.share_meter(row["holat"]["foiz"], rule.nol_chegara)
+                                if row["holat"] and row["holat"]["foiz"] is not None else None)
             row["vol"] = _volume(wh, start, end)
             row["vol_bars"] = grafik.bars_h([{"label": v["nomi"], "value": v["n"]} for v in row["vol"] if v["n"]])
             if wh not in seen:
@@ -250,7 +253,11 @@ def minuslar(request):
     if not _viewer(request):
         return _forbid(request)
     holat = request.GET.get("holat", "open")
+    stores = sorted({(str(w), n) for w, n in MinusIssue.objects.values_list("warehouse_ms_id", "warehouse_name").distinct()},
+                    key=lambda x: x[1])
     dokon = request.GET.get("dokon", "")
+    if dokon not in {w for w, _ in stores}:
+        dokon = ""                      # noto'g'ri qiymat (UUID emas) sahifani yiqitmasin
     qs = MinusIssue.objects.all()
     now = timezone.now()
     if holat == "open":
@@ -265,11 +272,56 @@ def minuslar(request):
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q) | Q(barcode=q))
     total = qs.count()
-    stores = sorted({(str(w), n) for w, n in MinusIssue.objects.values_list("warehouse_ms_id", "warehouse_name").distinct()},
-                    key=lambda x: x[1])
     return render(request, "kpi/minuslar.html", {
         "rows": qs.select_related("tovaroved").order_by("deadline")[:300], "total": total,
         "holat": holat, "dokon": dokon, "q": q, "stores": stores, "now": now, "owner": _owner(request),
+    })
+
+
+@login_required
+def holat(request):
+    """Tovar holatlari: sotuvdagi tovar 0 qoldiqda, narxsiz, tannarxdan past
+    (egasi, 2026-11-10 — «Tovar yo'qligi» va «Narx nazorati» mezonlari)."""
+    if not _viewer(request):
+        return _forbid(request)
+    tur = request.GET.get("tur", "")
+    if tur not in dict(TovarHolat.KINDS):
+        tur = ""
+    status = request.GET.get("holat", "open")
+    stores = sorted({(str(w), n) for w, n in TovarHolat.objects.values_list("warehouse_ms_id", "warehouse_name").distinct()},
+                    key=lambda x: x[1])
+    dokon = request.GET.get("dokon", "")
+    if dokon not in {w for w, _ in stores}:
+        dokon = ""                      # noto'g'ri qiymat e'tiborsiz — sahifa yiqilmaydi
+    qs = TovarHolat.objects.all()
+    if status == "closed":
+        qs = qs.filter(status=TovarHolat.CLOSED)
+    elif status != "all":
+        status = "open"
+        qs = qs.filter(status=TovarHolat.OPEN)
+    if tur:
+        qs = qs.filter(kind=tur)
+    if dokon:
+        qs = qs.filter(warehouse_ms_id=dokon)
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q))
+    total = qs.count()
+    open_qs = TovarHolat.objects.filter(status=TovarHolat.OPEN)
+    counts = {k: 0 for k, _ in TovarHolat.KINDS}
+    counts.update({r["kind"]: r["n"] for r in open_qs.values("kind").annotate(n=Count("id"))})
+    rule = KpiQoida.current()
+    now = timezone.now()
+    order = ["-sotuv_dona", "-first_seen"] if tur == TovarHolat.NOL else ["kind", "-first_seen"]
+    rows = list(qs.select_related("tovaroved").order_by(*order)[:300])
+    for h in rows:
+        # Narx holatlari muddatida tuzatilmasa ballni kamaytiradi (kpi/hisob.py m_narx)
+        h.muddat = None if h.kind == TovarHolat.NOL else hisob.narx_deadline(h, rule)
+        h.kechikkan = bool(h.muddat and h.status == TovarHolat.OPEN and h.muddat < now)
+    return render(request, "kpi/holat.html", {
+        "rows": rows, "total": total, "counts": counts,
+        "tur": tur, "turlar": TovarHolat.KINDS, "holat": status, "dokon": dokon, "q": q, "stores": stores,
+        "now": now, "owner": _owner(request), "rule": rule,
     })
 
 
@@ -547,9 +599,10 @@ def boglash(request):
     })
 
 
-_RULE_INT = ["w_ish", "w_davomat", "w_minus_ulush", "w_muddat", "w_ochiq", "w_sennik", "tuzatish_soat",
-             "oldingi_tuzatish_soat", "qayta_paydo_kun", "faol_sotuv_kun", "kun_boshi", "kun_oxiri", "min_qamrov"]
-_RULE_DEC = ["minus_ulush_chegara", "qoshimcha_ball_soat", "qoshimcha_ball_max"]
+_RULE_INT = ["w_ish", "w_davomat", "w_minus_ulush", "w_muddat", "w_ochiq", "w_sennik", "w_nol", "w_narx",
+             "tuzatish_soat", "oldingi_tuzatish_soat", "qayta_paydo_kun", "narx_jarima", "tuzatish_hujjat_chegara",
+             "faol_sotuv_kun", "kun_boshi", "kun_oxiri", "min_qamrov"]
+_RULE_DEC = ["minus_ulush_chegara", "nol_chegara", "qoshimcha_ball_soat", "qoshimcha_ball_max"]
 
 
 @login_required
@@ -582,6 +635,8 @@ def qoida(request):
             problem = "Ish kuni soatlari noto'g'ri."
         if not problem and data["minus_ulush_chegara"] <= 0:
             problem = "Minus ulushi chegarasi 0 dan katta bo'lsin."
+        if not problem and data["nol_chegara"] <= 0:
+            problem = "Tovar yo'qligi chegarasi 0 dan katta bo'lsin."
         if problem:
             messages.error(request, problem)
             return redirect("kpi:qoida")
@@ -591,11 +646,15 @@ def qoida(request):
         if request.POST.get("qayta") == "1":
             for i in range(min(int(request.POST.get("qayta_kun") or 7), 62)):
                 n += hisob.recompute_day(_today() - timedelta(days=i), new)
-        messages.success(request, f"Yangi qoida v{new.version} saqlandi." + (f" {n} ta kunlik natija qayta hisoblandi." if n else
-                                  " Eski kunlar o'z versiyasida qoldi."))
+        ertadan = hisob.rule_start(new) > _today()
+        messages.success(request, f"Yangi qoida v{new.version} saqlandi"
+                         + (" — ish kuni tugagani uchun ertadan amal qiladi." if ertadan else ".")
+                         + (f" {n} ta kunlik natija qayta hisoblandi." if n else " Eski kunlar o'z versiyasida qoldi."))
         return redirect("kpi:qoida")
-    return render(request, "kpi/qoida.html", {"rule": rule, "versions": KpiQoida.objects.all()[:20],
-                                              "faol": KpiQoida.FAOL})
+    versions = list(KpiQoida.objects.all()[:20])
+    for v in versions:
+        v.boshlanadi = hisob.rule_start(v)       # qaysi kundan amal qiladi
+    return render(request, "kpi/qoida.html", {"rule": rule, "versions": versions, "faol": KpiQoida.FAOL})
 
 
 @login_required
