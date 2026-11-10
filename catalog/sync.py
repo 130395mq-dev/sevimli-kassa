@@ -228,16 +228,24 @@ class CatalogSync:
             # `synced_at` ni yangilaydi va 22 ming tovar TO'LIQ sync'da hamma
             # kassaga qayta tushardi. Endi to'liq sync ham kassaga faqat
             # haqiqatan o'zgargan tovarlarni yetkazadi.
+            # Tannarx (buyPrice) — kassaga kerak emas, shuning uchun u
+            # `defaults` ga kirmaydi: o'zgarsa `synced_at` yangilanmaydi va
+            # kassalarga 22 ming tovar qayta tushmaydi (faqat KPI uchun).
+            buy_price = self._buy_price(row, preferred)
             product = Product.objects.filter(ms_id=row["id"]).first()
             if product is None:
-                product = Product.objects.create(ms_id=row["id"], **defaults)
+                product = Product.objects.create(ms_id=row["id"], buy_price=buy_price, **defaults)
                 changed = True
             else:
                 changed = any(getattr(product, k) != v for k, v in defaults.items())
                 if changed:
                     for k, v in defaults.items():
                         setattr(product, k, v)
+                    product.buy_price = buy_price
                     product.save()
+                elif product.buy_price != buy_price:
+                    Product.objects.filter(pk=product.pk).update(buy_price=buy_price)
+                    product.buy_price = buy_price
             codes_changed = self._sync_barcodes(
                 product, row.get("barcodes") or [], row.get("packs") or [])
             if codes_changed and not changed:
@@ -250,6 +258,28 @@ class CatalogSync:
 
     # Narx turi nomida shu so'zlar bo'lsa — bu chakana narx
     RETAIL_WORDS = ("чакана", "chakana", "розничн", "retail")
+
+    @classmethod
+    def _buy_price(cls, row: dict, preferred: tuple[set[str], set[str]] | None = None) -> int:
+        """Tannarx (buyPrice.value), tiyinlarda; yo'q bo'lsa 0.
+
+        Tannarx chakana narxdan BOSHQA valyutada bo'lsa (masalan dollarda) —
+        0 qaytadi: ikkalasini solishtirib bo'lmaydi, KPI «tannarxdan past»
+        deb yanglish belgilamasin."""
+        buy = row.get("buyPrice") or {}
+        try:
+            value = int(round(float(buy.get("value") or 0)))
+        except (TypeError, ValueError):
+            return 0
+        if value <= 0:
+            return 0
+        if preferred is not None:
+            sale = cls._retail_entry(row, preferred) or {}
+            a = (((buy.get("currency") or {}).get("meta") or {}).get("href") or "").strip()
+            b = (((sale.get("currency") or {}).get("meta") or {}).get("href") or "").strip()
+            if a and b and a != b:
+                return 0
+        return value
 
     @staticmethod
     def _all_prices(row: dict) -> dict[str, int]:
@@ -292,28 +322,32 @@ class CatalogSync:
             3. nomida «чакана» / «розничная» bo'lgan narx
             4. birinchisi (boshqa iloj yo'q)
         """
+        p = cls._retail_entry(row, preferred)
+        if p is None:
+            return 0
+        v = p.get("value")
+        return int(v) if v is not None else 0
+
+    @classmethod
+    def _retail_entry(cls, row: dict, preferred: tuple[set[str], set[str]]) -> dict | None:
+        """`_retail_price` tanlaydigan narx yozuvi (salePrices elementi)."""
         prices = row.get("salePrices") or []
         if not prices:
-            return 0
-
-        def value(p: dict) -> int:
-            v = p.get("value")
-            return int(v) if v is not None else 0
-
+            return None
         ids, names = preferred
         for p in prices:
             pt = p.get("priceType") or {}
             if str(pt.get("id", "")).lower() in ids:
-                return value(p)
+                return p
         for p in prices:
             pt = p.get("priceType") or {}
             if (pt.get("name") or "").strip().lower() in names:
-                return value(p)
+                return p
         for p in prices:
             name = ((p.get("priceType") or {}).get("name") or "").lower()
             if any(w in name for w in cls.RETAIL_WORDS):
-                return value(p)
-        return value(prices[0])
+                return p
+        return prices[0]
 
     @staticmethod
     def _sync_barcodes(product: Product, barcodes: list[dict], packs: list[dict] | None = None) -> bool:
@@ -655,10 +689,17 @@ class CatalogSync:
         butun katalog «o'chirilgan» bo'lib qolardi.
         """
         live: set[str] = set()
+        buy: dict[str, int] = {}
+        preferred = self._preferred_price_types()
         for row in self.client.iter_list("entity/assortment"):
             ms_id = row.get("id")
             if ms_id:
                 live.add(str(ms_id).lower())
+                buy[str(ms_id).lower()] = self._buy_price(row, preferred)
+        # Shu to'liq ro'yxatdan tannarxlar ham yangilanadi (qo'shimcha so'rovsiz):
+        # delta sync faqat o'zgargan tovarni ko'radi, KPI «narx nazorati» esa
+        # hamma tovarning tannarxini bilishi kerak.
+        self._refresh_buy_prices(buy)
 
         local = {
             str(u).lower()
@@ -692,6 +733,22 @@ class CatalogSync:
             )
         logger.info("Reconcile: %s ta tovar MoySklad'da yo'q — arxivlandi", count)
         return count
+
+    @staticmethod
+    def _refresh_buy_prices(buy: dict[str, int]) -> int:
+        """Farq qilgan tannarxlarni yozadi. `synced_at` ga TEGMAYDI — tannarx
+        kassaga kerak emas, tovarlar kassalarga qayta tushmasin."""
+        if not buy:
+            return 0
+        changed = [
+            Product(pk=pk, buy_price=buy[str(ms_id).lower()])
+            for pk, ms_id, old in Product.objects.values_list("pk", "ms_id", "buy_price")
+            if str(ms_id).lower() in buy and buy[str(ms_id).lower()] != old
+        ]
+        if changed:
+            Product.objects.bulk_update(changed, ["buy_price"], batch_size=500)
+            logger.info("Tannarx yangilandi: %s ta tovar", len(changed))
+        return len(changed)
 
     # ------------------------------------------------------------------ hammasi
 
