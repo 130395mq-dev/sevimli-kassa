@@ -83,16 +83,74 @@
     <button type="submit">Saqlash</button>
   </form>
 
+  <!-- ============ TUG'ILGAN KUNLAR ============ -->
+  <h2 id="tugilgan">Tug'ilgan kunlar</h2>
+  <div class="card" style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:220px;">
+      <div style="font-size:12.5px;color:var(--muted);">Kartali mijozlarda kiritilgan</div>
+      <div style="font-size:22px;font-weight:700;">{{ tugilgan.bor }} <span class="sec" style="font-weight:400;">/ {{ tugilgan.jami }} ({{ tugilgan.foiz }}%)</span></div>
+      <div class="sec">Kassir karta urilganda so'rab kiritadi.
+        <a href="?tk=yoq#mijozlar">Kiritilmaganlar: {{ tugilgan.yoq }}</a> ·
+        <a href="?tk=bor#mijozlar">Kiritilganlar ro'yxati</a></div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:12.5px;color:var(--muted);">Bugun kiritildi</div>
+      <div style="font-size:22px;font-weight:700;">+{{ tugilgan.bugun }}</div>
+      <div class="sec">7 kunda: +{{ tugilgan.hafta }}</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start;">
+    <div>
+      <h3 style="margin:14px 0 6px;">Kim kiritdi</h3>
+      <table>
+        <tr><th>Kassa · kassir</th><th class="num">Bugun</th><th class="num">7 kun</th><th class="num">Jami</th></tr>
+        {% for r in tugilgan.kimlar %}
+          <tr>
+            <td>{{ r.kim }}</td>
+            <td class="num">{% if r.bugun %}<b>+{{ r.bugun }}</b>{% else %}—{% endif %}</td>
+            <td class="num">{{ r.hafta|default:"—" }}</td>
+            <td class="num"><b>{{ r.jami }}</b></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="sec" style="padding:14px;text-align:center;">Hali hech kim kiritmagan</td></tr>
+        {% endfor %}
+        {% if tugilgan.nomalum %}
+          <tr><td class="sec">Kim kiritgani saqlanmagan (10.11.2026 gacha)</td><td class="num">—</td><td class="num">—</td><td class="num">{{ tugilgan.nomalum }}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+    <div>
+      <h3 style="margin:14px 0 6px;">Oxirgi kiritilganlar</h3>
+      <table>
+        <tr><th>Vaqt</th><th>Mijoz</th><th>Tug'ilgan kuni</th><th>Kim</th></tr>
+        {% for c in tugilgan.oxirgi %}
+          <tr>
+            <td class="num tight">{{ c.birth_set_at|date:"d.m H:i" }}</td>
+            <td><a href="{% url 'dashboard:customer-bonus' c.pk %}">{{ c.name }}</a></td>
+            <td class="num tight">{{ c.birthday_text }}{% if c.is_birthday %} <span class="badge ok">bugun!</span>{% endif %}</td>
+            <td class="sec">{{ c.birth_set_label }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="sec" style="padding:14px;text-align:center;">Hali yo'q</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+
   <!-- ============ MIJOZLAR ============ -->
-  <h2>Mijoz balanslari</h2>
-  <form method="get" class="card" style="padding:12px 16px;">
+  <h2 id="mijozlar">{% if tk == "yoq" %}Tug'ilgan kuni kiritilmagan kartali mijozlar{% elif tk == "bor" %}Tug'ilgan kuni kiritilgan mijozlar{% else %}Mijoz balanslari{% endif %}</h2>
+  <form method="get" class="card" style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    {% if tk %}<input type="hidden" name="tk" value="{{ tk }}">{% endif %}
     <input name="q" value="{{ q }}" placeholder="Ism, telefon yoki karta raqami bo'yicha qidirish"
-           style="width:100%;box-sizing:border-box;">
+           style="flex:1;min-width:240px;box-sizing:border-box;">
+    {% if tk %}<a href="{% url 'dashboard:bonus' %}#mijozlar" class="sec">← Ball to'plaganlar</a>{% endif %}
   </form>
 
   <table>
     <tr>
       <th>Mijoz</th><th>Telefon</th><th>Karta</th>
+      <th>Tug'ilgan kuni</th>
       <th class="num">Ball</th><th>Qo'lda tuzatish</th>
     </tr>
     {% for c in page.object_list %}
@@ -100,6 +158,7 @@
         <td><a href="{% url 'dashboard:customer-bonus' c.pk %}">{{ c.name }}</a></td>
         <td class="num tight">{{ c.phone|default:"—" }}</td>
         <td class="num tight">{{ c.discount_card|default:"—" }}</td>
+        <td class="tight">{% if c.birthday_text %}{{ c.birthday_text }}{% if c.birth_set_label %} <span class="sec">· {{ c.birth_set_label }}</span>{% endif %}{% else %}<span class="sec">—</span>{% endif %}</td>
         <td class="num"><b>{{ c.bonus_points|som }}</b></td>
         <td>
           <form method="post" class="inline">
@@ -113,8 +172,8 @@
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="5" class="sec" style="padding:18px;text-align:center;">
-        {% if q %}«{{ q }}» bo'yicha mijoz topilmadi{% else %}Ball to'plagan mijoz yo'q{% endif %}
+      <tr><td colspan="6" class="sec" style="padding:18px;text-align:center;">
+        {% if q %}«{{ q }}» bo'yicha mijoz topilmadi{% elif tk == "yoq" %}Hamma kartali mijozning tug'ilgan kuni kiritilgan{% elif tk == "bor" %}Hali birorta tug'ilgan kun kiritilmagan{% else %}Ball to'plagan mijoz yo'q{% endif %}
       </td></tr>
     {% endfor %}
   </table>
@@ -123,11 +182,11 @@
     <div class="pager">
       <span class="count">{{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
       {% if page.has_previous %}
-        <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page.previous_page_number }}">‹ Oldingi</a>
+        <a href="?{% if tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.previous_page_number }}#mijozlar">‹ Oldingi</a>
       {% else %}<span class="disabled">‹ Oldingi</span>{% endif %}
       <span class="cur">{{ page.number }}</span>
       {% if page.has_next %}
-        <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page.next_page_number }}">Keyingi ›</a>
+        <a href="?{% if tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.next_page_number }}#mijozlar">Keyingi ›</a>
       {% else %}<span class="disabled">Keyingi ›</span>{% endif %}
     </div>
   {% endif %}

@@ -42,7 +42,7 @@
       <input name="birthday" value="{{ cust.birthday_text }}" placeholder="KK.OO yoki KK.OO.YYYY" pattern="\s*\d{1,2}\s*[./-]\s*\d{1,2}(\s*[./-]\s*\d{2,4})?\s*" style="margin:0;width:170px;">
     </label>
     <button type="submit" class="small ghost">Saqlash</button>
-    <span class="sec">Tug'ilgan kunida kassir tabriklaydi va chekda tabrik so'zi chiqadi. Kassada ham kiritsa bo'ladi.</span>
+    <span class="sec">{% if cust.birth_set_at %}Kiritdi: <b>{{ cust.birth_set_label }}</b> · {{ cust.birth_set_at|date:"d.m.Y H:i" }}{% elif cust.birthday_text %}Kim kiritgani saqlanmagan (10.11.2026 gacha kiritilgan){% else %}Tug'ilgan kunida kassir tabriklaydi va chekda tabrik so'zi chiqadi. Kassada ham kiritsa bo'ladi.{% endif %}</span>
   </form>
 
   <p style="margin:16px 0 8px;">

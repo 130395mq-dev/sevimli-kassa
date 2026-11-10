@@ -6,7 +6,10 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest 2026-10 dan Ubuntu 26.04 ga o'tdi — Playwright 1.55 unda
+    # chromium o'rnata olmaydi («does not support chromium on ubuntu26.04»).
+    # Preview qadami ishlashi uchun 24.04 ga mahkamlandi (2026-11-10).
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16

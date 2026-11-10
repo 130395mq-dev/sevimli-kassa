@@ -981,7 +981,10 @@ def create_customer(request):
         return error("Ism kamida 2 harf bo'lishi kerak")
 
     try:
-        customer, restored = mijozlar.register(name, phone, card, birthday=birthday)
+        customer, restored = mijozlar.register(
+            name, phone, card, birthday=birthday,
+            register=request.register, cashier=_request_cashier_name(request),
+        )
     except mijozlar.RegistrationError as e:
         return error(str(e), status=e.status)
 
@@ -1009,13 +1012,28 @@ def customer_birthday(request):
     if not customer:
         return error("Mijoz topilmadi", status=404)
     try:
-        customer.set_birthday(str(data.get("birthday") or ""))
+        customer.set_birthday(str(data.get("birthday") or ""), source=Customer.BIRTH_KASSA,
+                              register=request.register, cashier=_request_cashier_name(request))
     except tugilgan_kun.BirthdayError as e:
         return error(str(e))
-    customer.save(update_fields=["birth_day", "birth_month", "birth_year"])
-    logger.info("Mijoz #%s tug'ilgan kuni: %s (kassa %s)", customer.pk,
-                customer.birthday_text or "o'chirildi", request.register.code)
+    customer.save(update_fields=Customer.BIRTH_FIELDS)
+    logger.info("Mijoz #%s tug'ilgan kuni: %s (%s)", customer.pk,
+                customer.birthday_text or "o'chirildi", customer.birth_set_label or request.register.code)
     return JsonResponse({"customer": _customer_dict(customer)})
+
+
+def _request_cashier_name(request) -> str:
+    """So'rovni yuborgan kassir ismi — imzolangan X-Session tokenidan.
+    Kassaning o'z logini bilan kirilgan yoki token yo'q bo'lsa — «»."""
+    try:
+        proof = session_security.verify(request)
+        cid = int(proof["cashier_id"]) if proof else 0
+    except (TypeError, ValueError, KeyError):
+        cid = 0
+    if not cid:
+        return ""
+    cashier = Cashier.objects.filter(pk=cid).only("name").first()
+    return cashier.name if cashier else ""
 
 
 # ------------------------------------------------------------------ smena
