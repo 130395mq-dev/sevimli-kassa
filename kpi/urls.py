@@ -10,6 +10,7 @@ urlpatterns = [
     path("xodim/<int:pk>/", views.xodim, name="xodim"),
     path("minuslar/", views.minuslar, name="minuslar"),
     path("qayta-minus/", views.qayta_minuslar, name="qayta"),
+    path("tovar-holat/", views.holat, name="holat"),
     path("minus/<int:pk>/", views.minus, name="minus"),
     path("boglash/", views.boglash, name="boglash"),
     path("qoida/", views.qoida, name="qoida"),

@@ -90,7 +90,7 @@ def _davomat(now) -> int:
     rule = KpiQoida.current()
     fresh = ms.local_date(now) - timedelta(days=rule.qayta_paydo_kun + 1)
     for day in sorted(d for d in changed if d < fresh):
-        hisob.recompute_day(day, rule, now)
+        hisob.recompute_day(day, None, now)      # kunning o'z qoida versiyasi bilan
     return len(changed)
 
 

@@ -38,6 +38,29 @@ from sales import healer, selftest, sender
 from sales.models import MoySkladCheck, Sale
 from sales.writer import SaleWriter, WriteError
 
+#: Deploy paytida bu xizmat hub (migrate) dan oldin ishga tushishi mumkin.
+#: «Deploy» sinovi migratsiyalar qo'llanguncha kutadi — lekin ko'pi bilan
+#: shuncha soniya: migratsiya umuman o'tmay qolsa sinov baribir yuriladi va
+#: muammo panelda ko'rinadi (jim kutib qolmaydi).
+SCHEMA_WAIT_SECONDS = 600
+
+
+def schema_ready() -> bool:
+    """Bazada shu kod kutgan hamma migratsiya qo'llanganmi (`migrate --check` kabi).
+
+    2026-11-10: sales-sync hub'dan 4 soniya oldin ishga tushib, sinovni yangi
+    ustun hali yo'q paytda yurgizdi — panelda soxta «MoySklad sinovi o'tmadi»
+    chiqdi. Tekshirib bo'lmasa — «tayyor» deb olinadi (sinov to'xtab qolmasin)."""
+    try:
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        return not executor.migration_plan(executor.loader.graph.leaf_nodes())
+    except Exception:  # pragma: no cover - himoya
+        return True
+
+
 #: `--loop` da ikki heartbeat oralig'i (navbat bo'sh bo'lsa ham shu
 #: oraliqда bir marta «tirikman» belgisi log'ga chiqadi).
 HEARTBEAT_EVERY = 30
@@ -110,6 +133,7 @@ class Command(BaseCommand):
         # bir marta, keyin har 3 soatda. FAQAT navbat bo'sh bo'lganda —
         # haqiqiy cheklar har doim birinchi (sales/selftest.py).
         first_selftest = True
+        started = time.monotonic()
         while not stop["now"]:
             close_old_connections()
             try:
@@ -121,7 +145,12 @@ class Command(BaseCommand):
                 self.stderr.flush()
 
             try:
-                if self.queue_empty() and (first_selftest or selftest.is_due()):
+                if (first_selftest and time.monotonic() - started < SCHEMA_WAIT_SECONDS
+                        and not schema_ready()):
+                    # Hub hali migratsiya qilmoqda — «deploy» sinovi keyingi aylanishda
+                    self.stdout.write("Sinov: baza hali tayyor emas (migratsiya ketmoqda) — kutamiz.")
+                    self.stdout.flush()
+                elif self.queue_empty() and (first_selftest or selftest.is_due()):
                     trigger = MoySkladCheck.DEPLOY if first_selftest else MoySkladCheck.PERIODIC
                     self.selftest(trigger)
                     first_selftest = False

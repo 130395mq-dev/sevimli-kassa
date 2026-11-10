@@ -16,6 +16,7 @@
   <nav class="tabs">
     <a href="{% url 'kpi:bosh' %}">Reyting</a>
     <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a href="{% url 'kpi:holat' %}">Tovar holati</a>
     <a href="{% url 'kpi:chop' %}">Chop etish</a>
     <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
     <a class="on" href="{% url 'kpi:qoida' %}">Qoida</a>
@@ -38,21 +39,38 @@
       <label><span>Minusdagi tovarlar ulushi</span><input type="number" min="0" name="w_minus_ulush" value="{{ rule.w_minus_ulush }}"></label>
       <label><span>Minuslarni muddatida tuzatish</span><input type="number" min="0" name="w_muddat" value="{{ rule.w_muddat }}"></label>
       <label><span>Ochiq muammolar muddatdan o'tmagani</span><input type="number" min="0" name="w_ochiq" value="{{ rule.w_ochiq }}"></label>
+      <label><span>Tovar yo'qligi <span class="sec">— sotuvdagi tovar 0 qoldiqda</span></span><input type="number" min="0" name="w_nol" value="{{ rule.w_nol }}"></label>
+      <label><span>Narx va hujjat nazorati</span><input type="number" min="0" name="w_narx" value="{{ rule.w_narx }}"></label>
       <label><span>Sennik o'z vaqtida <span class="sec">— hozircha baholanmaydi</span></span><input type="number" min="0" name="w_sennik" value="{{ rule.w_sennik }}"></label>
     </div>
-    <div class="note">Spisaniya, vozvrat va hujjatlar soni ball bermaydi — faqat ish hajmi sifatida ko'rsatiladi.</div>
+    <div class="note">Vaznlar nisbat sifatida ishlaydi: baholanmagan mezon (masalan sennik) o'rtachaga kirmaydi, qolganlari o'z vazni bilan.
+      Spisaniya, vozvrat va hujjatlar soni ball bermaydi — faqat ish hajmi sifatida ko'rsatiladi.</div>
 
     <h3>Minuslar</h3>
     <div class="fields">
       <label><span>Minus ulushi chegarasi, % <span class="sec">— shunda 0 ball</span></span><input name="minus_ulush_chegara" value="{{ rule.minus_ulush_chegara }}"></label>
-      <label><span>Yangi minusni tuzatish muddati, soat</span><input type="number" min="0" name="tuzatish_soat" value="{{ rule.tuzatish_soat }}"></label>
-      <label><span>Kuzatuvdan oldingi minuslar muddati, soat</span><input type="number" min="0" name="oldingi_tuzatish_soat" value="{{ rule.oldingi_tuzatish_soat }}"></label>
+      <label><span>Yangi minusni tuzatish muddati, ish soati <span class="sec">— tun hisoblanmaydi</span></span><input type="number" min="0" name="tuzatish_soat" value="{{ rule.tuzatish_soat }}"></label>
+      <label><span>Kuzatuvdan oldingi minuslar muddati, ish soati</span><input type="number" min="0" name="oldingi_tuzatish_soat" value="{{ rule.oldingi_tuzatish_soat }}"></label>
       <label><span>Tuzatilgan tovar shu kun ichida yana minusga tushsa — tuzatish hisoblanmaydi</span><input type="number" min="0" name="qayta_paydo_kun" value="{{ rule.qayta_paydo_kun }}"></label>
       <label><span>Faol tovar ta'rifi</span>
         <select name="faol_tovar">{% for k, n in faol %}<option value="{{ k }}" {% if rule.faol_tovar == k %}selected{% endif %}>{{ n }}</option>{% endfor %}</select>
       </label>
       <label><span>Faol tovar: sotuv davri, kun</span><input type="number" min="1" name="faol_sotuv_kun" value="{{ rule.faol_sotuv_kun }}"></label>
     </div>
+    <div class="note">Muddat ish soatida: ish kuni soatlari (pastda) orasidagi vaqt sanaladi, tun sanalmaydi.
+      Masalan 8–22 ish kunida kechqurun 21:00 da chiqqan minusning 12 soatlik muddati ertasi 19:00 da tugaydi.</div>
+
+    <h3>Tovar yo'qligi va narx nazorati</h3>
+    <div class="fields">
+      <label><span>Tovar yo'qligi chegarasi, % <span class="sec">— shunda 0 ball</span></span><input name="nol_chegara" value="{{ rule.nol_chegara }}"></label>
+      <label><span>Narx/hujjat: har holat uchun jarima, ball</span><input type="number" min="0" name="narx_jarima" value="{{ rule.narx_jarima }}"></label>
+      <label><span>Kuniga ruxsat etilgan qo'lda qoldiq tuzatish <span class="sec">— oprixodovaniye + spisaniya</span></span><input type="number" min="0" name="tuzatish_hujjat_chegara" value="{{ rule.tuzatish_hujjat_chegara }}"></label>
+    </div>
+    <div class="note">Tovar yo'qligi: oxirgi «sotuv davri» kunida shu do'kon kassalarida sotilgan tovarlarning necha foizi omborda 0 — chegarada 0 ball.
+      Narx va hujjat: 100 dan har holat uchun jarima ayiriladi — omborda bor, lekin chakana narxi yo'q tovar; chakana narxi tannarxdan (MoySklad «закупочная цена») past tovar
+      (ikkalasi ham minuslardagi muddat ichida tuzatilmasa: yangi chiqqani — «yangi minus» muddati, kuzatuvdan oldingisi — «kuzatuvdan oldingi» muddati);
+      kunlik chegaradan ortiq har bir qo'lda (MoySklad saytida) yaratilgan qoldiq tuzatish hujjati. Ro'yxat — «Tovar holati» yorlig'ida.
+      Yangi qoida saqlangan kundan amal qiladi; ish kuni tugagandan keyin saqlansa — ertasi kundan. Eski kunlar o'z versiyasida qoladi.</div>
 
     <h3>Ma'lumot yetarliligi</h3>
     <div class="fields">
@@ -71,9 +89,9 @@
 
   <h2>Versiyalar</h2>
   <div class="tablewrap"><table>
-    <tr><th>Versiya</th><th>Qachon</th><th>Kim</th><th>Ish / davomat</th><th>Izoh</th></tr>
+    <tr><th>Versiya</th><th>Saqlangan</th><th>Qaysi kundan amal qiladi</th><th>Kim</th><th>Ish / davomat</th><th>Izoh</th></tr>
     {% for v in versions %}
-      <tr><td>v{{ v.version }}</td><td>{{ v.created_at|date:"d.m.Y H:i" }}</td><td>{{ v.created_by|default:"—" }}</td><td>{{ v.w_ish }} / {{ v.w_davomat }}</td><td>{{ v.izoh }}</td></tr>
+      <tr><td>v{{ v.version }}</td><td>{{ v.created_at|date:"d.m.Y H:i" }}</td><td>{{ v.boshlanadi|date:"d.m.Y" }}</td><td>{{ v.created_by|default:"—" }}</td><td>{{ v.w_ish }} / {{ v.w_davomat }}</td><td>{{ v.izoh }}</td></tr>
     {% endfor %}
   </table></div>
 {% endblock %}

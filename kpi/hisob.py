@@ -11,7 +11,13 @@ Qoidalar:
   * taxmin (ehtimoliy sabab) ballga kirmaydi;
   * oddiy qoldiq tuzatishi (oprixodovaniye) yoki hujjatsiz yo'qolgan minus —
     rahbar tasdiqlamaguncha neytral (na yaxshi, na yomon);
-  * hujjatlar soni ball bermaydi — faqat «ish hajmi».
+  * hujjatlar soni ball bermaydi — faqat «ish hajmi»;
+  * har kun O'Z qoida versiyasi bilan baholanadi (`rule_for`): yangi qoida
+    kuchga kirgan kundan amal qiladi, eski kunlarni orqaga qarab o'zgartirmaydi.
+
+Mezonlar (2026-11-10 dan): minusdagi tovarlar ulushi, minuslarni muddatida
+tuzatish, ochiq muammolar muddati, tovar yo'qligi (sotuvdagi tovar 0 qoldiqda),
+narx va hujjat nazorati, sennik (hali baholanmaydi).
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from django.utils import timezone
 
 from . import ms
 from .davomat import baho as davomat_baho, manba as davomat_manba
-from .models import Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan
+from .models import Biriktirish, ChopEtish, Hujjat, KpiKun, KpiQoida, MinusIssue, MinusScan, TovarHolat
 
 D0 = Decimal(0)
 D100 = Decimal(100)
@@ -111,6 +117,21 @@ def _excluded(i: MinusIssue) -> bool:
     return i.confirmed_cause == "xato_emas"
 
 
+def _reopened(i: MinusIssue, rule: KpiQoida) -> bool:
+    """Tuzatilgan tovar SHU QOIDANING oynasi ichida yana minusga tushganmi.
+
+    `reopened` belgisini tekshiruv joriy qoida bilan qo'yadi; kun esa o'z
+    qoidasi bilan baholanadi — oyna uzaytirilganda (3 → 7 kun) eski kunlar
+    orqaga qarab jazolanmasin."""
+    if not i.reopened or not i.closed_at:
+        return False
+    again = (MinusIssue.objects.filter(previous=i).order_by("first_seen")
+             .values_list("first_seen", flat=True).first())
+    if again is None:
+        return True          # qaytgani yozilgan, bog'langan yozuv yo'q — belgiga ishonamiz
+    return again - i.closed_at <= timedelta(days=rule.qayta_paydo_kun)
+
+
 def m_muddat(wh, day, rule, now, cov) -> dict:
     m = {"key": "muddat", "nomi": "Minuslarni muddatida tuzatish", "vazn": rule.w_muddat}
     if cov["foiz"] is None or cov["foiz"] < rule.min_qamrov:
@@ -123,7 +144,7 @@ def m_muddat(wh, day, rule, now, cov) -> dict:
         if _excluded(i):
             neutral.append(f"{label}: rahbar «xato emas» deb belgilagan")
         elif i.closed_at and i.closed_at <= i.deadline:
-            if i.reopened:
+            if _reopened(i, rule):
                 bad.append(f"{label}: tuzatilgan, lekin {rule.qayta_paydo_kun} kun ichida yana minusga "
                            "tushdi — tuzatish hisoblanmadi")
             elif not i.resolution:
@@ -170,6 +191,83 @@ def m_ochiq(wh, day, rule, now, cov) -> dict:
             "formula": f"100 × (1 − {len(late)} / {len(issues)}) = {q2(ball)}"}
 
 
+def m_nol(wh, day, rule, cov) -> dict:
+    """Tovar yo'qligi (egasi, 2026-11-10): oxirgi N kunda shu do'kon kassalarida
+    sotilgan tovarlarning necha foizi 0 qoldiqda — tekshiruvlar o'rtachasi.
+    `nol_chegara` % va undan ko'p → 0 ball."""
+    m = {"key": "nol", "nomi": "Tovar yo'qligi (sotuvdagi tovar 0 qoldiqda)", "vazn": rule.w_nol}
+    if cov["foiz"] is None:
+        return {**m, "ball": None, "sabab": "Ish kuni hali boshlanmagan"}
+    if cov["foiz"] < rule.min_qamrov:
+        return {**m, "ball": None, "sabab": "Ma'lumot yetarli emas (tekshiruv qamrovi past)"}
+    rows = [s for s in cov["scans"] if len(s) > 3 and s[3]]
+    if not rows:
+        return {**m, "ball": None,
+                "sabab": "Sotuvdagi tovarlar soni noma'lum — do'konga kassa bog'lanmagan yoki mezon hali hisoblanmagan"}
+    share = Decimal(sum(Decimal(s[2] or 0) * 100 / Decimal(s[3]) for s in rows)) / len(rows)
+    ball = clamp(D100 * (1 - share / Decimal(rule.nol_chegara)))
+    return {**m, "ball": q2(ball), "sabab": "",
+            "kirish": {"nol_ortacha": str(q2(Decimal(sum(s[2] or 0 for s in rows)) / len(rows))),
+                       "sotuv_tovar": rows[-1][3], "ulush_foiz": str(q2(share)),
+                       "chegara_foiz": str(rule.nol_chegara), "tekshiruvlar": len(rows),
+                       "sotuv_tarif": f"oxirgi {rule.faol_sotuv_kun} kunda shu do'kon kassalarida sotilgan tovarlar"},
+            "formula": f"100 × (1 − {q2(share)}% / {rule.nol_chegara}%) = {q2(ball)}"}
+
+
+def narx_deadline(h: TovarHolat, rule: KpiQoida):
+    """Narx holatini tuzatish muddati — minuslardagi kabi ISH SOATIDA: yangi
+    holat `tuzatish_soat`, kuzatuvdan oldingisi `oldingi_tuzatish_soat`."""
+    from .minus import work_deadline
+
+    hours = rule.oldingi_tuzatish_soat if h.pre_tracking else rule.tuzatish_soat
+    return work_deadline(h.first_seen, hours, rule.kun_boshi, rule.kun_oxiri)
+
+
+def m_narx(wh, day, rule, now, cov) -> dict:
+    """Narx va hujjat nazorati (egasi, 2026-11-10). 100 dan har holat uchun
+    `narx_jarima` ball ayiriladi:
+      * omborda bor, lekin chakana narxi 0 tovar — muddatida tuzatilmagan;
+      * chakana narxi tannarxdan past tovar — muddatida tuzatilmagan;
+      * kuniga `tuzatish_hujjat_chegara` dan ortiq qo'lda qoldiq tuzatish
+        (oprixodovaniye + spisaniya) — har ortig'i.
+    Muddat minuslardagi kabi (`narx_deadline`): yangi chiqqan holatni tuzatishga
+    vaqt beriladi, kuzatuvdan oldingilarga — uzoqroq."""
+    m = {"key": "narx", "nomi": "Narx va hujjat nazorati", "vazn": rule.w_narx}
+    if cov["foiz"] is None:
+        return {**m, "ball": None, "sabab": "Ish kuni hali boshlanmagan"}
+    if cov["foiz"] < rule.min_qamrov or not cov["scans"]:
+        return {**m, "ball": None, "sabab": "Ma'lumot yetarli emas (tekshiruv qamrovi past)"}
+    start, end = ms.day_bounds(day)
+    at = min(end, now)
+    # Kun oxirida (yoki hozir) ochiq turgan narx holatlari
+    holat = (TovarHolat.objects.filter(warehouse_ms_id=wh, first_seen__lte=at)
+             .exclude(kind=TovarHolat.NOL).filter(Q(closed_at__isnull=True) | Q(closed_at__gt=at)))
+    narxsiz, arzon, kutilmoqda = [], [], 0
+    for h in holat:
+        if narx_deadline(h, rule) >= at:
+            kutilmoqda += 1            # tuzatish muddati hali o'tmagan — jarima yo'q
+        elif h.kind == TovarHolat.NARXSIZ:
+            narxsiz.append(h.name or str(h.product_ms_id))
+        else:
+            arzon.append(h.name or str(h.product_ms_id))
+    docs = Hujjat.objects.filter(kind__in=(Hujjat.ENTER, Hujjat.LOSS), store_ms_id=wh,
+                                 created__gte=start, created__lt=end, deleted_at__isnull=True)
+    # Faqat qo'lda (MoySklad saytida) yaratilgani ANIQ bo'lganlari sanaladi:
+    # integratsiya (dastur) yaratgani — qo'lda tuzatish emas; kim yaratgani
+    # hali tekshirilmagan hujjat uchun jarima berilmaydi (audit kelgach
+    # kun qayta hisoblanadi)
+    tuzatish = docs.filter(creator_checked=True, creator_source__in=list(ms.MANUAL_SOURCES)).count()
+    ortiq = max(0, tuzatish - rule.tuzatish_hujjat_chegara)
+    holatlar = len(narxsiz) + len(arzon) + ortiq
+    ball = clamp(D100 - Decimal(rule.narx_jarima) * holatlar)
+    return {**m, "ball": q2(ball), "sabab": "",
+            "kirish": {"narxsiz": narxsiz[:30], "arzon": arzon[:30], "narxsiz_soni": len(narxsiz),
+                       "arzon_soni": len(arzon), "kutilmoqda": kutilmoqda, "tuzatish_hujjat": tuzatish,
+                       "tuzatish_chegara": rule.tuzatish_hujjat_chegara, "ortiq": ortiq},
+            "formula": f"100 − {rule.narx_jarima} × ({len(narxsiz)} narxsiz + {len(arzon)} tannarxdan past + "
+                       f"{ortiq} ortiqcha tuzatish) = {q2(ball)}"}
+
+
 def m_sennik(rule) -> dict:
     return {"key": "sennik", "nomi": "Kerakli senniklar o'z vaqtida", "vazn": rule.w_sennik, "ball": None,
             "sabab": "Hali baholanmaydi: auditda shablon (sennik yoki etiketka) ko'rinmaydi va "
@@ -200,7 +298,8 @@ def compute(b: Biriktirish, day: date, rule: KpiQoida, now=None) -> KpiKun:
     tov, wh = b.tovaroved, str(b.warehouse_ms_id)
     cov = coverage(wh, day, rule, now)
     mezon = [m_minus_ulush(wh, day, rule, cov), m_muddat(wh, day, rule, now, cov),
-             m_ochiq(wh, day, rule, now, cov), m_sennik(rule)]
+             m_ochiq(wh, day, rule, now, cov), m_nol(wh, day, rule, cov),
+             m_narx(wh, day, rule, now, cov), m_sennik(rule)]
     used = [x for x in mezon if x["ball"] is not None and x["vazn"]]
     ish = None
     if used:
@@ -238,25 +337,55 @@ def compute(b: Biriktirish, day: date, rule: KpiQoida, now=None) -> KpiKun:
     return obj
 
 
+def rule_start(rule: KpiQoida) -> date:
+    """Qoida qaysi kundan amal qiladi: saqlangan kundan; ish kuni tugagandan
+    keyin (kechqurun) saqlangan bo'lsa — ertasi kundan (o'tib bo'lgan kun
+    yangi qoida bilan qayta baholanmaydi)."""
+    local = rule.created_at.astimezone(ms.TASHKENT)
+    return local.date() + timedelta(days=1 if local.hour >= rule.kun_oxiri else 0)
+
+
+def rule_for(day: date, computed_version: int | None = None, rules: list[KpiQoida] | None = None) -> KpiQoida:
+    """Shu kun qaysi qoida bilan baholanadi.
+
+    Qoida O'ZI KUCHGA KIRGAN kundan boshlab amal qiladi: yangi (qattiqroq)
+    versiya undan oldingi kunlarni orqaga qarab qayta baholamaydi (egasi,
+    2026-11-10 — eski kunlar o'z versiyasida qoladi). Kun avval ataylab yangiroq
+    versiya bilan qayta hisoblangan bo'lsa (Qoida sahifasidagi «oxirgi N kunni
+    qayta hisoblash») — o'sha versiya saqlanadi."""
+    rules = rules if rules is not None else list(KpiQoida.objects.order_by("version"))
+    if not rules:
+        return KpiQoida.current()
+    in_force = [r for r in rules if rule_start(r) <= day]
+    rule = in_force[-1] if in_force else rules[0]
+    if computed_version and computed_version > rule.version:
+        rule = next((r for r in rules if r.version == computed_version), rule)
+    return rule
+
+
 def recompute_day(day: date, rule: KpiQoida | None = None, now=None) -> int:
-    rule = rule or KpiQoida.current()
+    """`rule` berilsa — hamma shu qoida bilan (ataylab qayta hisoblash);
+    berilmasa — kunning o'z qoidasi bilan (`rule_for`)."""
+    rules = None if rule is not None else list(KpiQoida.objects.order_by("version"))
+    versions = ({} if rule is not None else
+                dict(KpiKun.objects.filter(sana=day).values_list("tovaroved_id", "qoida_version")))
     seen, n = set(), 0
     for b in assignments_on(day):
         if b.tovaroved_id in seen:
             continue  # bir kunda bitta do'kon (eng oxirgi biriktirish)
         seen.add(b.tovaroved_id)
-        compute(b, day, rule, now)
+        compute(b, day, rule or rule_for(day, versions.get(b.tovaroved_id), rules), now)
         n += 1
     return n
 
 
 def recompute_recent(now=None) -> int:
-    """Bugun va oxirgi kunlar (qayta paydo bo'lish oynasi) qayta hisoblanadi;
-    undan eski kunlar o'z qoida versiyasi bilan qoladi."""
+    """Bugun va oxirgi kunlar (qayta paydo bo'lish oynasi) qayta hisoblanadi —
+    har kun O'Z qoida versiyasi bilan; undan eski kunlarga tegilmaydi."""
     now = now or timezone.now()
-    rule = KpiQoida.current()
     today = ms.local_date(now)
-    return sum(recompute_day(today - timedelta(days=i), rule, now) for i in range(rule.qayta_paydo_kun + 2))
+    window = KpiQoida.current().qayta_paydo_kun + 2
+    return sum(recompute_day(today - timedelta(days=i), None, now) for i in range(window))
 
 
 def period(tov, start: date, end: date) -> dict:

@@ -92,6 +92,11 @@ class Product(models.Model):
     # Narx tiyinlarda saqlanadi — MoySklad ham shunday beradi.
     # Float ishlatmaymiz, chunki pul hisobida yaxlitlash xatosi bo'lmasligi kerak.
     sale_price = models.BigIntegerField(default=0, help_text="Tiyinlarda")
+    # Tannarx (MoySklad buyPrice), tiyinlarda — KPI «narx nazorati» uchun
+    # (chakana narxi tannarxdan past tovar). Kassaga yuborilmaydi.
+    # db_default: deploy paytida ESKI kod (bu ustunni bilmaydi) tovar yaratsa
+    # ham xato bermasin — standart qiymat bazaning o'zida turadi.
+    buy_price = models.BigIntegerField(default=0, db_default=0, help_text="Tannarx, tiyinlarda")
 
     uom_name = models.CharField(max_length=64, blank=True, help_text="dona, kg, litr")
     is_weight = models.BooleanField(

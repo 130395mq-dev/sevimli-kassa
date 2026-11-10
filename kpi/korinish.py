@@ -107,6 +107,19 @@ def latest_counts(wh):
     return neg, active
 
 
+def latest_holat(wh) -> dict | None:
+    """Oxirgi tekshiruvdagi tovar holati: {nol, selling, narx, foiz} —
+    0 qoldiqdagi sotuv tovarlari, sotuv tovarlari jami, narx/tannarx holatlari.
+    Eski tekshiruv (mezon kiritilmasdan oldingi) — None."""
+    scan = MinusScan.objects.filter(per_wh__has_key=str(wh)).order_by("-at").first()
+    row = (scan.per_wh.get(str(wh)) or []) if scan else []
+    if len(row) < 5:
+        return None
+    nol, selling, narx = row[2] or 0, row[3], row[4] or 0
+    foiz = round(nol * 100 / selling, 1) if selling else None
+    return {"nol": nol, "selling": selling, "narx": narx, "foiz": foiz}
+
+
 def thin_labels(xlabels, gap, right):
     """X o'qi yozuvlari bir-biriga tegmasin: oralig'i `gap` dan kam bo'lsa
     tashlab ketiladi; oxirgisi doim qoladi (eng muhim nuqta) va o'ng
