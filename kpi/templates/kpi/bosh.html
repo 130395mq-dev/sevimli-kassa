@@ -178,12 +178,32 @@
           {% endif %}
         </div>
 
+        <div class="kblock">
+          {# Karta o'zi havola (<a>) — ichida boshqa havola bo'lmaydi; ro'yxat «Tovar holati» yorlig'ida #}
+          <div class="kblock-h">
+            <span>Tovar yo'qligi</span>
+            {% if r.nol_meter %}<span class="num"><b>{{ r.holat.foiz }}%</b> <span class="st-{{ r.nol_meter.status }}">{{ r.nol_meter.label }}</span></span>{% else %}<span class="sec">—</span>{% endif %}
+          </div>
+          {% if r.nol_meter %}
+            <div class="meter" role="img" aria-label="{{ r.holat.foiz }}%, chegara {{ r.nol_meter.chegara_txt }}%">
+              <div class="meter-fill {{ r.nol_meter.status }}" style="width: {{ r.nol_meter.fill }}%"></div>
+              <div class="meter-mark" style="left: {{ r.nol_meter.mark }}%"></div>
+            </div>
+            <div class="meter-legend"><span>{{ r.holat.nol }} / {{ r.holat.selling }} sotuvdagi tovar tugagan</span><span>chegara {{ r.nol_meter.chegara_txt }}%</span></div>
+          {% elif r.holat %}
+            <div class="note">Do'konga kassa bog'lanmagan — sotuvdagi tovarlar noma'lum.</div>
+          {% else %}
+            <div class="note">Keyingi tekshiruvdan keyin chiqadi.</div>
+          {% endif %}
+        </div>
+
         <div class="mini">
           <div><b>{{ r.st.yangi }}</b>yangi minus</div>
           <div><b>{{ r.st.tuzatilgan }}</b>yo'qolgan minus</div>
           <div class="{% if r.st.kechikkan %}bad{% endif %}"><b>{{ r.st.kechikkan }}</b>muddati o'tgan</div>
           <div class="{% if r.st.qayta %}bad{% endif %}"><b>{{ r.st.qayta }}</b>qayta minus</div>
           <div><b>{{ r.prints.noyob }}</b>tovar chop etildi</div>
+          <div class="{% if r.holat.narx %}bad{% endif %}"><b>{{ r.holat.narx|default:0 }}</b>narx holati</div>
         </div>
         {% if r.st.qayta %}<div class="note minus kgap">{{ r.st.qayta }} ta tuzatilgan tovar {{ rule.qayta_paydo_kun }} kun ichida yana minusga tushdi — bu tuzatishlar ballda hisoblanmadi</div>{% endif %}
 

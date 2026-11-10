@@ -58,6 +58,11 @@
                   {% if m.kirish.neytral %}<div class="note">Neytral: {{ m.kirish.neytral|join:"; " }}</div>{% endif %}
                   {% if m.kirish.faol_tarif %}<div class="note">Faol tovar: {{ m.kirish.faol_tarif }} — {{ m.kirish.faol_tovar }} ta; minus o'rtacha {{ m.kirish.minus_ortacha }} ({{ m.kirish.tekshiruvlar }} tekshiruv)</div>{% endif %}
                   {% if m.kirish.ochiq %}<div class="note">Ochiq: {{ m.kirish.ochiq }}, muddati o'tgan: {{ m.kirish.muddati_otgan }}, o'rtacha yoshi {{ m.kirish.ortacha_yosh_soat }} soat</div>{% endif %}
+                  {% if m.kirish.sotuv_tarif %}<div class="note">Sotuvdagi tovar: {{ m.kirish.sotuv_tarif }} — {{ m.kirish.sotuv_tovar }} ta; 0 qoldiqda o'rtacha {{ m.kirish.nol_ortacha }} ({{ m.kirish.tekshiruvlar }} tekshiruv)</div>{% endif %}
+                  {% if m.key == "narx" and m.ball is not None %}<div class="note">Narxsiz: {{ m.kirish.narxsiz_soni }}{% if m.kirish.narxsiz %} ({{ m.kirish.narxsiz|join:"; " }}){% endif %};
+                    tannarxdan past: {{ m.kirish.arzon_soni }}{% if m.kirish.arzon %} ({{ m.kirish.arzon|join:"; " }}){% endif %};
+                    qo'lda qoldiq tuzatish: {{ m.kirish.tuzatish_hujjat }} hujjat (ruxsat {{ m.kirish.tuzatish_chegara }}, ortig'i {{ m.kirish.ortiq }}){% if m.kirish.kutilmoqda %};
+                    tuzatish muddati hali o'tmagan narx holati: {{ m.kirish.kutilmoqda }} (jarimasiz){% endif %}</div>{% endif %}
                 </div>
                 <div class="num">{% if m.ball is not None %}<b>{{ m.ball }}</b>{% else %}<span class="sec">—</span>{% endif %}</div>
               </div>

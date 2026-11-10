@@ -4,6 +4,7 @@
     <a {% if on == "reyting" %}class="on" {% endif %}href="{% url 'kpi:bosh' %}{% if davr %}?davr={{ davr }}{% endif %}">Reyting</a>
     {% if panel_tovaroved %}<a {% if on == "men" %}class="on" {% endif %}href="{% url 'kpi:men' %}">Mening ishim</a>{% endif %}
     <a {% if on == "minus" %}class="on" {% endif %}href="{% url 'kpi:minuslar' %}">Minuslar</a>
+    <a {% if on == "holat" %}class="on" {% endif %}href="{% url 'kpi:holat' %}">Tovar holati</a>
     {% if owner %}
     <a href="{% url 'kpi:chop' %}">Chop etish</a>
     <a href="{% url 'kpi:boglash' %}">Bog'lash</a>

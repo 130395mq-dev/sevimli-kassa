@@ -1,0 +1,70 @@
+{% extends "dashboard/base.html" %}
+{% load pul kpi_tags %}
+
+{% block title %}Tovar holati — Tovarovedlar{% endblock %}
+{% block nav_kpi %}on{% endblock %}
+{% block crumb %}Nazorat · Tovar holati{% endblock %}
+
+{% block body %}
+  {% include "kpi/_style.html" %}
+  <h1>Tovar holati</h1>
+  <div class="sub">Sotuvdagi tovar omborda tugagan (0 qoldiq), chakana narxi yo'q yoki tannarxdan past tovarlar —
+    «Tovar yo'qligi» va «Narx va hujjat nazorati» mezonlari shulardan hisoblanadi.
+    Minus (manfiy qoldiq) alohida — «Minuslar» yorlig'ida.</div>
+
+  {% include "kpi/_tabs.html" with on="holat" %}
+
+  <form method="get" class="davr">
+    <span class="presets">
+      <a class="chip {% if not tur %}on{% endif %}" href="?holat={{ holat }}{% if dokon %}&dokon={{ dokon }}{% endif %}">Hammasi</a>
+      {% for k, n in turlar %}
+        <a class="chip {% if tur == k %}on{% endif %}" href="?tur={{ k }}&holat={{ holat }}{% if dokon %}&dokon={{ dokon }}{% endif %}">{% if k == "nol" %}Tugagan{% elif k == "narxsiz" %}Narxsiz{% else %}Tannarxdan past{% endif %}{% with c=counts|get_item:k %}{% if c %} · {{ c }}{% endif %}{% endwith %}</a>
+      {% endfor %}
+    </span>
+    {% if tur %}<input type="hidden" name="tur" value="{{ tur }}">{% endif %}
+    <label>Do'kon
+      <select name="dokon">
+        <option value="">— hammasi —</option>
+        {% for id, name in stores %}<option value="{{ id }}" {% if dokon == id %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Holat
+      <select name="holat">
+        <option value="open" {% if holat == "open" %}selected{% endif %}>Ochiq</option>
+        <option value="closed" {% if holat == "closed" %}selected{% endif %}>Tuzatilgan</option>
+        <option value="all" {% if holat == "all" %}selected{% endif %}>Hammasi</option>
+      </select>
+    </label>
+    <label>Qidirish <input type="search" name="q" value="{{ q }}" placeholder="nomi, kodi" style="padding: 6px 10px; font-size: 13px; margin: 0;"></label>
+    <button type="submit" class="small">Ko'rsatish</button>
+    <span class="sec">{{ total }} ta</span>
+  </form>
+
+  <div class="note" style="margin: -6px 0 12px;">
+    <b>Tugagan</b> — oxirgi {{ rule.faol_sotuv_kun }} kunda shu do'kon kassalarida sotilgan, hozir omborda 0 (sotuv yo'qotilmoqda: prixod kiritilmagan yoki buyurtma berilmagan).
+    <b>Narxsiz</b> — omborda bor, chakana narxi 0 (kassada sotib bo'lmaydi).
+    <b>Tannarxdan past</b> — chakana narxi MoySklad'dagi «закупочная цена» dan past.
+    Narx holati muddatida tuzatilmasa «Narx va hujjat nazorati» ballini kamaytiradi: yangi chiqqaniga {{ rule.tuzatish_soat }} ish soati,
+    kuzatuvdan oldingisiga {{ rule.oldingi_tuzatish_soat }} ish soati beriladi. Holat tuzatilgach keyingi tekshiruvda o'z-o'zidan yopiladi.
+  </div>
+
+  <div class="tablewrap">
+  <table>
+    <tr><th>Tur</th><th>Tovar</th><th>Do'kon / mas'ul</th><th class="right">Ma'lumot</th><th>Birinchi ko'rildi</th><th>Muddat</th><th>Holat</th></tr>
+    {% for h in rows %}
+      <tr>
+        <td class="tight">{% if h.kind == "nol" %}<span class="badge err">tugagan</span>{% elif h.kind == "narxsiz" %}<span class="badge warn">narxsiz</span>{% else %}<span class="badge warn">tannarxdan past</span>{% endif %}</td>
+        <td><b>{{ h.name|default:h.product_ms_id }}</b><div class="sec">{{ h.code }}</div></td>
+        <td>{{ h.warehouse_name }}<div class="sec">{{ h.tovaroved.name|default:"mas'ul biriktirilmagan" }}</div></td>
+        <td class="right num">{% if h.kind == "nol" %}{{ h.sotuv_dona|floatformat:"-3" }}<div class="sec">{{ rule.faol_sotuv_kun }} kunda sotilgan</div>{% else %}{% if h.sale_price %}{{ h.sale_price|som_tiyin }} so'm{% else %}<span class="minus">narx yo'q</span>{% endif %}<div class="sec">tannarx {% if h.buy_price %}{{ h.buy_price|som_tiyin }}{% else %}—{% endif %}</div>{% endif %}</td>
+        <td class="tight">{% if h.pre_tracking %}<span class="sec">kuzatuvdan oldin<br>(haqiqiy boshlanishi noma'lum)</span>{% else %}{{ h.first_seen|date:"d.m H:i" }}{% endif %}</td>
+        <td class="tight">{% if h.muddat %}{{ h.muddat|date:"d.m H:i" }}{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td>{% if h.status == "open" %}<span class="badge {% if h.kechikkan %}err{% else %}warn{% endif %}">{% if h.kechikkan %}kechikkan{% else %}ochiq{% endif %}</span><div class="sec">oxirgi tekshiruv {{ h.last_seen|date:"d.m H:i" }}</div>{% else %}<span class="badge ok">tuzatildi</span><div class="sec">{{ h.closed_at|date:"d.m H:i" }}</div>{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">{% if holat == "open" %}Ochiq holat yo'q.{% else %}Yozuv yo'q.{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% if total > 300 %}<div class="sec" style="margin-top: 8px;">Birinchi 300 tasi ko'rsatildi — do'kon, tur yoki qidiruv bilan toraytiring.</div>{% endif %}
+{% endblock %}
