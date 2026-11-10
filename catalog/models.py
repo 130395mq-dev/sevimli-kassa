@@ -222,6 +222,24 @@ class Customer(models.Model):
     birth_day = models.PositiveSmallIntegerField(null=True, blank=True)
     birth_month = models.PositiveSmallIntegerField(null=True, blank=True)
     birth_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Kim va qachon kiritgani (egasi, 2026-11-10: «kimniki kiritdi, nechta
+    # odamniki kirgizilgan — paneldan ko'rib bo'lmaydi-ku»). Kassadan kelsa —
+    # kassa va o'sha paytdagi kassir (X-Session), paneldan — foydalanuvchi.
+    BIRTH_KASSA, BIRTH_ROYXAT, BIRTH_PANEL = "kassa", "royxat", "panel"
+    BIRTH_SOURCES = [
+        (BIRTH_KASSA, "Kassada (karta urilganda)"),
+        (BIRTH_ROYXAT, "Kassada (ro'yxatdan o'tkazishda)"),
+        (BIRTH_PANEL, "Panelda"),
+    ]
+    birth_set_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    birth_set_source = models.CharField(max_length=8, blank=True, choices=BIRTH_SOURCES)
+    birth_set_register = models.ForeignKey(
+        "sales.Register", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+    #: Kassir ismi nusxa qilib saqlanadi (kassir keyin ishdan ketsa ham ko'rinsin)
+    birth_set_cashier = models.CharField(max_length=128, blank=True)
+    #: Panel foydalanuvchisi (login)
+    birth_set_user = models.CharField(max_length=150, blank=True)
 
     ms_card_pending = models.BooleanField(
         default=False,
@@ -263,15 +281,45 @@ class Customer(models.Model):
         return tugilgan_kun.is_today(self.birth_day, self.birth_month,
                                      today or timezone.localdate())
 
-    def set_birthday(self, text: str) -> None:
+    BIRTH_FIELDS = ("birth_day", "birth_month", "birth_year", "birth_set_at",
+                    "birth_set_source", "birth_set_register", "birth_set_cashier", "birth_set_user")
+
+    def set_birthday(self, text: str, *, source: str = "", register=None,
+                     cashier: str = "", user: str = "", now=None) -> None:
         """Kassir yozgan matndan saqlaydi; bo'sh matn — o'chiradi.
-        Noto'g'ri sana — tugilgan_kun.BirthdayError."""
+        Noto'g'ri sana — tugilgan_kun.BirthdayError.
+
+        `source`/`register`/`cashier`/`user` — kim kiritgani (panelda
+        ko'rinadi). Saqlash: save(update_fields=Customer.BIRTH_FIELDS)."""
+        from django.utils import timezone
+
         from . import tugilgan_kun
 
         if not (text or "").strip():
             self.birth_day = self.birth_month = self.birth_year = None
+            self.birth_set_at = None
+            self.birth_set_source = self.birth_set_cashier = self.birth_set_user = ""
+            self.birth_set_register = None
             return
         self.birth_day, self.birth_month, self.birth_year = tugilgan_kun.parse(text)
+        self.birth_set_at = now or timezone.now()
+        self.birth_set_source = source
+        self.birth_set_register = register
+        self.birth_set_cashier = (cashier or "")[:128]
+        self.birth_set_user = (user or "")[:150]
+
+    @property
+    def birth_set_label(self) -> str:
+        """Kim kiritgani — «Shaxar kassa 2 · Dilnoza», «Panel · akmal» yoki
+        «» (eski yozuv, kim kiritgani saqlanmagan)."""
+        if not self.birth_set_at:
+            return ""
+        if self.birth_set_source == self.BIRTH_PANEL:
+            return "Panel" + (f" · {self.birth_set_user}" if self.birth_set_user else "")
+        parts = [self.birth_set_register.name if self.birth_set_register_id else "Kassa"]
+        if self.birth_set_cashier:
+            parts.append(self.birth_set_cashier)
+        return " · ".join(parts)
 
 
 class Organization(models.Model):

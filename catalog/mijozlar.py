@@ -67,12 +67,15 @@ def find_by_phone(phone: str) -> list[Customer]:
 
 
 def register(name: str, phone: str, card: str,
-             birthday: str = "") -> tuple[Customer, bool]:
+             birthday: str = "", *, register=None, cashier: str = "") -> tuple[Customer, bool]:
     """Kassadan kelgan yangi mijoz. Qaytaradi: (mijoz, eski_yozuv_tiklandimi).
 
     `birthday` — «KK.OO[.YYYY]» matni; noto'g'ri bo'lsa RegistrationError.
     Eski yozuv tiklansa va unda tug'ilgan kun yo'q bo'lsa — shu yoziladi.
+    `register`/`cashier` — tug'ilgan kunni kim kiritgani (panelda ko'rinadi).
     """
+    from django.utils import timezone
+
     from . import tugilgan_kun
 
     name, phone, card = (name or "").strip(), (phone or "").strip(), (card or "").strip()
@@ -82,6 +85,8 @@ def register(name: str, phone: str, card: str,
             birth = tugilgan_kun.parse(birthday)
         except tugilgan_kun.BirthdayError as e:
             raise RegistrationError(str(e), status=400) from e
+    who = dict(birth_set_at=timezone.now(), birth_set_source=Customer.BIRTH_ROYXAT,
+               birth_set_register=register, birth_set_cashier=(cashier or "")[:128]) if birth else {}
     with transaction.atomic():
         if card:
             owner = Customer.objects.filter(archived=False, discount_card=card).first()
@@ -107,8 +112,9 @@ def register(name: str, phone: str, card: str,
                     old.ms_card_pending = True
                 if birth and not old.birth_day:
                     old.birth_day, old.birth_month, old.birth_year = birth
-                old.save(update_fields=["discount_card", "ms_card_pending",
-                                        "birth_day", "birth_month", "birth_year"])
+                    for k, v in who.items():
+                        setattr(old, k, v)
+                old.save(update_fields=["discount_card", "ms_card_pending", *Customer.BIRTH_FIELDS])
                 logger.info("Mijoz kartasi tiklandi: #%s %s (karta …%s)", old.pk, old.name, card[-4:])
                 return old, True
         cust = Customer.objects.create(
@@ -117,6 +123,7 @@ def register(name: str, phone: str, card: str,
             birth_day=birth[0] if birth else None,
             birth_month=birth[1] if birth else None,
             birth_year=birth[2] if birth else None,
+            **who,
         )
     logger.info("Yangi mijoz kassadan: #%s %s", cust.pk, cust.name)
     return cust, False

@@ -119,6 +119,57 @@ class ApiTest(TestCase):
                              content_type="application/json")
         self.assertEqual(r.status_code, 401)
 
+    # --- kim kiritgani (egasi, 2026-11-10)
+
+    def _kassir_sessiya(self, name="Dilnoza"):
+        from sales.models import Cashier
+        cashier = Cashier.objects.create(login=name.lower(), name=name)
+        cashier.set_password("1234")
+        cashier.save()
+        r = self._post("/api/v1/login", {"login": cashier.login, "password": "1234"})
+        self.assertEqual(r.status_code, 200, r.content)
+        return {"HTTP_X_SESSION": r.json()["session"]}
+
+    def test_kim_kiritgani_kassa_va_kassir(self):
+        c = Customer.objects.create(ms_id=uuid.uuid4(), name="Eski", discount_card="7700018")
+        sess = self._kassir_sessiya("Dilnoza")
+        r = self.client.post("/api/v1/customers/birthday", data=json.dumps({"id": c.pk, "birthday": "3.11"}),
+                             content_type="application/json", **self.auth, **sess)
+        self.assertEqual(r.status_code, 200, r.content)
+        c.refresh_from_db()
+        self.assertEqual(c.birth_set_source, Customer.BIRTH_KASSA)
+        self.assertEqual(c.birth_set_register, self.reg)
+        self.assertEqual(c.birth_set_cashier, "Dilnoza")
+        self.assertIsNotNone(c.birth_set_at)
+        self.assertEqual(c.birth_set_label, "Kassa-1 · Dilnoza")
+        # O'chirilsa — kim kiritgani ham o'chadi
+        self._post("/api/v1/customers/birthday", {"id": c.pk, "birthday": ""})
+        c.refresh_from_db()
+        self.assertIsNone(c.birth_set_at)
+        self.assertEqual((c.birth_set_cashier, c.birth_set_source, c.birth_set_label), ("", "", ""))
+
+    def test_kassaning_oz_logini_bilan(self):
+        """Sessiya tokeni yo'q (kassa o'z logini bilan) — kassir «», faqat kassa."""
+        c = Customer.objects.create(ms_id=uuid.uuid4(), name="Eski", discount_card="7700019")
+        self._post("/api/v1/customers/birthday", {"id": c.pk, "birthday": "3.11"})
+        c.refresh_from_db()
+        self.assertEqual((c.birth_set_register, c.birth_set_cashier), (self.reg, ""))
+        self.assertEqual(c.birth_set_label, "Kassa-1")
+
+    def test_royxatdan_otkazishda_kim(self):
+        sess = self._kassir_sessiya("Nodira")
+        r = self.client.post("/api/v1/customers/create",
+                             data=json.dumps({"name": "Yangi Mijoz", "phone": "", "card": "7700020", "birthday": "12.05"}),
+                             content_type="application/json", **self.auth, **sess)
+        self.assertEqual(r.status_code, 200, r.content)
+        c = Customer.objects.get(discount_card="7700020")
+        self.assertEqual((c.birth_set_source, c.birth_set_cashier), (Customer.BIRTH_ROYXAT, "Nodira"))
+        self.assertEqual(c.birth_set_register, self.reg)
+        # Sanasiz ro'yxat — kim kiritgani ham bo'sh
+        r = self._post("/api/v1/customers/create", {"name": "Sanasiz Mijoz", "phone": "", "card": "7700021"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(Customer.objects.get(discount_card="7700021").birth_set_at)
+
 
 class PanelTest(TestCase):
     def setUp(self):
@@ -138,3 +189,38 @@ class PanelTest(TestCase):
         self.assertContains(r, "Oy 1 dan 12 gacha")
         self.cust.refresh_from_db()
         self.assertEqual(self.cust.birth_year, 1990)          # o'zgarmadi
+        # Paneldan kiritilgani yoziladi va sahifada ko'rinadi
+        self.assertEqual((self.cust.birth_set_source, self.cust.birth_set_user), (Customer.BIRTH_PANEL, "egasi"))
+        self.assertContains(r, "Panel · egasi")
+
+    def test_bonus_sahifasida_tugilgan_kunlar(self):
+        from django.utils import timezone
+
+        from sales.models import Register
+        store = RetailStore.objects.create(ms_id=uuid.uuid4(), name="Sinov")
+        reg = Register.objects.create(code="k2", name="Shaxar kassa 2", store=store)
+        now = timezone.now()
+        for i, (name, who) in enumerate([("A Mijoz", "Dilnoza"), ("B Mijoz", "Dilnoza"), ("C Mijoz", "")]):
+            c = Customer.objects.create(ms_id=uuid.uuid4(), name=name, discount_card=f"770010{i}")
+            c.set_birthday("12.05", source=Customer.BIRTH_KASSA, register=reg, cashier=who, now=now)
+            c.save()
+        Customer.objects.create(ms_id=uuid.uuid4(), name="Eski Yozuv", discount_card="7700110",
+                                birth_day=1, birth_month=1)                     # kim kiritgani yo'q
+        Customer.objects.create(ms_id=uuid.uuid4(), name="Kunsiz Mijoz", discount_card="7700111")
+        Customer.objects.create(ms_id=uuid.uuid4(), name="Kartasiz", discount_card="")  # hisobga kirmaydi
+        r = self.client.get("/bonus/")
+        self.assertContains(r, "Tug'ilgan kunlar")
+        # kartali: self.cust + 3 + Eski + Kunsiz = 6; kiritilgan: 3 + Eski = 4
+        self.assertContains(r, "4 <span class=\"sec\" style=\"font-weight:400;\">/ 6 (67%)", html=False)
+        self.assertContains(r, "Kiritilmaganlar: 2")
+        self.assertContains(r, "Shaxar kassa 2 · Dilnoza")
+        self.assertContains(r, "Kim kiritgani saqlanmagan")
+        # Kiritilmaganlar ro'yxati
+        # («A Mijoz» «Oxirgi kiritilganlar» jadvalida ham bor — ro'yxatda qo'shimcha marta chiqadi)
+        r = self.client.get("/bonus/?tk=yoq")
+        self.assertContains(r, "Kunsiz Mijoz")
+        self.assertContains(r, "Aliyeva Dilnoza")
+        self.assertEqual(r.content.decode().count("A Mijoz"), 1)
+        r = self.client.get("/bonus/?tk=bor")
+        self.assertEqual(r.content.decode().count("A Mijoz"), 2)
+        self.assertNotContains(r, "Kunsiz Mijoz")
