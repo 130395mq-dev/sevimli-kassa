@@ -19,11 +19,12 @@ Uchta narsa ko'rinadi, muhimlik tartibida:
 from __future__ import annotations
 
 import secrets
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -975,14 +976,22 @@ def bonus(request):
         holders=Count("id"), total=Sum("bonus_points"),
     )
     q = (request.GET.get("q") or "").strip()
+    tk = request.GET.get("tk") if request.GET.get("tk") in ("bor", "yoq") else ""
     customers = Customer.objects.filter(archived=False)
     if q:
         customers = customers.filter(
             Q(name__icontains=q) | Q(phone__icontains=q) | Q(discount_card__icontains=q)
         )
+    if tk == "yoq":
+        # Tug'ilgan kuni kiritilmagan kartali mijozlar — kassir so'rashi kerak
+        customers = customers.exclude(discount_card="").filter(birth_day__isnull=True).order_by("name")
+    elif tk == "bor":
+        customers = (customers.filter(birth_day__isnull=False)
+                     .select_related("birth_set_register").order_by(F("birth_set_at").desc(nulls_last=True), "name"))
     else:
-        customers = customers.filter(bonus_points__gt=0)
-    customers = customers.order_by("-bonus_points", "name")
+        if not q:
+            customers = customers.filter(bonus_points__gt=0)
+        customers = customers.order_by("-bonus_points", "name")
 
     page = Paginator(customers, 50).get_page(request.GET.get("page"))
     recent = BonusEntry.objects.select_related("customer")[:25]
@@ -993,8 +1002,44 @@ def bonus(request):
         "total_points": stats["total"] or 0,
         "page": page,
         "q": q,
+        "tk": tk,
         "recent": recent,
+        "tugilgan": _tugilgan_kun_stats(),
     })
+
+
+def _tugilgan_kun_stats() -> dict:
+    """Tug'ilgan kunlar: nechta kiritilgan va KIM kiritgan (egasi, 2026-11-10).
+
+    Asos — kartali faol mijozlar (nakopitel karta egalari): kassir karta
+    urilganda so'raydi. «Kim» — kassa + o'sha paytdagi kassir yoki panel
+    foydalanuvchisi; 10.11.2026 dan oldin kiritilganlarda saqlanmagan."""
+    now = timezone.now()
+    today0 = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    week0 = today0 - timedelta(days=6)
+    holders = Customer.objects.filter(archived=False).exclude(discount_card="")
+    jami = holders.count()
+    bor = holders.filter(birth_day__isnull=False).count()
+    with_at = Customer.objects.filter(archived=False, birth_day__isnull=False, birth_set_at__isnull=False)
+    rows = []
+    for r in (with_at.values("birth_set_source", "birth_set_register__name", "birth_set_cashier", "birth_set_user")
+              .annotate(jami=Count("id"), bugun=Count("id", filter=Q(birth_set_at__gte=today0)),
+                        hafta=Count("id", filter=Q(birth_set_at__gte=week0)))
+              .order_by("-jami", "-hafta")):
+        if r["birth_set_source"] == Customer.BIRTH_PANEL:
+            label = "Panel" + (f" · {r['birth_set_user']}" if r["birth_set_user"] else "")
+        else:
+            label = " · ".join(x for x in (r["birth_set_register__name"] or "Kassa", r["birth_set_cashier"]) if x)
+        rows.append({"kim": label, "jami": r["jami"], "bugun": r["bugun"], "hafta": r["hafta"]})
+    nomalum = Customer.objects.filter(archived=False, birth_day__isnull=False, birth_set_at__isnull=True).count()
+    return {
+        "jami": jami, "bor": bor, "yoq": jami - bor,
+        "foiz": round(bor * 100 / jami) if jami else 0,
+        "bugun": with_at.filter(birth_set_at__gte=today0).count(),
+        "hafta": with_at.filter(birth_set_at__gte=week0).count(),
+        "kimlar": rows, "nomalum": nomalum,
+        "oxirgi": list(with_at.select_related("birth_set_register").order_by("-birth_set_at")[:15]),
+    }
 
 
 @login_required
@@ -1008,11 +1053,12 @@ def customer_bonus(request, pk: int):
         from catalog import tugilgan_kun
 
         try:
-            cust.set_birthday(request.POST.get("birthday", ""))
+            cust.set_birthday(request.POST.get("birthday", ""), source=Customer.BIRTH_PANEL,
+                              user=getattr(request.user, "username", "") or "")
         except tugilgan_kun.BirthdayError as e:
             messages.error(request, str(e))
         else:
-            cust.save(update_fields=["birth_day", "birth_month", "birth_year"])
+            cust.save(update_fields=Customer.BIRTH_FIELDS)
             messages.success(request, f"Tug'ilgan kuni saqlandi: {cust.birthday_text or 'o‘chirildi'}")
         return redirect("dashboard:customer-bonus", pk=cust.pk)
     entries = cust.bonus_entries.select_related("sale")[:200]
