@@ -62,7 +62,7 @@ _MANAGER_POST = frozenset({"login", "logout"})
 #: ochiq (reyting, xodim sahifalari, minuslar). Bog'lash, qoida, chop etish va
 #: o'zgartirish — faqat egasida (kpi/views.py).
 TOVAROVED_PAGES = frozenset({"login", "logout", "kpi:men", "kpi:bosh", "kpi:xodim", "kpi:minus",
-                             "kpi:minuslar", "kpi:qayta"})
+                             "kpi:minuslar", "kpi:qayta", "kpi:holat"})
 
 
 def manager_of(user) -> PanelManager | None:
