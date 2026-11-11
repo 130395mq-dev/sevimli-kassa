@@ -1648,3 +1648,63 @@ class QoidaKuchaytirishTest(Base):
             r = c.post("/kpi/qoida/", data | {"w_nol": 25}, follow=True)
         self.assertNotContains(r, "ertadan amal qiladi")
         self.assertEqual(hisob.rule_start(KpiQoida.current()), date(2026, 11, 12))
+
+
+class YorliqlarTest(Base):
+    """KPI bo'limining hamma sahifasida yorliqlar BIR XIL (2026-11-11: «Chop etish» va
+    «Bog'lash» sahifalarida ro'yxat alohida yozilgani uchun yangi «Tovar holati»
+    yorlig'i o'sha yerga o'tganda yo'qolib qolgan edi)."""
+
+    EGASI = ["Reyting", "Minuslar", "Tovar holati", "Chop etish", "Bog'lash", "Qoida"]
+
+    def tabs(self, r):
+        import re
+        from html import unescape
+
+        nav = re.findall(r'<nav class="tabs"[^>]*>(.*?)</nav>', r.content.decode(), flags=re.S)
+        self.assertEqual(len(nav), 1, "sahifada bitta yorliqlar qatori bo'lishi kerak")
+        links = re.findall(r'<a ([^>]*)>(.*?)</a>', nav[0], flags=re.S)
+        names = [re.sub(r"\s*\(v\d+\)$", "", unescape(re.sub(r"<[^>]+>", "", t)).strip()) for _, t in links]
+        on = [n for (attrs, _), n in zip(links, names) if 'class="on"' in attrs]
+        return names, on
+
+    def test_egasi_hamma_sahifada_bir_xil_yorliqlarni_koradi(self):
+        self.scan({(WH1, P1): Decimal(-2)}, T(h=9))
+        issue = MinusIssue.objects.get()
+        owner = User.objects.create_user("egasi", password="egasi-parol-1")
+        c = Client()
+        c.force_login(owner)
+        pages = [
+            ("/kpi/", "Reyting"),
+            ("/kpi/minuslar/", "Minuslar"),
+            ("/kpi/qayta-minus/", "Minuslar"),
+            (f"/kpi/minus/{issue.pk}/", "Minuslar"),
+            ("/kpi/tovar-holat/", "Tovar holati"),
+            ("/kpi/chop-etish/", "Chop etish"),
+            ("/kpi/boglash/", "Bog'lash"),
+            ("/kpi/qoida/", "Qoida"),
+            (f"/kpi/xodim/{self.tov.pk}/", None),
+        ]
+        for url, active in pages:
+            with self.subTest(url=url):
+                r = c.get(url)
+                self.assertEqual(r.status_code, 200)
+                names, on = self.tabs(r)
+                self.assertEqual(names, self.EGASI)
+                self.assertEqual(on, [active] if active else [])
+
+    def test_tovaroved_faqat_korish_yorliqlarini_koradi(self):
+        u = User.objects.create_user("unzavod.tov", password="parol-12345")
+        self.tov.user = u
+        self.tov.save()
+        c = Client()
+        c.force_login(u)
+        for url, active in (("/kpi/", "Reyting"), ("/kpi/minuslar/", "Minuslar"), ("/kpi/tovar-holat/", "Tovar holati"),
+                            (f"/kpi/xodim/{self.tov.pk}/", "Mening ishim")):
+            with self.subTest(url=url):
+                names, on = self.tabs(c.get(url))
+                self.assertEqual(names, ["Reyting", "Mening ishim", "Minuslar", "Tovar holati"])
+                self.assertEqual(on, [active])
+        # Egasining sahifalari tovarovedga yopiq
+        for url in ("/kpi/chop-etish/", "/kpi/boglash/", "/kpi/qoida/"):
+            self.assertEqual(c.get(url).status_code, 403)
