@@ -10,13 +10,7 @@
   <h1>Chop etish (sennik / etiketka)</h1>
   <div class="sub">MoySklad auditidagi «Распечатан товар» yozuvlari: kim, qachon, qaysi tovar</div>
 
-  <nav class="tabs">
-    <a href="{% url 'kpi:bosh' %}">Reyting</a>
-    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
-    <a class="on" href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida</a>
-  </nav>
+  {% include "kpi/_tabs.html" with on="chop" owner=True %}
 
   <div class="alert warn"><span>!</span><div>
     <b>Bu — faqat «chop etildi» hodisasi.</b> Auditda shablon ko'rinmaydi, shuning uchun sennikmi yoki shtrix-kod etiketkasimi — ajratib bo'lmaydi.

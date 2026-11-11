@@ -1,13 +1,15 @@
-{% comment %}KPI bo'limi yorliqlari. `on` — joriy yorliq (reyting / men / minus). Egasi bo'lmasa
-(tovaroved) faqat ko'rish sahifalari chiqadi: chop etish, bog'lash, qoida — egasida.{% endcomment %}
+{% comment %}KPI bo'limi yorliqlari — HAMMA sahifa shu bitta fayldan oladi (2026-11-11: «Chop etish» va
+«Bog'lash» sahifalarida ro'yxat alohida yozilgani uchun yangi «Tovar holati» yorlig'i o'sha yerda
+yo'qolib qolgan edi). `on` — joriy yorliq: reyting / men / minus / holat / chop / boglash / qoida.
+Egasi bo'lmasa (tovaroved) faqat ko'rish sahifalari chiqadi: chop etish, bog'lash, qoida — egasida.{% endcomment %}
   <nav class="tabs" aria-label="Tovarovedlar">
     <a {% if on == "reyting" %}class="on" {% endif %}href="{% url 'kpi:bosh' %}{% if davr %}?davr={{ davr }}{% endif %}">Reyting</a>
     {% if panel_tovaroved %}<a {% if on == "men" %}class="on" {% endif %}href="{% url 'kpi:men' %}">Mening ishim</a>{% endif %}
     <a {% if on == "minus" %}class="on" {% endif %}href="{% url 'kpi:minuslar' %}">Minuslar</a>
     <a {% if on == "holat" %}class="on" {% endif %}href="{% url 'kpi:holat' %}">Tovar holati</a>
     {% if owner %}
-    <a href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida{% if rule %} (v{{ rule.version }}){% endif %}</a>
+    <a {% if on == "chop" %}class="on" {% endif %}href="{% url 'kpi:chop' %}">Chop etish</a>
+    <a {% if on == "boglash" %}class="on" {% endif %}href="{% url 'kpi:boglash' %}">Bog'lash</a>
+    <a {% if on == "qoida" %}class="on" {% endif %}href="{% url 'kpi:qoida' %}">Qoida{% if rule %} (v{{ rule.version }}){% endif %}</a>
     {% endif %}
   </nav>

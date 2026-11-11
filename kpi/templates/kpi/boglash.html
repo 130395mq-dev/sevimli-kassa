@@ -13,13 +13,7 @@
     <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
   {% endfor %}{% endif %}
 
-  <nav class="tabs">
-    <a href="{% url 'kpi:bosh' %}">Reyting</a>
-    <a href="{% url 'kpi:minuslar' %}">Minuslar</a>
-    <a href="{% url 'kpi:chop' %}">Chop etish</a>
-    <a class="on" href="{% url 'kpi:boglash' %}">Bog'lash</a>
-    <a href="{% url 'kpi:qoida' %}">Qoida</a>
-  </nav>
+  {% include "kpi/_tabs.html" with on="boglash" owner=True %}
 
   <form method="post" style="margin-bottom: 16px;">
     {% csrf_token %}<input type="hidden" name="action" value="xodimlar">
