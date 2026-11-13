@@ -176,6 +176,11 @@ class Register(models.Model):
     local_stuck = models.PositiveIntegerField(null=True, blank=True)
     local_queue_error = models.CharField(max_length=512, blank=True)
     local_queue_at = models.DateTimeField(null=True, blank=True)
+    #: Kassadagi navbat qachondan beri bo'shamayapti (hello'da yuritiladi).
+    #: Bo'sh — navbat bo'sh. Panel shunga qarab kassa chirog'ini sariq/qizil
+    #: qiladi: 12.11.2026 da kassa3 119 ta chekni besh soat yubora olmadi,
+    #: panelda esa chiroq yashil turgan edi.
+    local_pending_since = models.DateTimeField(null=True, blank=True)
 
     # ---- MoySklad bog'lanishi. Kassa sozlamasi birinchi, savdo nuqtasi
     # zaxira: eski kassalar (ombor tanlanmagan) ishlab ketaveradi.
@@ -476,6 +481,15 @@ class Shift(models.Model):
     counted_cash = models.BigIntegerField(
         null=True, blank=True, help_text="Kassir sanagani, tiyinda"
     )
+
+    #: Smenani SERVER o'zi ochgan: kassa ochiq smenasiz chek yubordi
+    #: (12.11.2026: internetsiz yopilgan smenaga kassa ertalab qayta kirib
+    #: ketgan, server uni yopgach hamma chek «Ochiq smena yo'q» deb qaytgan).
+    #: Savdo allaqachon bo'lib o'tgan — chek rad etilmaydi, shu smenaga
+    #: yoziladi. Razmen 0; kassir «SMENA OCHISH» bossa `auto_claimed` bo'ladi.
+    #: `db_default` — eski kodga qaytilsa ham (rollback) INSERT ishlayveradi.
+    auto_opened = models.BooleanField(default=False, db_default=False)
+    auto_claimed = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["-opened_at"]

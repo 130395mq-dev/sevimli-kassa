@@ -98,6 +98,83 @@ FIX_KASSA_OFFLINE = (
     "cheklar kassada saqlanadi, aloqa qaytgach o'zi yuboriladi."
 )
 
+# ---- Kassaning O'Z navbati (kassa har 15 soniyada hello'da aytadi).
+#
+# 12.11.2026: kassa3 besh soat davomida 119 ta chekni serverga o'tkaza
+# olmadi (server «Ochiq smena yo'q» deb qaytargan). Kassa buni har 15
+# soniyada aytib turgan, lekin chiroq yashil edi — chunki chiroq faqat
+# «kassa tirikmi» ga qarardi. Endi navbatga ham qaraydi.
+
+#: Navbat shuncha vaqt bo'shamasa — bu endi «yo'lda» emas, muammo
+QUEUE_BAD = timedelta(minutes=3)
+
+FIX_KASSA_REJECT = (
+    "Cheklar kassa kompyuterida saqlanib turibdi, yo'qolmagan — kompyuterni "
+    "o'chirmang. Kassada «Ma'lumotlarni yangilash» ni bosing: cheklar qayta "
+    "yuboriladi. Yana qolsa — sababi shu yerda yozilgan, menga yuboring."
+)
+FIX_KASSA_QUEUE = (
+    "Hech narsa qilish shart emas — kassa o'zi qayta yuboradi. "
+    "15 daqiqadan oshsa kassada «Ma'lumotlarni yangilash» ni bosing."
+)
+FIX_KASSA_LEFT = (
+    "Kassani yoqing va internetga ulang — cheklar o'zi yuboriladi. "
+    "Ungacha ular faqat shu kompyuterda turibdi: kompyuterni qayta o'rnatmang."
+)
+FIX_AUTO_SHIFT = (
+    "Kassa ochiq smenasiz sotgan — server smenani o'zi ochdi, cheklar qabul "
+    "qilinmoqda, savdo to'xtamaydi. Kechqurun smenani odatdagidek yoping "
+    "(chekda razmen 0 chiqadi). Kassa dasturi yopib-ochilsa smena raqami to'g'rilanadi."
+)
+
+#: Kassa «server rad etdi» emas, «serverga yeta olmadim» deganda yozadigan
+#: matnlar (pos/hub.py: HubConnError / HubAuthError). Shulardan boshqasi —
+#: serverning rad javobi.
+_OUTAGE_MARKS = (
+    "Serverga ulanib bo'lmadi", "Server javob bermadi", "Server vaqtincha band",
+    "Server bilan aloqa uzildi", "Kassa tokeni",
+)
+
+
+def queue_reason(reg: Register) -> str:
+    """Kassa aytgan sabab — chek belgisisiz («<uuid>: sabab» → «sabab»)."""
+    raw = (reg.local_queue_error or "").strip()
+    head, sep, tail = raw.partition(": ")
+    # Belgi — uuid (36 belgi, 4 ta chiziqcha). Boshqa narsa bo'lsa tegmaymiz.
+    if sep and len(head) == 36 and head.count("-") == 4:
+        return tail.strip()
+    return raw
+
+
+def queue_problem(reg: Register, now=None) -> tuple[str, str, str] | None:
+    """Kassaning o'z navbatidagi muammo: (holat, matn, nima qilish) yoki None.
+
+    Faqat kassa HOZIR ulangan bo'lsa ma'noli (ma'lumot yangi). Uzilgan
+    kassa uchun `register_state` o'zi hal qiladi.
+    """
+    pending = reg.local_pending or 0
+    if pending <= 0:
+        return None
+    now = now or timezone.now()
+    stuck = min(reg.local_stuck or 0, pending)
+    reason = queue_reason(reg)
+    rejected = bool(reason) and not reason.startswith(_OUTAGE_MARKS)
+    since = reg.local_pending_since
+    age = (now - since) if since else timedelta(0)
+    why = f": {reason[:160]}" if reason else ""
+
+    if stuck:
+        return ("bad", f"{stuck} ta chekni server qabul qilmadi{why}", FIX_KASSA_REJECT)
+    if rejected and age >= QUEUE_BAD:
+        return ("bad", f"{pending} ta chek {_minutes(age)} daqiqadan beri serverga o'tmayapti{why}",
+                FIX_KASSA_REJECT)
+    if rejected:
+        return ("warn", f"{pending} ta chekni server qabul qilmadi, qayta urinilmoqda{why}",
+                FIX_KASSA_QUEUE)
+    if age >= QUEUE_BAD:
+        return ("warn", f"{pending} ta chek {_minutes(age)} daqiqadan beri navbatda", FIX_KASSA_QUEUE)
+    return None
+
 
 def _minutes(delta: timedelta) -> int:
     return int(delta.total_seconds() // 60)
@@ -205,15 +282,23 @@ def _moysklad_health(now) -> dict:
     return {"state": state, "text": text, "fix": fix, "last_ok": _iso(last_ok)}
 
 
-def register_state(reg: Register, now=None, shift_open: bool | None = None) -> dict:
+def register_state(reg: Register, now=None, shift_open: bool | None = None,
+                   auto_shift: bool | None = None) -> dict:
     """Kassa ↔ server: {"id", "name", "state", "text", "fix", "seen", "shift_open"}.
 
     Smena ochiq bo'lsa jimlik — muammo (sariq/qizil). Smena yopiq bo'lsa
     kassa shunchaki o'chirilgan — kulrang, ogohlantirish yo'q.
+
+    Kassa ulangan bo'lsa uning O'Z navbati ham hisobga olinadi: cheklar
+    serverga o'tmayotgan bo'lsa chiroq yashil turmaydi (`queue_problem`).
+    `auto_shift` — ochiq smenani server o'zi ochganmi (kassa smenasiz sotgan).
     """
     now = now or timezone.now()
     if shift_open is None:
         shift_open = reg.shifts.filter(status=Shift.OPEN).exists()
+    if auto_shift is None:
+        auto_shift = bool(shift_open) and reg.shifts.filter(
+            status=Shift.OPEN, auto_opened=True, auto_claimed=False).exists()
     seen = reg.last_seen_at
     fix = ""
     if not seen:
@@ -235,6 +320,20 @@ def register_state(reg: Register, now=None, shift_open: bool | None = None) -> d
                 state, text = "unknown", "o'chirilgan (smena yopiq)"
         else:
             state, text = "ok", "ulangan"
+
+    if state == "ok":
+        # Kassa ulangan — uning navbati haqidagi ma'lumot yangi.
+        problem = queue_problem(reg, now)
+        if problem:
+            state, text, fix = problem
+        elif auto_shift:
+            state, text, fix = "warn", "smenani server o'zi ochdi (kassa smenasiz sotgan)", FIX_AUTO_SHIFT
+    elif state == "unknown" and (reg.local_pending or 0) > 0:
+        # Kassa o'chirilgan, lekin oxirgi marta «menda yuborilmagan chek
+        # bor» degan — ular faqat o'sha kompyuterda. Kulrang turmasin.
+        state = "warn"
+        text = f"kassa o'chiq, ichida {reg.local_pending} ta yuborilmagan chek qolgan"
+        fix = FIX_KASSA_LEFT
     return {
         "id": reg.pk, "name": reg.name, "state": state, "text": text, "fix": fix,
         "seen": _iso(seen), "shift_open": bool(shift_open),
@@ -250,10 +349,17 @@ def registers_health(now=None, register_ids=None) -> list[dict]:
     regs = Register.objects.filter(active=True, archived=False).order_by("name")
     if register_ids is not None:
         regs = regs.filter(pk__in=register_ids)
-    open_ids = set(
-        Shift.objects.filter(status=Shift.OPEN, register__in=regs).values_list("register_id", flat=True)
-    )
-    return [register_state(r, now, shift_open=r.pk in open_ids) for r in regs]
+    open_ids, auto_ids = set(), set()
+    for reg_id, auto_opened, auto_claimed in Shift.objects.filter(
+        status=Shift.OPEN, register__in=regs
+    ).values_list("register_id", "auto_opened", "auto_claimed"):
+        open_ids.add(reg_id)
+        if auto_opened and not auto_claimed:
+            auto_ids.add(reg_id)
+    return [
+        register_state(r, now, shift_open=r.pk in open_ids, auto_shift=r.pk in auto_ids)
+        for r in regs
+    ]
 
 
 def snapshot(now=None, register_ids=None) -> dict:

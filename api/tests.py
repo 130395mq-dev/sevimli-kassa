@@ -188,10 +188,14 @@ class ShiftTest(ApiTestCase):
         self.assertEqual(data["cash_diff"], 0)
         self.assertEqual(data["pending"], 1)
 
-    def test_smenasiz_yopilmaydi(self):
-        self.assertEqual(
-            self.post("/api/v1/shift/close", {}).status_code, 409
-        )
+    def test_smenasiz_yopish_xato_emas(self):
+        """Qoida o'zgardi (egasi, 12.11.2026). Ilgari: 409 «Ochiq smena yo'q»
+        — kassa yopilgan smenaga qayta kirib qolganda kassir uni yopa olmagan.
+        Endi: «smena allaqachon yopilgan» cheki, kassa «SMENA OCHISH»ga qaytadi.
+        To'liq testlar — api/test_kassa_himoya.py."""
+        r = self.post("/api/v1/shift/close", {})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["already_closed"])
 
 
 class SaleTest(ApiTestCase):
@@ -329,10 +333,17 @@ class SaleTest(ApiTestCase):
         self.assertEqual(self.post("/api/v1/sales", payload).status_code, 400)
         self.assertEqual(Sale.objects.count(), 0)
 
-    def test_smenasiz_chek_yozilmaydi(self):
+    def test_smenasiz_chek_rad_etilmaydi(self):
+        """Qoida o'zgardi (egasi, 12.11.2026). Ilgari: 409 «Ochiq smena yo'q»
+        — 119 ta chek besh soat kassada tiqilib turgan. Endi: savdo bo'lib
+        o'tgan chek qabul qilinadi, smenani server o'zi ochadi va belgilaydi.
+        To'liq testlar — api/test_kassa_himoya.py."""
         self.post("/api/v1/shift/close", {})
         r = self.post("/api/v1/sales", self.sale_payload())
-        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.status_code, 201)
+        sale = Sale.objects.get()
+        self.assertTrue(sale.shift.auto_opened)
+        self.assertEqual(sale.shift.status, Shift.OPEN)
 
 
 class CatalogTest(ApiTestCase):

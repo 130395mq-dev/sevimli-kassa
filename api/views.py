@@ -54,11 +54,11 @@ from sales.models import (
     SaleItem,
     Shift,
 )
-from sales import healer, sessions
+from sales import healer, ogoh, sessions
 from sales.returns import allocations, validate_return, reversed_points
-from sales.aloqa import moysklad_health
+from sales.aloqa import moysklad_health, queue_problem
 from sales.services import build_receipt, close_shift, ShiftError
-from shared.receipt import render
+from shared.receipt import _center, _line, render
 
 from . import pricing, session_security
 
@@ -531,8 +531,16 @@ def hello(request):
                 raise ValueError()
         except (ValueError, TypeError):
             return error("Mahalliy navbat ko'rsatkichi noto'g'ri")
+        now = timezone.now()
+        # Navbat qachondan beri bo'shamayapti: bo'shasa tozalanadi; birinchi
+        # marta to'lganda vaqt qo'yiladi va bo'shamaguncha o'zgarmaydi.
+        since = (reg.local_pending_since or now) if pending else None
+        queue_error = request.GET.get("local_error", "")[:512]
         Register.objects.filter(pk=reg.pk).update(local_pending=pending, local_stuck=stuck,
-            local_queue_error=request.GET.get("local_error", "")[:512], local_queue_at=timezone.now())
+            local_queue_error=queue_error, local_queue_at=now, local_pending_since=since)
+        reg.local_pending, reg.local_stuck, reg.local_queue_error = pending, stuck, queue_error
+        reg.local_queue_at, reg.local_pending_since = now, since
+        _notify_queue(reg, now)
     shift = reg.shifts.filter(status=Shift.OPEN).first()
     st = reg.settings
 
@@ -1039,6 +1047,159 @@ def _request_cashier_name(request) -> str:
 # ------------------------------------------------------------------ smena
 
 
+def _notify_queue(reg, now) -> None:
+    """Kassa cheklari serverga o'tmayotgan bo'lsa — egaga xabar (30 daqiqada
+    bir). Ogohlantirish sozlanmagan bo'lsa hech narsa qilmaydi."""
+    if not ogoh.enabled():
+        return
+    problem = queue_problem(reg, now)
+    if problem and problem[0] == "bad":
+        ogoh.once(f"kassa-navbat:{reg.pk}",
+                  f"Sevimli Kassa — {reg.name}: {problem[1]}.\n\n{problem[2]}")
+
+
+def _session_cashier(request):
+    """So'rovni yuborgan kassir (imzolangan X-Session'dan) yoki None."""
+    try:
+        proof = session_security.verify(request)
+        cid = int(proof["cashier_id"]) if proof else 0
+    except (TypeError, ValueError, KeyError):
+        cid = 0
+    return Cashier.objects.filter(pk=cid, active=True).first() if cid else None
+
+
+def _no_warehouse(reg) -> str:
+    return (f"«{reg.name}» uchun ombor tanlanmagan. "
+            "Panel → Kassalar → Sozlash → Tovarlar bo'limida omborni tanlang.")
+
+
+def _is_placeholder(shift) -> bool:
+    """Server o'zi ochgan, kassir hali egallamagan smena."""
+    return bool(shift.auto_opened and not shift.auto_claimed)
+
+
+def _auto_open_shift(request, reg, created=None):
+    """Ochiq smena yo'q, lekin kassa sotyapti — smenani server O'ZI ochadi.
+
+    Egasining qarori (12.11.2026): savdo bo'lib o'tgan chek rad etilmaydi.
+    O'sha kuni kassa internetsiz yopilgan smenaga ertalab qayta kirib ketdi,
+    server smenani yopdi va shundan keyingi hamma chek «Ochiq smena yo'q»
+    deb qaytdi (kassa3: 119 chek, 11,9 mln so'm besh soat kassada turdi).
+
+    Qaytaradi: smena (yangi yoki shu orada ochilgani) yoki None — ombor
+    tanlanmagan (savdoni baribir MoySklad'ga yozib bo'lmaydi; bu holat
+    avvalgidek rad etiladi va sababi aytiladi).
+    """
+    if not reg.warehouse_ms_id:
+        return None
+    now = timezone.now()
+    if created is not None and timezone.is_naive(created):
+        created = timezone.make_aware(created)
+    with transaction.atomic():
+        # Register qulfi: bir vaqtda kelgan ikki chek ikkita smena ochmasin.
+        Register.objects.select_for_update().get(pk=reg.pk)
+        current = reg.shifts.filter(status=Shift.OPEN).first()
+        if current:
+            return current
+        last = reg.shifts.order_by("-number").first()
+        # Smena birinchi smenasiz chek urilgan paytdan boshlanadi. Kassa soati
+        # adashgan (kelajak yoki bir sutkadan eski) bo'lsa — hozirgi vaqt.
+        opened_at = created if created and now - timedelta(hours=24) <= created <= now else now
+        cashier = _session_cashier(request)
+        shift = Shift.objects.create(
+            register=reg,
+            number=(last.number if last else 0) + 1,
+            cashier=(cashier.name if cashier else "") or reg.name,
+            cashier_ref=cashier,
+            opened_at=opened_at,
+            opening_cash=0,
+            auto_opened=True,
+        )
+    logger.warning(
+        "AVTO-SMENA: kassa=%s (%s) ochiq smenasiz sotdi — smena #%s ni server o'zi ochdi "
+        "(versiya %s)", reg.name, reg.code, shift.number, reg.app_version or "-",
+    )
+    ogoh.once(
+        f"avto-smena:{reg.pk}",
+        f"Sevimli Kassa — {reg.name}: kassa ochiq smenasiz sotyapti. Server smena "
+        f"#{shift.number} ni o'zi ochdi, cheklar qabul qilinmoqda — savdo to'xtamaydi.",
+    )
+    return shift
+
+
+def _claim_auto_shift(shift, name, cashier_ref, opening_cash, local_uuid, opened_at) -> None:
+    """Server o'zi ochgan smenani kassirga beradi: razmen va kassir yoziladi,
+    cheklar joyida qoladi. Yangi smena OCHILMAYDI (ikkita ochiq smena bo'lmasin)."""
+    shift.cashier = name
+    shift.cashier_ref = cashier_ref
+    shift.opening_cash = opening_cash
+    shift.auto_claimed = True
+    fields = ["cashier", "cashier_ref", "opening_cash", "auto_claimed"]
+    if local_uuid and not shift.local_uuid:
+        shift.local_uuid = local_uuid
+        fields.append("local_uuid")
+    # Internetsiz ochilgan smena avvalroq boshlangan bo'lishi mumkin — o'sha
+    # vaqtni olamiz (bir sutkadan uzoq emas: kassa soati adashgan bo'lmasin).
+    if opened_at is not None:
+        if timezone.is_naive(opened_at):
+            opened_at = timezone.make_aware(opened_at)
+        if shift.opened_at - timedelta(hours=24) <= opened_at < shift.opened_at:
+            shift.opened_at = opened_at
+            fields.append("opened_at")
+    shift.save(update_fields=fields)
+    logger.warning("AVTO-SMENA egallandi: kassa=%s (%s) smena #%s — kassir %s",
+                   shift.register.name, shift.register.code, shift.number, name)
+
+
+def _report_text(shift, receipt) -> str:
+    """Smena cheki matni. Server o'zi ochgan (egallanmagan) smenada tepada
+    ogohlantirish — egasi qog'ozni qo'liga olganda birinchi shuni ko'radi."""
+    w = settings.RECEIPT_WIDTH
+    text = render(receipt, w)
+    if not _is_placeholder(shift):
+        return text
+    head = [
+        _line("=", w),
+        _center("SMENANI SERVER O'ZI OCHGAN", w),
+        _center("Kassa smenasiz sotgan.", w),
+        _center("Razmen kiritilmagan (0).", w),
+        _line("=", w),
+    ]
+    return "\n".join(head) + "\n" + text
+
+
+def _nothing_to_close(reg):
+    """Yopadigan ochiq smena yo'q — bu xato emas: smena ALLAQACHON yopilgan.
+
+    12.11.2026: kassa yopilgan smenaga qayta kirib qolgan va kassir uni yopa
+    olmagan («Ochiq smena yo'q», besh marta). Endi kassa tushunarli chek
+    oladi, smenani yopilgan deb biladi va «SMENA OCHISH» ekraniga qaytadi.
+    """
+    w = settings.RECEIPT_WIDTH
+    last = reg.shifts.filter(status=Shift.CLOSED).order_by("-closed_at").first()
+    lines = [
+        _line("=", w),
+        _center("SMENA ALLAQACHON YOPILGAN", w),
+        _line("=", w),
+        _center(reg.name, w),
+        "",
+        _center("Serverda ochiq smena yo'q.", w),
+    ]
+    if last and last.closed_at:
+        when = timezone.localtime(last.closed_at).strftime("%d.%m.%Y %H:%M")
+        lines += [_center(f"Oxirgi smena #{last.number}", w), _center(f"{when} da yopilgan.", w)]
+    lines += ["", _center("Yangi smena oching.", w), _line("=", w)]
+    logger.warning("Yopishga smena yo'q: kassa=%s (%s) — «allaqachon yopilgan» cheki berildi",
+                   reg.name, reg.code)
+    return JsonResponse({
+        "shift_id": last.pk if last else None,
+        "receipt_text": "\n".join(lines),
+        "net_total": 0, "cash_total": 0, "cashless_total": 0,
+        "expected_cash": 0, "cash_diff": 0, "pending": 0,
+        "already_closed": True,
+    })
+
+
 @csrf_exempt
 @require_POST
 @register_required
@@ -1057,7 +1218,7 @@ def shift_open(request):
             return JsonResponse({"shift": _shift_json(same)}, status=200)
 
     open_shift_now = reg.shifts.filter(status=Shift.OPEN).first()
-    if open_shift_now:
+    if open_shift_now and not _is_placeholder(open_shift_now):
         # Ochiq smena bor. Onlayn ochishda bu xato; ammo internetsiz
         # ochilgan smenani sinxronlashda (local_uuid bilan) — bu shunchaki
         # «allaqachon ochiq», o'shani qabul qilamiz, tarixi buzilmaydi.
@@ -1108,6 +1269,14 @@ def shift_open(request):
 
             open_now = reg.shifts.filter(status=Shift.OPEN).first()
             if open_now:
+                if _is_placeholder(open_now):
+                    # Smenani server o'zi ochgan (kassa smenasiz sotgan), kassir
+                    # endi «SMENA OCHISH» bosdi. Rad etsak u smena ocha olmay
+                    # qoladi; yangi ochsak ikkita ochiq smena bo'ladi. Shu
+                    # smenani unga beramiz — razmeni bilan.
+                    _claim_auto_shift(open_now, name, cashier_ref, opening_cash, local_uuid,
+                                      parse_datetime(data.get("opened_at") or ""))
+                    return JsonResponse({"shift": _shift_json(open_now)}, status=200)
                 if local_uuid:
                     if not open_now.local_uuid:
                         open_now.local_uuid = local_uuid
@@ -1163,7 +1332,7 @@ def shift_close(request):
     else:
         shift = reg.shifts.filter(status=Shift.OPEN).first()
         if not shift:
-            return error("Ochiq smena yo'q", status=409)
+            return _nothing_to_close(reg)
 
     counted = data.get("counted_cash")
     try:
@@ -1184,7 +1353,7 @@ def _closed_json(shift, receipt):
             "shift_id": shift.pk,
             # Kassa shu matnni printerga yuboradi — o'zi hech narsa
             # hisoblamaydi, aks holda ikki xil raqam chiqishi mumkin.
-            "receipt_text": render(receipt, settings.RECEIPT_WIDTH),
+            "receipt_text": _report_text(shift, receipt),
             "net_total": receipt.net_total,
             "cash_total": receipt.cash_total,
             "cashless_total": receipt.cashless_total,
@@ -1204,9 +1373,7 @@ def shift_report(request):
         return error("Ochiq smena yo'q", status=409)
 
     receipt = build_receipt(shift, market=settings.MARKET_NAME)
-    return JsonResponse(
-        {"receipt_text": render(receipt, settings.RECEIPT_WIDTH)}
-    )
+    return JsonResponse({"receipt_text": _report_text(shift, receipt)})
 
 
 @csrf_exempt
@@ -1235,11 +1402,22 @@ def cash_operation(request):
                     (existing.kind, existing.amount, existing.comment) != (kind, amount, comment)):
                 return error("Bu operatsiya identifikatori boshqa amal uchun ishlatilgan", status=409)
             return JsonResponse({"id": existing.pk, "duplicate": True})
-        shift = request.register.shifts.select_for_update().filter(status=Shift.OPEN).first()
-        if not shift:
-            return error("Ochiq smena yo'q", status=409)
-        if data.get("shift_id") and str(data["shift_id"]) != str(shift.pk):
-            return error("Pul amali boshqa smenaga tegishli", status=409)
+        reg = request.register
+        shift = reg.shifts.select_for_update().filter(status=Shift.OPEN).first()
+        wanted = str(data.get("shift_id") or "").strip()
+        if wanted and (shift is None or wanted != str(shift.pk)):
+            # Amal O'Z smenasiga yoziladi — u yopilgan bo'lsa ham. Pul kassadan
+            # allaqachon olingan/solingan; rad etsak kassa amalni navbatdan
+            # o'chirib yuboradi va u hech qayerda qolmaydi (pos/hub.py).
+            own = reg.shifts.filter(pk=int(wanted)).first() if wanted.isdigit() else None
+            if own is None:
+                return error("Pul amali smenasi bu kassada topilmadi", status=409)
+            shift = own
+        if shift is None:
+            # Ochiq smena yo'q, lekin pul harakati bo'lib o'tgan — chek kabi.
+            shift = _auto_open_shift(request, reg, parse_datetime(str(data.get("created_at") or "")))
+        if shift is None:
+            return error(_no_warehouse(reg), status=409)
         op = CashOperation.objects.create(shift=shift, local_uuid=key, kind=kind,
                                          amount=amount, comment=comment)
         # Internetsiz qilingan amal keyin keladi — o'sha paytdagi vaqti
@@ -1312,7 +1490,12 @@ def create_sale(request):
     if not shift:
         shift = reg.shifts.filter(status=Shift.OPEN).first(); late = True
     if not shift:
-        return error("Ochiq smena yo'q", status=409)
+        # Ochiq smena yo'q, lekin savdo BO'LIB O'TGAN (pul olingan, tovar
+        # ketgan). Rad etish hech narsani himoya qilmaydi — chek kassada
+        # tiqilib qoladi. Smenani o'zimiz ochamiz va panelda belgilaymiz.
+        shift = _auto_open_shift(request, reg, created); late = False
+    if not shift:
+        return error(_no_warehouse(reg), status=409)
 
     # Bir martalik tuzatish (api/corrections.py): faqat ro'yxatdagi aniq
     # chek va faqat qator aynan kutilgandek bo'lsa. Boshqa cheklarga tegmaydi.

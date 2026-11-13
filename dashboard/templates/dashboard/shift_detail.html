@@ -11,6 +11,25 @@
   <div class="sub">
     {{ shift.register.point_name }} · {{ shift.register.name }} · {{ shift.cashier }}
   </div>
+  {% if shift.auto_opened %}
+    <div class="alert warn" id="avto-smena">
+      <span>!</span>
+      <div>
+        <b>Bu smenani server o'zi ochgan.</b>
+        Kassa ochiq smenasiz sotgan — cheklar rad etilmasligi uchun smena avtomatik ochildi.
+        {% if shift.auto_claimed %}Keyin kassir smenani o'zi ochib, razmenni kiritgan.{% else %}Razmen kiritilmagan (0).{% endif %}
+      </div>
+    </div>
+  {% endif %}
+  {% if late_count %}
+    <div class="alert warn" id="kechikkan">
+      <span>!</span>
+      <div>
+        <b>{{ late_count }} ta chek bu smenaga kechikib tushgan.</b>
+        Ular boshqa vaqtda urilgan (o'z smenasi yopilgandan keyin serverga yetgan) — pastda «kechikkan» belgisi bilan.
+      </div>
+    </div>
+  {% endif %}
 
   <h2>Kassadagi chek</h2>
   <div class="sub">Kassada chiqqan chekning aynan o'zi — bu yerda qayta hisoblanmaydi.</div>
@@ -25,7 +44,7 @@
     {% for s in sales %}
       <tr>
         <td class="num"><a href="{% url 'dashboard:receipt' s.pk %}">{% if s.kind == "return" %}Q{% endif %}{{ s.number }}</a></td>
-        <td class="num">{{ s.created_at|date:"H:i" }}</td>
+        <td class="num">{{ s.created_at|date:"H:i" }}{% if s.late %} <span class="badge warn" title="Urilgan vaqti: {{ s.created_at|date:'d.m.Y H:i' }}">kechikkan</span>{% endif %}</td>
         <td>{{ s.customer.name|default:"—" }}</td>
         <td class="right num">{{ s.net_sum|som }}</td>
         <td>

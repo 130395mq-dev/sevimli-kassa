@@ -318,6 +318,7 @@ def shift_detail(request, pk: int):
         "shift": shift,
         "receipt_text": render_receipt(receipt),
         "sales": shift.sales.order_by("number").select_related("customer"),
+        "late_count": shift.sales.filter(late=True).count(),
     })
 
 

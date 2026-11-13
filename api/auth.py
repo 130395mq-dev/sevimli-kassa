@@ -25,10 +25,12 @@ import base64
 import functools
 import hashlib
 import hmac
+import json
 import secrets
 import time
 
 from django.conf import settings
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.utils import timezone
 
@@ -213,6 +215,45 @@ def register_required(view):
             Register.objects.filter(pk=register.pk).update(app_version=ver)
             register.app_version = ver
 
-        return view(request, *args, **kwargs)
+        response = view(request, *args, **kwargs)
+        _log_rejection(register, request, response)
+        return response
 
     return wrapper
+
+
+#: Bir xil rad javobi shuncha soniyada bir marta yoziladi — tiqilgan kassa
+#: bitta chekni yuzlab marta yuboradi, jurnal to'lib ketmasin.
+REJECTION_LOG_EVERY = 60
+
+
+def _log_rejection(register, request, response) -> None:
+    """Kassa so'rovi rad etilsa — KIM, QAYERDA, NEGA jurnalga yoziladi.
+
+    12.11.2026 da jurnalda faqat «Conflict: /api/v1/sales» bor edi: qaysi
+    kassa va nima sababdan — yo'q. Sababni kod o'qib va IP solishtirib
+    topishga to'g'ri kelgan. Bu yerda so'rov tanasi, token va sessiya
+    YOZILMAYDI — faqat kassa, yo'l, kod va serverning o'z xato matni.
+    """
+    try:
+        status = response.status_code
+        if status < 400:
+            return
+        reason = ""
+        try:
+            reason = str(json.loads(response.content).get("error", ""))
+        except Exception:  # noqa: BLE001 — JSON bo'lmagan javob
+            pass
+        key = "rad:" + hashlib.sha1(
+            f"{register.pk}:{request.method}:{request.path}:{status}:{reason}".encode("utf-8")
+        ).hexdigest()
+        if not cache.add(key, 1, REJECTION_LOG_EVERY):
+            return
+        logger.warning(
+            "RAD ETILDI: kassa=%s (%s) %s %s → %s: %s (versiya %s; bir xil javob "
+            "%s soniyada bir marta yoziladi)",
+            register.name, register.code, request.method, request.path, status,
+            reason[:300] or "-", register.app_version or "-", REJECTION_LOG_EVERY,
+        )
+    except Exception:  # noqa: BLE001 — jurnal xatosi javobni buzmasin
+        logger.exception("Rad javobini jurnalga yozib bo'lmadi")

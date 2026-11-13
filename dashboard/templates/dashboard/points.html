@@ -504,8 +504,8 @@
     <tbody>{% for k in board.kassas %}<tr>
       <td><b>{{ k.register.name }}</b></td>
       <td class="num">{{ k.register.app_version|default:"—" }}</td>
-      <td class="num">{{ k.register.local_pending|default_if_none:"Noma'lum" }}</td>
-      <td class="num">{{ k.register.local_stuck|default_if_none:"—" }}</td>
+      <td class="num">{% if k.register.local_pending %}<span class="badge warn">{{ k.register.local_pending }}</span>{% else %}{{ k.register.local_pending|default_if_none:"Noma'lum" }}{% endif %}</td>
+      <td class="num">{% if k.register.local_stuck %}<span class="badge err">{{ k.register.local_stuck }}</span>{% else %}{{ k.register.local_stuck|default_if_none:"—" }}{% endif %}</td>
       <td class="num">{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
       <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
     </tr>{% empty %}<tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>

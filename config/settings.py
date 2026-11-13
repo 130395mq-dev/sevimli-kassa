@@ -251,6 +251,13 @@ LOGGING = {
     },
 }
 
+# ------------------------------------------------- egaga ogohlantirish
+#
+# Kassa cheklari serverga o'tmay qolsa egasining Telegramiga xabar
+# (sales/ogoh.py). Ikkalasi ham bo'sh bo'lsa — o'chiq.
+ALERT_TELEGRAM_TOKEN = env("ALERT_TELEGRAM_TOKEN", "")
+ALERT_TELEGRAM_CHAT = env("ALERT_TELEGRAM_CHAT", "")
+
 # ------------------------------------------------- versiya chiqarish kaliti
 #
 # Yangi kassa versiyasini panelga SKRIPT orqali yuklash uchun maxfiy kalit
