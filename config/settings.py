@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "api",
     "dashboard",
     "kpi",
+    "sms",
 ]
 
 MIDDLEWARE = [
@@ -206,6 +207,15 @@ MEDIA_URL = "/media/"
 
 # Chek sarlavhasida chiqadigan nom
 MARKET_NAME = env("MARKET_NAME", "Sevimli Market")
+
+# Mijozlarga SMS (sms/provayder.py). ESKIZ_EMAIL va ESKIZ_PASSWORD
+# bo'lmasa SMS xizmati «ulanmagan» — hech narsa yuborilmaydi.
+# SMS_PROVAYDER=sinov — soxta xizmat (faqat lokal sinov uchun).
+SMS_PROVAYDER = env("SMS_PROVAYDER", "").strip().lower()
+ESKIZ_EMAIL = env("ESKIZ_EMAIL", "").strip()
+ESKIZ_PASSWORD = env("ESKIZ_PASSWORD", "").strip()
+ESKIZ_FROM = env("ESKIZ_FROM", "4546").strip()
+ESKIZ_URL = env("ESKIZ_URL", "https://notify.eskiz.uz/api").strip()
 
 # Chek printeri kengligi (belgi soni). 80 mm = 48, 58 mm = 32.
 RECEIPT_WIDTH = int(env("RECEIPT_WIDTH", "48"))

@@ -193,7 +193,11 @@ class PanelTest(TestCase):
         self.assertEqual((self.cust.birth_set_source, self.cust.birth_set_user), (Customer.BIRTH_PANEL, "egasi"))
         self.assertContains(r, "Panel · egasi")
 
-    def test_bonus_sahifasida_tugilgan_kunlar(self):
+    # Sana mahkamlangan: sahifada «tug'ilgan kuni yaqin» ro'yxati ham bor (2026-11-14) —
+    # 12.05 ga yaqin kunlarda (5–12 may) mijoz nomlari u yerda ham chiqib, quyidagi
+    # sanoqlar o'zgarib ketmasin.
+    @patch("dashboard.views._bugun", return_value=date(2026, 11, 14))
+    def test_bonus_sahifasida_tugilgan_kunlar(self, _bugun):
         from django.utils import timezone
 
         from sales.models import Register

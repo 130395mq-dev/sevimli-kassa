@@ -246,6 +246,23 @@ class Customer(models.Model):
     #: Panel foydalanuvchisi (login)
     birth_set_user = models.CharField(max_length=150, blank=True)
 
+    # SMS olishga rozilik (egasi, 2026-11-11: «mijozlarga SMS boradigan
+    # qilishimiz kerak»). 2026-yil 1-noyabrdan reklama SMS faqat mijozning
+    # yozma yoki elektron roziligi bilan yuboriladi — shuning uchun rozilik
+    # va uni KIM, QACHON yozgani saqlanadi (rozilik isboti).
+    # None — hali so'ralmagan, True — rozi, False — rozi emas (SMS ketmaydi).
+    # Matnli ustunlarda db_default: deploy paytida eski kod (sinxronizatsiya)
+    # yangi mijoz yaratsa ham yiqilmasin.
+    sms_rozi = models.BooleanField(null=True, blank=True, db_index=True)
+    sms_rozi_at = models.DateTimeField(null=True, blank=True)
+    sms_rozi_source = models.CharField(max_length=8, blank=True, default="", db_default="",
+                                       choices=BIRTH_SOURCES)
+    sms_rozi_register = models.ForeignKey(
+        "sales.Register", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+    sms_rozi_cashier = models.CharField(max_length=128, blank=True, default="", db_default="")
+    sms_rozi_user = models.CharField(max_length=150, blank=True, default="", db_default="")
+
     ms_card_pending = models.BooleanField(
         default=False,
         help_text="Karta/telefon MoySklad'ga hali yozilmagan",
@@ -324,6 +341,46 @@ class Customer(models.Model):
         parts = [self.birth_set_register.name if self.birth_set_register_id else "Kassa"]
         if self.birth_set_cashier:
             parts.append(self.birth_set_cashier)
+        return " · ".join(parts)
+
+    # --- SMS olishga rozilik (sms/ ilovasi)
+
+    SMS_FIELDS = ("sms_rozi", "sms_rozi_at", "sms_rozi_source", "sms_rozi_register",
+                  "sms_rozi_cashier", "sms_rozi_user")
+
+    def set_sms_rozi(self, value, *, source: str = "", register=None,
+                     cashier: str = "", user: str = "", now=None) -> None:
+        """SMS olishga rozilikni yozadi: True — rozi, False — rozi emas,
+        None — «so'ralmagan» holatiga qaytaradi.
+
+        `source`/`register`/`cashier`/`user` — kim yozgani (rozilik isboti,
+        panelda ko'rinadi). Saqlash: save(update_fields=Customer.SMS_FIELDS)."""
+        from django.utils import timezone
+
+        if value is None:
+            self.sms_rozi = None
+            self.sms_rozi_at = None
+            self.sms_rozi_source = self.sms_rozi_cashier = self.sms_rozi_user = ""
+            self.sms_rozi_register = None
+            return
+        self.sms_rozi = bool(value)
+        self.sms_rozi_at = now or timezone.now()
+        self.sms_rozi_source = source
+        self.sms_rozi_register = register
+        self.sms_rozi_cashier = (cashier or "")[:128]
+        self.sms_rozi_user = (user or "")[:150]
+
+    @property
+    def sms_rozi_label(self) -> str:
+        """Rozilikni kim yozgani — «Shaxar kassa 2 · Dilnoza», «Panel · akmal»
+        yoki «» (so'ralmagan)."""
+        if self.sms_rozi is None or not self.sms_rozi_at:
+            return ""
+        if self.sms_rozi_source == self.BIRTH_PANEL:
+            return "Panel" + (f" · {self.sms_rozi_user}" if self.sms_rozi_user else "")
+        parts = [self.sms_rozi_register.name if self.sms_rozi_register_id else "Kassa"]
+        if self.sms_rozi_cashier:
+            parts.append(self.sms_rozi_cashier)
         return " · ".join(parts)
 
 

@@ -66,3 +66,40 @@ def is_today(day: int | None, month: int | None, today: date) -> bool:
     if month == 2 and day == 29 and not calendar.isleap(today.year):
         return today.month == 3 and today.day == 1
     return today.day == day and today.month == month
+
+
+#: Panelda «yaqin» deb ko'rsatiladigan kunlar (egasi, 2026-11-14: 7 kun)
+YAQIN_KUN = 7
+
+
+def keyingi_sana(day: int | None, month: int | None, today: date) -> date | None:
+    """Tug'ilgan kunining bugundan (bugun ham kiradi) eng yaqin sanasi.
+    29-fevralda tug'ilganlar kabisa bo'lmagan yilda 1-martda (is_today kabi)."""
+    if not day or not month:
+        return None
+    for year in (today.year, today.year + 1):
+        if month == 2 and day == 29 and not calendar.isleap(year):
+            d = date(year, 3, 1)
+        else:
+            try:
+                d = date(year, month, day)
+            except ValueError:
+                return None
+        if d >= today:
+            return d
+    return None
+
+
+def qolgan_kun(day: int | None, month: int | None, today: date) -> int | None:
+    """Tug'ilgan kunigacha necha kun qoldi: 0 — bugun, 1 — ertaga; sana yo'q — None."""
+    d = keyingi_sana(day, month, today)
+    return (d - today).days if d else None
+
+
+def kun_juftlari(d: date) -> list[tuple[int, int]]:
+    """`d` kuni tabriklanadigan (kun, oy) juftlari — bazadan qidirish uchun.
+    Kabisa bo'lmagan yilning 1-martida 29-fevraldagilar ham kiradi."""
+    pairs = [(d.day, d.month)]
+    if d.month == 3 and d.day == 1 and not calendar.isleap(d.year):
+        pairs.append((29, 2))
+    return pairs

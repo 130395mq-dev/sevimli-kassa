@@ -46,6 +46,16 @@
           <option value="low" {% if state == "low" %}selected{% endif %}>Kam qolgan</option>
         </select>
       </label>
+      {% if not panel_manager %}
+      <label>Postavshik
+        <select name="postavshik" style="max-width: min(260px, 46vw);">
+          <option value="">— hammasi —</option>
+          {% for s in suppliers %}<option value="{{ s.id }}" {% if postavshik == s.id %}selected{% endif %}>{{ s.name }} ({{ s.soni }})</option>{% endfor %}
+          <option value="yoq" {% if postavshik == "yoq" %}selected{% endif %}>priyomkasi topilmagan</option>
+          <option value="kutilmoqda" {% if postavshik == "kutilmoqda" %}selected{% endif %}>hali aniqlanmagan</option>
+        </select>
+      </label>
+      {% endif %}
       <label>Qidirish
         <input type="search" name="q" value="{{ query }}" placeholder="nomi yoki kodi" style="padding: 6px 10px; font-size: 13px; margin: 0;">
       </label>
@@ -65,19 +75,33 @@
         <b>Yaxshi sotiladi</b> — shu do'konda {{ rules.days }} kunda kamida {{ rules.min_sold }} ta sotilgan.
         <b>Tugagan</b> — do'konda qoldiq 0. <b>Kam qolgan</b> — qoldiq hozirgi sur'atda {{ rules.low }} kunga ham yetmaydi.
         <b>Kerak</b> — {{ rules.target }} kunlik savdoga yetishi uchun keltirish kerak bo'lgan miqdor.
-        {% if not panel_manager %}<b>Boshqa joyda</b> — shu tovarning boshqa omborlardagi qoldig'i: bor bo'lsa keltirish mumkin, yo'q bo'lsa buyurtma kerak.{% endif %}
+        {% if not panel_manager %}<b>Boshqa joyda</b> — shu tovarning boshqa omborlardagi qoldig'i: bor bo'lsa keltirish mumkin, yo'q bo'lsa buyurtma kerak.
+        <b>Oxirgi kirim</b> — tovar oxirgi marta kimdan kelgani (MoySklad priyomkasi): zakaz o'sha postavshikka beriladi. Do'kon nomi ostida — shu do'kon tovarovedi.{% endif %}
         «Tugaganlar savdosi» — tugagan tovarlar odatda kuniga shuncha sotilardi.
         Qoldiq — MoySklad hisobidagi; hisobda bor, javonda yo'q tovar bu ro'yxatda chiqmaydi.
       </div>
     </div>
 
+    {% if kirim_soni and kirim_soni.aniq < kirim_soni.jami or kirim_xato %}
+      <div class="sec" style="margin: 10px 0;" id="kirim-holat">{% if kirim_soni.aniq < kirim_soni.jami %}Postavshiklar MoySklad'dan olinmoqda: <b>{{ kirim_soni.aniq }}</b> / {{ kirim_soni.jami }} tovar aniqlandi —
+        har bir necha daqiqada to'lib boradi.{% endif %}{% if kirim_xato %} <span style="color:var(--danger);">Postavshiklarni MoySklad'dan olishda oxirgi urinishda xato: {{ kirim_xato|truncatechars:160 }}</span>{% endif %}</div>
+    {% endif %}
+
+    {# 10 ta ustun noutbuk ekraniga sig'ishi uchun: sarlavhalar ikki qatorga bo'linadi, oraliqlar ixchamroq #}
+    <style>
+      table.tug th { white-space: normal; padding: 11px 10px; vertical-align: bottom; }
+      table.tug th.tight { white-space: nowrap; }
+      table.tug td { padding: 12px 10px; }
+      table.tug td.kirim { min-width: 150px; }
+      table.tug .nw { white-space: nowrap; }
+    </style>
     <div class="tablewrap">
-    <table>
+    <table class="tug">
       <thead><tr>
         <th class="tight">#</th><th class="tight">Kodi</th><th>Nomi</th><th>Do'kon</th>
         <th class="right">{{ rules.days }} kunda sotildi</th>
         <th class="right">Qoldiq</th>
-        {% if not panel_manager %}<th>Boshqa joyda</th>{% endif %}
+        {% if not panel_manager %}<th>Boshqa joyda</th><th>Oxirgi kirim — kimdan</th>{% endif %}
         <th class="right">Kerak</th>
         <th class="right">Kunlik savdo</th>
       </tr></thead>
@@ -87,17 +111,22 @@
           <td class="num tight">{{ forloop.counter }}</td>
           <td class="code">{{ r.code|default:"—" }}</td>
           <td><b>{{ r.name }}</b></td>
-          <td>{{ r.wh }}</td>
+          <td>{{ r.wh }}{% if r.masul %}<div class="sec">{{ r.masul }}</div>{% endif %}</td>
           <td class="right num tight">{{ r.sold|floatformat:"-1" }} <span class="sec">{{ r.uom }}</span>
             <div class="sec">kuniga {{ r.rate|floatformat:"-1" }}</div></td>
           <td class="right num tight">{% if r.state == "out" %}<span class="badge err">tugagan</span>{% if r.stock < 0 %}<div class="sec">hisobda {{ r.stock|floatformat:"-1" }}</div>{% endif %}{% else %}<b>{{ r.stock|floatformat:"-1" }}</b>
             <div class="sec">{{ r.days|floatformat:"-1" }} kunga yetadi</div>{% endif %}</td>
-          {% if not panel_manager %}<td>{% for e in r.elsewhere %}<div>{{ e.name }}: <b>{{ e.qty|floatformat:"-1" }}</b></div>{% empty %}<span class="sec">yo'q — buyurtma kerak</span>{% endfor %}</td>{% endif %}
+          {% if not panel_manager %}<td>{% for e in r.elsewhere %}<div>{{ e.name }}: <b>{{ e.qty|floatformat:"-1" }}</b></div>{% empty %}<span class="sec">yo'q — buyurtma kerak</span>{% endfor %}</td>
+          <td class="kirim">{% if r.kirim.holat == "bor" %}<b>{{ r.kirim.agent }}</b>
+            <div class="sec"><span class="nw">{{ r.kirim.sana|date:"d.m.Y" }}</span>{% if r.kirim.miqdor %} · <span class="nw">{{ r.kirim.miqdor|floatformat:"-1" }} {{ r.uom }}</span>{% endif %}{% if r.kirim.narx %} · <span class="nw">{{ r.kirim.narx|som_tiyin }} so'mdan</span>{% endif %}</div>
+            {% if r.kirim.boshqa_ombor and r.kirim.ombor %}<div class="sec">{{ r.kirim.ombor }}ga kelgan</div>{% endif %}
+            {% elif r.kirim.holat == "yoq" %}<span class="sec">priyomkasi topilmadi</span>
+            {% else %}<span class="sec">aniqlanmoqda…</span>{% endif %}</td>{% endif %}
           <td class="right num tight"><b>{{ r.need|floatformat:"-1" }}</b> <span class="sec">{{ r.uom }}</span></td>
           <td class="right num tight">{{ r.per_day|som }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="9" class="empty">Bunday tovar topilmadi — yaxshi sotiladigan tovarlarning qoldig'i yetarli.</td></tr>
+        <tr><td colspan="10" class="empty">Bunday tovar topilmadi — yaxshi sotiladigan tovarlarning qoldig'i yetarli.</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -10,7 +10,7 @@
   <div class="sub">
     {{ cust.phone|default:"telefon yo'q" }}
     {% if cust.discount_card %} · karta {{ cust.discount_card }}{% endif %}
-    {% if cust.birthday_text %} · tug'ilgan kuni {{ cust.birthday_text }}{% if cust.is_birthday %} <span class="badge ok">bugun!</span>{% endif %}{% endif %}
+    {% if cust.birthday_text %} · tug'ilgan kuni {{ cust.birthday_text }} {% include "dashboard/_tk_yaqin.html" with n=cust.tk_qolgan %}{% endif %}
   </div>
 
   {% for m in messages %}
@@ -43,6 +43,19 @@
     </label>
     <button type="submit" class="small ghost">Saqlash</button>
     <span class="sec">{% if cust.birth_set_at %}Kiritdi: <b>{{ cust.birth_set_label }}</b> · {{ cust.birth_set_at|date:"d.m.Y H:i" }}{% elif cust.birthday_text %}Kim kiritgani saqlanmagan (10.11.2026 gacha kiritilgan){% else %}Tug'ilgan kunida kassir tabriklaydi va chekda tabrik so'zi chiqadi. Kassada ham kiritsa bo'ladi.{% endif %}</span>
+  </form>
+
+  <form method="post" class="davr" style="margin-top:10px;" id="sms-rozilik">
+    {% csrf_token %}<input type="hidden" name="action" value="sms_rozi">
+    <label>SMS olishga rozilik
+      <select name="rozi" style="margin:0;">
+        <option value="" {% if cust.sms_rozi is None %}selected{% endif %}>So'ralmagan</option>
+        <option value="ha" {% if cust.sms_rozi %}selected{% endif %}>Rozi</option>
+        <option value="yoq" {% if cust.sms_rozi is False %}selected{% endif %}>Rozi emas</option>
+      </select>
+    </label>
+    <button type="submit" class="small ghost">Saqlash</button>
+    <span class="sec">{% if cust.sms_rozi_at %}Belgiladi: <b>{{ cust.sms_rozi_label }}</b> · {{ cust.sms_rozi_at|date:"d.m.Y H:i" }}{% else %}Tabrik SMS faqat rozi bo'lgan mijozga yuboriladi — avval mijozdan so'rang.{% endif %}</span>
   </form>
 
   <p style="margin:16px 0 8px;">

@@ -17,6 +17,11 @@ Qoida (ko'chirish tavsiyasidagi «yetmayapti» bilan bir xil sonlar):
                      keltirish kerak;
   * BOSHQA JOYDA   — shu tovarning boshqa omborlardagi (sklad ham) qoldig'i:
                      bor bo'lsa — keltirish mumkin, yo'q bo'lsa — buyurtma.
+  * OXIRGI KIRIM   — tovar oxirgi marta KIMDAN kelgan (MoySklad priyomkasi):
+                     zakaz o'sha postavshikka beriladi. Do'kon ostida — shu
+                     do'kon tovarovedi (zakazni u beradi). Egasining so'rovi,
+                     2026-11-12; ma'lumot — dashboard/kirim.py. Boshqaruvchiga
+                     ko'rsatilmaydi (postavshik va kirim narxi — egasiniki).
 Tartib: avval tugaganlar, ichida kunlik savdosi (so'm) kattasi birinchi.
 
 Eslatma: qoldiq MoySklad'dagi hisob qoldig'i. Hisobda bor-u, javonda yo'q
@@ -33,8 +38,9 @@ from io import StringIO
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 
-from . import access, kochirish
+from . import access, kirim, kochirish
 
 OUT, LOW = "out", "low"
 PAGE_LIMIT = 300           # sahifada ko'rsatiladigan qatorlar; hammasi — CSV'da
@@ -113,24 +119,39 @@ def to_csv(data: dict, rows: list[dict]) -> tuple[str, str]:
     buf = StringIO()
     w = csv.writer(buf, delimiter=";")
     w.writerow([f"Tugayotgan va tugagan tovarlar — savdo {data['start']:%d.%m}–{data['end']:%d.%m} (30 kun)"])
+    # Oxirgi kirim ustunlari — faqat egasida (qatorlarda «kirim» bo'lsa)
+    with_kirim = any("kirim" in r for r in rows)
     w.writerow(["Holat", "Kodi", "Nomi", "O'lchov", "Do'kon", "30 kunda sotildi", "Kuniga",
                 "Qoldiq", "Necha kunga yetadi", "Kerak (14 kunlik)", "Boshqa omborlarda",
-                "Kunlik savdo, so'm"])
+                "Kunlik savdo, so'm"]
+               + (["Tovaroved", "Postavshik (oxirgi kirim)", "Kirim sanasi", "Kirim miqdori",
+                   "Kirim narxi, so'm", "Kirim ombori"] if with_kirim else []))
     for r in rows:
-        w.writerow([
+        line = [
             "tugagan" if r["state"] == OUT else "kam qolgan", _csv_text(r["code"]), r["name"],
             r["uom"], r["wh"], _csv_num(r["sold"]), f"{r['rate']:.2f}".replace(".", ","),
             _csv_num(r["stock"]) or "0", f"{r['days']:.1f}".replace(".", ","), _csv_num(r["need"]),
             "; ".join(f"{e['name']}: {_csv_num(e['qty'])}" for e in r["elsewhere"]),
             f"{r['per_day']:.0f}",
-        ])
+        ]
+        if with_kirim:
+            k = r.get("kirim") or {}
+            if k.get("holat") == kirim.BOR:
+                line += [r.get("masul", ""), k["agent"],
+                         timezone.localtime(k["sana"]).strftime("%d.%m.%Y") if k.get("sana") else "",
+                         _csv_num(k.get("miqdor")), _csv_num(Decimal(k["narx"]) / 100) if k.get("narx") else "",
+                         k.get("ombor") or ""]
+            else:
+                line += [r.get("masul", ""),
+                         "priyomkasi topilmadi" if k.get("holat") == kirim.YOQ else "aniqlanmoqda", "", "", "", ""]
+        w.writerow(line)
     return f"sevimli-tugayotgan-{data['end']:%Y%m%d}.csv", buf.getvalue()
 
 
 @login_required
 def page(request):
-    """?dokon= / ?holat=out|low / ?q= — filtr, ?format=csv — Excel,
-    ?yangila=1 — MoySklad'dan qayta hisoblash."""
+    """?dokon= / ?holat=out|low / ?q= / ?postavshik= — filtr, ?format=csv —
+    Excel, ?yangila=1 — MoySklad'dan qayta hisoblash."""
     manager = access.manager_of(request.user)
     # Boshqaruvchi MoySklad'dan qayta hisoblatmaydi (og'ir so'rov — egasining ishi)
     data = kochirish.get(refresh=request.GET.get("yangila") == "1" and not manager)
@@ -145,7 +166,19 @@ def page(request):
                     for r in all_rows if str(r["wh_id"]) == shop]
         data = {**data, "rows": [], "short": all_rows,
                 "warehouses": [w for w in data.get("warehouses") or [] if str(w["id"]) == shop]}
+    # Oxirgi kirim (kimdan kelgan) va do'kon tovarovedi — faqat egasiga
+    postavshik, suppliers, kirim_soni, kirim_holat = "", [], None, {}
+    if ready and not manager:
+        all_rows, kirim_soni = kirim.attach(all_rows)
+        masul = kirim.masullar()
+        for r in all_rows:
+            r["masul"] = masul.get(str(r["wh_id"]), "")
+        kirim_holat = kirim.holat()
     rows = filtered(all_rows, shop, state, query) if ready else []
+    if ready and not manager:
+        postavshik = request.GET.get("postavshik", "")
+        suppliers = kirim.postavshiklar(rows)
+        rows = kirim.filtr(rows, postavshik)
     if request.GET.get("format") == "csv" and ready:
         name, text = to_csv(data, rows)
         resp = HttpResponse("﻿" + text, content_type="text/csv; charset=utf-8")
@@ -161,6 +194,8 @@ def page(request):
         "out_count": len(out), "low_count": len(rows) - len(out),
         "lost": sum(r["per_day"] for r in out),
         "shop": shop, "state": state, "query": query, "keep": params.urlencode(),
+        "postavshik": postavshik, "suppliers": suppliers, "kirim_soni": kirim_soni,
+        "kirim_xato": kirim_holat.get("xato", ""),
         "rules": {"days": kochirish.PERIOD_DAYS, "min_sold": kochirish.MIN_SOLD,
                   "low": kochirish.LOW_COVER_DAYS, "target": kochirish.TARGET_DAYS},
     })

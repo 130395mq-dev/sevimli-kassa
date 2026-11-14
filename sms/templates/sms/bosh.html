@@ -1,0 +1,200 @@
+{% extends "dashboard/base.html" %}
+{% load pul %}
+
+{% block title %}Mijozlarga SMS — Sevimli Kassa{% endblock %}
+{% block nav_sms %}on{% endblock %}
+{% block crumb %}Mijozlarga SMS{% endblock %}
+
+{% block body %}
+  <h1>Mijozlarga SMS</h1>
+  <div class="sub">Tug'ilgan kunida mijozga tabrik SMS yuboriladi —
+    faqat rozi bo'lgan mijozlarga va faqat kunduzi.</div>
+
+  {% for m in messages %}
+    <div class="alert {% if m.tags == 'error' %}err{% else %}ok{% endif %}"><span>{% if m.tags == 'error' %}✕{% else %}✓{% endif %}</span><div>{{ m }}</div></div>
+  {% endfor %}
+
+  <!-- ============ HOLAT ============ -->
+  <div class="card" style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;">
+      <div style="font-size:12.5px;color:var(--muted);">Holat</div>
+      <div style="font-size:18px;font-weight:700;color:var(--{% if rang == 'ok' %}accent{% elif rang == 'bad' %}danger{% else %}warn{% endif %});" id="sms-holat">
+        {% if rang == 'ok' %}●{% else %}○{% endif %} {{ holat }}</div>
+      <div class="sec" style="margin-top:6px;">
+        {% if xizmat %}
+          SMS xizmati: <b>{{ xizmat.korinish }}</b>
+          {% if balans is not None %} · balans: <b>{{ balans|som }} so'm</b>{% endif %}
+          {% if balans_xato %} · <span style="color:var(--danger);">{{ balans_xato }}</span>{% endif %}
+        {% else %}
+          Pastdagi uch qadamdan keyin ishlaydi.
+        {% endif %}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:12.5px;color:var(--muted);">Shu oyda yuborildi</div>
+      <div style="font-size:22px;font-weight:700;">{{ oy.qabul }}</div>
+      <div class="sec">yetkazildi: {{ oy.yetkazildi }} · yuborilmadi: {{ oy.xato }}{% if oy.pul %} · {{ oy.pul|som }} so'm{% endif %}</div>
+    </div>
+  </div>
+
+  {% if not xizmat %}
+    <div class="alert warn"><span>!</span><div>
+      <b>SMS yuborish uchun SMS xizmati kerak</b>
+      1. SMS xizmatida (masalan Eskiz) ro'yxatdan o'ting va shartnoma tuzing.<br>
+      2. Pastdagi tabrik matnini o'sha xizmat kabinetida aynan shunday yozib, tasdiqlating.<br>
+      3. Xizmat bergan login va maxfiy kalitni serverga (Railway) yozing: ESKIZ_EMAIL va ESKIZ_PASSWORD.<br>
+      Ungacha bu sahifada hammasini sozlab qo'yish mumkin, lekin SMS ketmaydi.
+    </div></div>
+  {% endif %}
+
+  <!-- ============ QOIDALAR ============ -->
+  <div class="card">
+    <h3 style="margin-top:0;">Qoidalar (2026-yil 1-noyabrdan)</h3>
+    <div class="sec" style="font-size:13.5px;line-height:1.55;">
+      <b>1. Rozilik.</b> Reklama SMS faqat mijozning roziligi bilan yuboriladi. Shuning uchun SMS
+      faqat «SMS olishga rozi» deb belgilangan mijozlarga ketadi. Rozilik mijoz sahifasida
+      belgilanadi; kim va qachon belgilagani saqlanadi.<br>
+      <b>2. Vaqt.</b> Kechqurun 18:00 dan ertalab 09:00 gacha reklama SMS yuborish mumkin emas.
+      Shuning uchun SMS faqat tanlangan soatdan 17:45 gacha ketadi.<br>
+      <b>3. Matn.</b> Matn SMS xizmatida oldindan tasdiqlangan bo'lishi kerak. Tasdiqlanmagan matn
+      bloklanadi yoki bir necha baravar qimmat hisoblanadi — shuning uchun tasdiqlanmaguncha yubormaymiz.
+    </div>
+  </div>
+
+  <!-- ============ SOZLAMALAR ============ -->
+  <h2>Tug'ilgan kun tabrigi</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="sozlama">
+    <div class="fields">
+      <label class="check" style="grid-column:1 / -1;">
+        <input type="checkbox" name="yoqilgan" {% if s.yoqilgan %}checked{% endif %}>
+        <span><b>Tabrik SMS yoqilgan</b> <span class="sec">— o'chiq bo'lsa hech kimga SMS ketmaydi</span></span>
+      </label>
+      <label style="grid-column:1 / -1;">
+        <span>Tabrik matni <span class="sec">— hamma mijozga bir xil matn ketadi</span></span>
+        <textarea name="matn" rows="3" maxlength="480" id="sms-matn">{{ s.matn }}</textarea>
+      </label>
+      <label>
+        <span>Yuborish soati <span class="sec">— shu soatdan boshlab</span></span>
+        <select name="soat">
+          {% for h in soatlar %}<option value="{{ h }}" {% if h == s.soat %}selected{% endif %}>{{ h }}:00</option>{% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Kuniga eng ko'p SMS <span class="sec">— xarajat chegarasi</span></span>
+        <input name="kunlik_chegara" value="{{ s.kunlik_chegara }}" inputmode="numeric">
+      </label>
+    </div>
+    <div class="sec" style="margin:10px 0 12px;" id="sms-uzunlik">
+      Matn uzunligi: <b>{{ kod.belgi }}</b> belgi — <b>{{ kod.qism }} ta SMS</b> hisoblanadi
+      (bitta SMS — {{ kod.chegara }} belgigacha).
+      {% if kod.unicode %}Matnda oddiy lotin harflaridan boshqa belgi bor (kirill harfi yoki «ʻ», «’» kabi) —
+        shuning uchun bitta SMS'ga atigi 70 belgi sig'adi. Oddiy lotin harflari va «'» bilan yozilsa — 160 belgi.{% endif %}
+      {% if kod.qism > 1 %}<span style="color:var(--warn);">Har bir tabrik {{ kod.qism }} ta SMS narxida turadi.</span>{% endif %}
+    </div>
+    {% if shablon and shablon.izoh %}
+      <div class="alert {% if not shablon.ruxsat %}err{% elif shablon.kod == 'reklama' %}warn{% else %}ok{% endif %}" id="sms-shablon">
+        <span>{% if shablon.ruxsat %}✓{% else %}✕{% endif %}</span><div>{{ shablon.izoh }}</div></div>
+    {% endif %}
+    <button type="submit">Saqlash</button>
+    {% if s.updated_by %}<span class="sec" style="margin-left:12px;">Oxirgi o'zgarish: {{ s.updated_at|date:"d.m.Y H:i" }} · {{ s.updated_by }}</span>{% endif %}
+  </form>
+  {% if xizmat %}
+    <form method="post" style="margin:-6px 0 18px;">
+      {% csrf_token %}<input type="hidden" name="action" value="yangila">
+      <button type="submit" class="small ghost">SMS xizmatidan qayta tekshirish</button>
+      <span class="sec" style="margin-left:8px;">balans va matn tasdig'i 10 daqiqada bir yangilanadi</span>
+    </form>
+  {% endif %}
+
+  <!-- ============ MIJOZLAR ============ -->
+  <h2>Mijozlar tayyorligi</h2>
+  <div class="card">
+    <div class="kv">
+      <div><div class="k">Tabrik oladi</div>
+        <div class="v" style="font-size:22px;font-weight:700;">{{ stat.tayyor }}</div>
+        <div class="sec">rozi + telefoni + tug'ilgan kuni bor</div></div>
+      <div><div class="k">SMS'ga rozi</div><div class="v">{{ stat.rozi }}</div>
+        <div class="sec">rad etgan: {{ stat.rad }}</div></div>
+      <div><div class="k">Rozilik so'ralmagan</div><div class="v">{{ stat.soralmagan }}</div>
+        <div class="sec">kartali mijozlardan</div></div>
+      <div><div class="k">Kartali mijozlar</div><div class="v">{{ stat.kartali }}</div>
+        <div class="sec">telefoni bor: {{ stat.telefonli }} · tug'ilgan kuni bor: {{ stat.tugilgan }}</div></div>
+    </div>
+    <div class="sec" style="margin-top:12px;">Rozilik mijoz sahifasida belgilanadi
+      (<a href="{% url 'dashboard:bonus' %}?tk=bor#mijozlar">tug'ilgan kuni kiritilgan mijozlar ro'yxati</a>).
+      Keyingi 7 kunda tug'ilgan kuni bor: <b>{{ yaqin.jami }}</b> ta mijoz, shundan SMS oladi: <b>{{ yaqin.sms }}</b> ta.
+      <a href="{% url 'dashboard:bonus' %}#yaqin">Ro'yxat →</a></div>
+  </div>
+
+  <!-- ============ BUGUN ============ -->
+  <h2>Bugun tug'ilganlar <span class="sec" style="font-weight:400;">— {{ today|date:"d.m.Y" }}</span></h2>
+  <div class="tablewrap"><table id="sms-bugun">
+    <tr><th>Mijoz</th><th>SMS</th><th>Rozilik</th><th>Telefon</th></tr>
+    {% for r in bugun %}
+      <tr>
+        <td><a href="{% url 'dashboard:customer-bonus' r.mijoz.pk %}">{{ r.mijoz.name }}</a></td>
+        <td>{% if r.xabar %}
+            <span class="badge {% if r.xabar.holat == 'yetkazildi' or r.xabar.holat == 'yuborildi' %}ok{% elif r.xabar.holat == 'navbatda' or r.xabar.holat == 'qayta' %}warn{% else %}err{% endif %}">{{ r.xabar.get_holat_display }}</span>
+            {% if r.xabar.xato %}<span class="sec">{{ r.xabar.xato }}</span>{% endif %}
+          {% else %}<span class="sec">{{ r.izoh }}</span>{% endif %}</td>
+        <td>{% if r.mijoz.sms_rozi %}<span class="badge ok">rozi</span>{% elif r.mijoz.sms_rozi is False %}<span class="badge err">rad etgan</span>{% else %}<span class="badge off">so'ralmagan</span>{% endif %}</td>
+        <td class="num tight">{{ r.mijoz.phone|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="sec" style="padding:14px;text-align:center;">Bugun tug'ilgan kuni bor mijoz yo'q</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if bugun_xato and qayta_mumkin %}
+    <form method="post" style="margin:10px 0 0;">
+      {% csrf_token %}<input type="hidden" name="action" value="qayta">
+      <button type="submit" class="small">Yuborilmaganlarni qayta yuborish ({{ bugun_xato }})</button>
+      <span class="sec" style="margin-left:8px;">masalan balans to'ldirilgandan keyin</span>
+    </form>
+  {% endif %}
+
+  <!-- ============ SINOV ============ -->
+  <h2>Sinov SMS</h2>
+  <form method="post" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="sinov">
+    <div class="fields">
+      <label>
+        <span>Telefon raqami <span class="sec">— o'zingizniki</span></span>
+        <input name="telefon" placeholder="90 123 45 67" inputmode="tel" autocomplete="off">
+      </label>
+      <label>
+        <span>Nima yuboriladi</span>
+        <select name="nima">
+          <option value="tabrik">Tabrik matni</option>
+          {% if sinov_matni %}<option value="xizmat">Xizmat sinov matni: «{{ sinov_matni }}»</option>{% endif %}
+        </select>
+      </label>
+    </div>
+    {% if sinov_matni %}<div class="sec" style="margin:8px 0 12px;">Shartnoma tuzilgunicha SMS xizmati faqat o'zining
+      sinov matnini yuboradi — ulanishni tekshirish uchun shuni tanlang.</div>{% endif %}
+    <button type="submit" {% if not xizmat %}disabled{% endif %}>Sinov SMS yuborish</button>
+    {% if not xizmat %}<span class="sec" style="margin-left:12px;">SMS xizmati ulangach ishlaydi</span>{% endif %}
+  </form>
+
+  <!-- ============ JURNAL ============ -->
+  <h2>Yuborilgan SMS'lar <span class="sec" style="font-weight:400;">— oxirgi 50 ta</span></h2>
+  <div class="tablewrap"><table id="sms-jurnal">
+    <tr><th>Vaqt</th><th>Kimga</th><th>Holat</th><th>Telefon</th><th>Turi</th><th class="num">SMS</th><th class="num">Narxi</th></tr>
+    {% for x in jurnal %}
+      <tr>
+        <td class="num tight">{{ x.created_at|date:"d.m H:i" }}</td>
+        <td>{% if x.customer_id %}<a href="{% url 'dashboard:customer-bonus' x.customer_id %}">{{ x.customer.name }}</a>{% elif x.kim %}<span class="sec">sinov · {{ x.kim }}</span>{% else %}<span class="sec">—</span>{% endif %}</td>
+        <td><span class="badge {% if x.holat == 'yetkazildi' or x.holat == 'yuborildi' %}ok{% elif x.holat == 'navbatda' or x.holat == 'qayta' %}warn{% else %}err{% endif %}">{{ x.get_holat_display }}</span>
+          {% if x.xato %}<span class="sec">{{ x.xato }}</span>{% endif %}</td>
+        <td class="num tight">{{ x.telefon_korinish }}</td>
+        <td>{{ x.get_tur_display }}{% if x.reklama %} <span class="badge warn">reklama</span>{% endif %}</td>
+        <td class="num">{{ x.qismlar }}</td>
+        <td class="num">{% if x.narx is not None %}{{ x.narx|som }}{% else %}—{% endif %}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="sec" style="padding:14px;text-align:center;">Hali SMS yuborilmagan</td></tr>
+    {% endfor %}
+  </table></div>
+{% endblock %}

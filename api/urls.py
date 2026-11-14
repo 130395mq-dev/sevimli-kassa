@@ -19,6 +19,7 @@ urlpatterns = [
     path("customers", views.customers, name="customers"),
     path("customers/create", views.create_customer, name="customer-create"),
     path("customers/birthday", views.customer_birthday, name="customer-birthday"),
+    path("customers/sms-consent", views.customer_sms_consent, name="customer-sms-consent"),
     path("shift/open", views.shift_open, name="shift-open"),
     path("shift/close", views.shift_close, name="shift-close"),
     path("shift/report", views.shift_report, name="shift-report"),

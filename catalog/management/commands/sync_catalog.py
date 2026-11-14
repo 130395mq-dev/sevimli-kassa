@@ -149,6 +149,15 @@ class Command(BaseCommand):
                 entity=f"once:{once}", defaults={"last_success_at": timezone.now()}
             )
 
+        # Tugayotgan tovarlarning oxirgi kirimi (dashboard/kirim.py): zakazni
+        # kimga berish kerakligi. Cron'ning qoldiq navbatidan keyin (5 daqiqada
+        # bir); xato tashlamaydi, o'z vaqt chegarasi va qulfi bor, sahifa
+        # ishlatilmasa MoySklad'ga tegmaydi.
+        if options["only"] == "stock":
+            from dashboard.kirim import after_stock_sync as kirim_after_stock_sync
+
+            kirim_after_stock_sync()
+
         elapsed = time.monotonic() - started
         self._ok(f"Tayyor — {elapsed:.1f} soniya")
         for name, count in result.items():

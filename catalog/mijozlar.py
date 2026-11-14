@@ -67,12 +67,15 @@ def find_by_phone(phone: str) -> list[Customer]:
 
 
 def register(name: str, phone: str, card: str,
-             birthday: str = "", *, register=None, cashier: str = "") -> tuple[Customer, bool]:
+             birthday: str = "", *, register=None, cashier: str = "",
+             sms_rozi: bool | None = None) -> tuple[Customer, bool]:
     """Kassadan kelgan yangi mijoz. Qaytaradi: (mijoz, eski_yozuv_tiklandimi).
 
     `birthday` — «KK.OO[.YYYY]» matni; noto'g'ri bo'lsa RegistrationError.
     Eski yozuv tiklansa va unda tug'ilgan kun yo'q bo'lsa — shu yoziladi.
     `register`/`cashier` — tug'ilgan kunni kim kiritgani (panelda ko'rinadi).
+    `sms_rozi` — SMS olishga rozilik (True/False); None — so'ralmagan. Eski
+    yozuv tiklansa va unda rozilik belgilanmagan bo'lsa — shu yoziladi.
     """
     from django.utils import timezone
 
@@ -87,6 +90,8 @@ def register(name: str, phone: str, card: str,
             raise RegistrationError(str(e), status=400) from e
     who = dict(birth_set_at=timezone.now(), birth_set_source=Customer.BIRTH_ROYXAT,
                birth_set_register=register, birth_set_cashier=(cashier or "")[:128]) if birth else {}
+    rozi = dict(sms_rozi=bool(sms_rozi), sms_rozi_at=timezone.now(), sms_rozi_source=Customer.BIRTH_ROYXAT,
+                sms_rozi_register=register, sms_rozi_cashier=(cashier or "")[:128]) if sms_rozi is not None else {}
     with transaction.atomic():
         if card:
             owner = Customer.objects.filter(archived=False, discount_card=card).first()
@@ -114,7 +119,11 @@ def register(name: str, phone: str, card: str,
                     old.birth_day, old.birth_month, old.birth_year = birth
                     for k, v in who.items():
                         setattr(old, k, v)
-                old.save(update_fields=["discount_card", "ms_card_pending", *Customer.BIRTH_FIELDS])
+                if rozi and old.sms_rozi is None:
+                    for k, v in rozi.items():
+                        setattr(old, k, v)
+                old.save(update_fields=["discount_card", "ms_card_pending", *Customer.BIRTH_FIELDS,
+                                        *Customer.SMS_FIELDS])
                 logger.info("Mijoz kartasi tiklandi: #%s %s (karta …%s)", old.pk, old.name, card[-4:])
                 return old, True
         cust = Customer.objects.create(
@@ -123,7 +132,7 @@ def register(name: str, phone: str, card: str,
             birth_day=birth[0] if birth else None,
             birth_month=birth[1] if birth else None,
             birth_year=birth[2] if birth else None,
-            **who,
+            **who, **rozi,
         )
     logger.info("Yangi mijoz kassadan: #%s %s", cust.pk, cust.name)
     return cust, False

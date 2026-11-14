@@ -400,6 +400,10 @@ class CatalogSync:
         # Xato tashlamaydi, tovaroved biriktirilmaguncha hech narsa qilmaydi.
         from kpi.ishlar import after_stock_sync
         after_stock_sync()
+        # Mijozlarga SMS (sms/ishlar.py): tug'ilgan kun tabrigi. Xato
+        # tashlamaydi; SMS xizmati ulanmagan bo'lsa hech narsa qilmaydi.
+        from sms.ishlar import after_stock_sync as sms_after_stock_sync
+        sms_after_stock_sync()
         return count
 
     def _sync_stock(self, state: SyncState, full: bool) -> int:

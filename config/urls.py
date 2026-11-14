@@ -35,5 +35,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/", include("api.urls")),
     path("kpi/", include("kpi.urls")),
+    path("sms/", include("sms.urls")),
     path("", include("dashboard.urls")),
 ]

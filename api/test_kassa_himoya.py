@@ -606,9 +606,20 @@ class PoygaTest(TransactionTestCase):
     BITTA ochilishi, chek raqamlari takrorlanmasligi shart.
     """
 
-    setUp = ApiTestCase.setUp
     auth = ApiTestCase.auth
     sale_payload = ApiTestCase.sale_payload
+
+    def setUp(self):
+        ApiTestCase.setUp(self)
+        # Haqiqiy kassa birinchi `hello` dayoq sozlama va narx siyosati qatorlarini
+        # yaratadi (api/views.py hello → pricing.policy_for). Bu yerda ham shunday:
+        # aks holda sinovdagi BIRINCHI chek ularni smena qulfi ostida yaratib, kassa
+        # qatoriga (FK) tegadi va bir vaqtdagi «SMENA OCHISH» (kassa qatori → smena)
+        # bilan o'zaro qulfga tushishi mumkin edi — sinov ba'zan tasodifan
+        # yiqilardi (14.11.2026: «deadlock detected»). Ishlab turgan kassalarda
+        # bu qatorlar allaqachon bor.
+        from api import pricing
+        pricing.policy_for(self.register)
 
     def _parallel(self, jobs, workers=8):
         def run(job):

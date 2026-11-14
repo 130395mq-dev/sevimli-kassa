@@ -963,6 +963,9 @@ def _customer_dict(c: Customer) -> dict:
         # (Toshkent) bo'yicha — kassa soati adashgan bo'lsa ham to'g'ri.
         "birthday": c.birthday_text,
         "is_birthday": c.is_birthday(),
+        # SMS olishga rozilik (2026-11-11): true — rozi, false — rozi emas,
+        # null — hali so'ralmagan (kassa mijozdan so'rab belgilashi mumkin).
+        "sms_consent": c.sms_rozi,
     }
 
 
@@ -984,6 +987,8 @@ def create_customer(request):
     phone = (data.get("phone") or "").strip()
     card = (data.get("card") or "").strip()
     birthday = (data.get("birthday") or "").strip()
+    # SMS olishga rozilik — ixtiyoriy: true/false; yuborilmasa «so'ralmagan»
+    sms_consent = data.get("sms_consent") if isinstance(data.get("sms_consent"), bool) else None
 
     if len(name) < 2:
         return error("Ism kamida 2 harf bo'lishi kerak")
@@ -992,6 +997,7 @@ def create_customer(request):
         customer, restored = mijozlar.register(
             name, phone, card, birthday=birthday,
             register=request.register, cashier=_request_cashier_name(request),
+            sms_rozi=sms_consent,
         )
     except mijozlar.RegistrationError as e:
         return error(str(e), status=e.status)
@@ -1027,6 +1033,32 @@ def customer_birthday(request):
     customer.save(update_fields=Customer.BIRTH_FIELDS)
     logger.info("Mijoz #%s tug'ilgan kuni: %s (%s)", customer.pk,
                 customer.birthday_text or "o'chirildi", customer.birth_set_label or request.register.code)
+    return JsonResponse({"customer": _customer_dict(customer)})
+
+
+@csrf_exempt
+@require_POST
+@register_required
+def customer_sms_consent(request):
+    """Mijozning SMS olishga roziligini yozish (kassadan: kassir mijozdan
+    so'rab belgilaydi). {"id": .., "consent": true|false}. Kim va qachon
+    belgilagani saqlanadi (rozilik isboti). Qaytaradi: yangilangan mijoz."""
+    data = body(request)
+    consent = data.get("consent")
+    if not isinstance(consent, bool):
+        return error("Rozilik «ha» yoki «yo'q» bo'lishi kerak")
+    try:
+        pk = int(data.get("id"))
+    except (TypeError, ValueError):
+        return error("Mijoz topilmadi", status=404)
+    customer = Customer.objects.filter(pk=pk, archived=False).first()
+    if not customer:
+        return error("Mijoz topilmadi", status=404)
+    customer.set_sms_rozi(consent, source=Customer.BIRTH_KASSA,
+                          register=request.register, cashier=_request_cashier_name(request))
+    customer.save(update_fields=Customer.SMS_FIELDS)
+    logger.info("Mijoz #%s SMS roziligi: %s (%s)", customer.pk,
+                "rozi" if consent else "rozi emas", customer.sms_rozi_label or request.register.code)
     return JsonResponse({"customer": _customer_dict(customer)})
 
 

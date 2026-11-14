@@ -30,6 +30,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 
+from catalog import tugilgan_kun
 from catalog.models import Customer, Product, SyncState
 from dashboard import access
 from dashboard import batafsil as batafsil_mod
@@ -996,6 +997,12 @@ def bonus(request):
 
     page = Paginator(customers, 50).get_page(request.GET.get("page"))
     recent = BonusEntry.objects.select_related("customer")[:25]
+    # Tug'ilgan kuni yaqin bo'lsa — ro'yxatlarda «yaqin» belgisi (2026-11-14)
+    today = _bugun()
+    page.object_list = list(page.object_list)
+    tugilgan = _tugilgan_kun_stats()
+    for c in [*page.object_list, *tugilgan["oxirgi"]]:
+        c.tk_qolgan = _yaqin_kun(c, today)
 
     return render(request, "dashboard/bonus.html", {
         "program": program,
@@ -1005,8 +1012,49 @@ def bonus(request):
         "q": q,
         "tk": tk,
         "recent": recent,
-        "tugilgan": _tugilgan_kun_stats(),
+        "tugilgan": tugilgan,
+        "yaqin": _tugilgan_yaqin(today),
     })
+
+
+def _bugun():
+    """Bugungi sana (Toshkent) — sinovlarda almashtiriladi."""
+    return timezone.localdate()
+
+
+def _yaqin_kun(c: Customer, today) -> int | None:
+    """Tug'ilgan kunigacha qolgan kun, agar «yaqin» bo'lsa (0..YAQIN_KUN); aks holda None."""
+    n = tugilgan_kun.qolgan_kun(c.birth_day, c.birth_month, today)
+    return n if n is not None and n <= tugilgan_kun.YAQIN_KUN else None
+
+
+def _tugilgan_yaqin(today, kun: int = tugilgan_kun.YAQIN_KUN) -> dict:
+    """Tug'ilgan kuni yaqin mijozlar (egasi, 2026-11-14): bugundan `kun` kun
+    ichida, eng yaqini tepada. Har birida SMS holati — tabrik kimga ketishini
+    oldindan ko'rish va rozilikni vaqtida so'rab qo'yish uchun."""
+    from sms.models import SmsXabar
+    from sms.xizmat import sms_holati
+
+    q = Q()
+    for i in range(kun + 1):
+        for d, m in tugilgan_kun.kun_juftlari(today + timedelta(days=i)):
+            q |= Q(birth_day=d, birth_month=m)
+    rows = []
+    for c in Customer.objects.filter(q, archived=False).order_by("name")[:500]:
+        qolgan = tugilgan_kun.qolgan_kun(c.birth_day, c.birth_month, today)
+        if qolgan is None or qolgan > kun:
+            continue
+        kod, matn = sms_holati(c)
+        rows.append({"mijoz": c, "qolgan": qolgan, "sms": kod, "sms_matn": matn, "xabar": None})
+    # Bugun tug'ilganlarga SMS allaqachon yuborilgan/urinilgan bo'lsa — o'sha holat
+    bugungi = {r["mijoz"].pk: r for r in rows if r["qolgan"] == 0}
+    if bugungi:
+        for x in SmsXabar.objects.filter(tur=SmsXabar.TUGILGAN_KUN, yil=today.year,
+                                         customer_id__in=list(bugungi)):
+            bugungi[x.customer_id]["xabar"] = x
+    rows.sort(key=lambda r: (r["qolgan"], r["mijoz"].name.lower()))
+    return {"kun": kun, "rows": rows, "jami": len(rows),
+            "sms": sum(1 for r in rows if r["sms"] == "ok")}
 
 
 def _tugilgan_kun_stats() -> dict:
@@ -1062,12 +1110,24 @@ def customer_bonus(request, pk: int):
             cust.save(update_fields=Customer.BIRTH_FIELDS)
             messages.success(request, f"Tug'ilgan kuni saqlandi: {cust.birthday_text or 'o‘chirildi'}")
         return redirect("dashboard:customer-bonus", pk=cust.pk)
+    # SMS olishga rozilik (2026-11-11): reklama SMS faqat rozilik bilan —
+    # kim va qachon belgilagani saqlanadi (sms/ ilovasi shunga qaraydi).
+    if request.method == "POST" and request.POST.get("action") == "sms_rozi":
+        value = {"ha": True, "yoq": False}.get(request.POST.get("rozi"))
+        cust.set_sms_rozi(value, source=Customer.BIRTH_PANEL,
+                          user=getattr(request.user, "username", "") or "")
+        cust.save(update_fields=Customer.SMS_FIELDS)
+        messages.success(request, {True: "Belgilandi: mijoz SMS olishga rozi.",
+                                   False: "Belgilandi: mijoz SMS olishni xohlamaydi — unga SMS ketmaydi.",
+                                   None: "Rozilik belgisi olib tashlandi (so'ralmagan)."}[value])
+        return redirect("dashboard:customer-bonus", pk=cust.pk)
     entries = cust.bonus_entries.select_related("sale")[:200]
     agg = cust.bonus_entries.aggregate(
         earned=Sum("delta", filter=Q(kind=BonusEntry.EARN)),
         spent=Sum("delta", filter=Q(kind=BonusEntry.SPEND)),
         receipts=Count("sale", distinct=True),
     )
+    cust.tk_qolgan = _yaqin_kun(cust, _bugun())
     return render(request, "dashboard/customer_bonus.html", {
         "cust": cust, "entries": entries,
         "earned": agg["earned"] or 0, "spent": -(agg["spent"] or 0),
