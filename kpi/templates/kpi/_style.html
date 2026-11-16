@@ -24,7 +24,7 @@
   .wrapline { white-space: normal; word-break: break-word; }
 
   /* ---- holat ranglari: doim matn bilan birga (rang yolg'iz ma'no bermaydi) */
-  .st-good { color: var(--accent); }
+  .st-good { color: var(--ok); }
   .st-warn { color: var(--warn); }
   .st-bad  { color: var(--danger); }
   .st-none { color: var(--muted); }
@@ -90,9 +90,9 @@
   svg.kring text { font-size: 22px; font-weight: 800; }
   svg.kring text.of { font-size: 10.5px; font-weight: 600; fill: var(--muted); }
   svg.kring.none text { fill: var(--faint); }
-  svg.kring.good circle.fg { stroke: var(--accent); }
-  svg.kring.warn circle.fg { stroke: var(--warn); }
-  svg.kring.bad  circle.fg { stroke: var(--danger); }
+  svg.kring.good circle.fg { stroke: var(--ok-dot); }
+  svg.kring.warn circle.fg { stroke: var(--warn-dot); }
+  svg.kring.bad  circle.fg { stroke: var(--danger-dot); }
   .kdays { margin-top: 8px; }
   .kgap { margin-top: 10px; }
   .kblock { margin-top: 16px; }
@@ -113,9 +113,9 @@
   /* minus ulushi chizg'ichi: chegara — tik chiziq */
   .meter { position: relative; height: 10px; border-radius: 5px; background: var(--surface-3); }
   .meter-fill { height: 100%; border-radius: 5px; min-width: 4px; }
-  .meter-fill.good { background: var(--accent); }
-  .meter-fill.warn { background: var(--warn); }
-  .meter-fill.bad  { background: var(--danger); }
+  .meter-fill.good { background: var(--ok-dot); }
+  .meter-fill.warn { background: var(--warn-dot); }
+  .meter-fill.bad  { background: var(--danger-dot); }
   .meter-mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px;
                 border-radius: 1px; background: var(--ink-soft); }
   .meter-legend { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px;
@@ -149,8 +149,8 @@
   .kstatus .k { color: var(--muted); }
   .kstatus .v { margin-left: auto; color: var(--ink); white-space: nowrap; }
   .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--line-strong); }
-  .sdot.ok { background: var(--accent); }
-  .sdot.bad { background: var(--danger); }
+  .sdot.ok { background: var(--ok-dot); }
+  .sdot.bad { background: var(--danger-dot); }
 
   @media (max-width: 760px) {
     .mini { grid-template-columns: repeat(2, minmax(0, 1fr)); }

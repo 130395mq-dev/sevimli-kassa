@@ -1,88 +1,103 @@
-{% load static aloqa_tags %}<!doctype html>
-<html lang="uz" data-theme="dark">
+{% load static aloqa_tags panel_tags %}<!doctype html>
+<html lang="uz" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}Sevimli Kassa{% endblock %}</title>
+  {# Tungi rejim tanlangan bo'lsa — sahifa chizilishidan OLDIN qo'yiladi (oq «chaqnash» bo'lmasin) #}
+  <script>try{if(localStorage.getItem("sevimli-theme")==="dark")document.documentElement.setAttribute("data-theme","dark")}catch(e){}</script>
   <style>
     /*
-      SEVIMLI boshqaruv paneli — qoramtir (dark) design system.
+      SEVIMLI boshqaruv paneli — «Klassik ERP» design system
+      (egasi tanlagan A varianti, 2026-11-16). To'liq tavsif: docs/DESIGN_SYSTEM.md.
 
       Bitta qoida: rang ma'no tashiydi, bezak emas.
-        yashil  — savdo, yaxshi holat, tanlangan menyu
+        ko'k    — bosiladigan narsa (havola, asosiy tugma, tanlangan yorliq); grafikda savdo
+        yashil  — yaxshi holat, o'sish
         qizil   — pasayish, xato, aloqa yo'q
         sariq   — kutish, kechikish
-        ko'k    — chek soni (pul emas), ma'lumot
 
-      Fon juda to'q ko'k-qora, kartalar bir pog'ona ochroq. Gradient,
-      glow va ortiqcha animatsiya yo'q — faqat nozik chegara va yengil soya.
-      Kassir emas, do'kon egasi soatlab qaraydigan ekran: ko'z charchamasin.
-
-      «Tungi rejim» o'chirilsa (data-theme="light") xuddi shu tokenlar och
-      qiymatga almashadi — boshqa hech narsa o'zgarmaydi.
+      Hamma rang va o'lcham shu tokenlardan olinadi — sahifalarda rang yozilmaydi.
+      Standart — kunduzgi (och) ko'rinish; «Tungi rejim» (data-theme="dark") xuddi shu
+      tokenlarni to'q qiymatga almashtiradi. Matn kontrasti ikkala rejimda WCAG AA
+      (4.5:1) dan past emas — dashboard/test_dizayn.py tekshiradi.
     */
     :root {
       /* --- yuza */
-      --bg:          #0A0E14;   /* eng orqa fon */
-      --surface:     #111823;   /* karta */
-      --surface-2:   #161F2C;   /* jadval sarlavhasi, ichki blok */
-      --surface-3:   #1C2735;   /* hover */
-      --line:        #202B3A;
-      --line-strong: #2C3A4C;
+      --bg: #F1F3F6;  --surface: #FFFFFF;  --surface-2: #F6F7F9;  --surface-3: #EEF1F5;
+      --line: #E1E5EB;  --line-strong: #C9D0DA;
+      --ctl-line: #7C889B;      /* tugma va maydon chegarasi (3:1) */
 
       /* --- matn */
-      --ink:         #E9EFF7;
-      --ink-soft:    #C6D2E0;
-      --muted:       #8593A6;
-      --faint:       #63728A;
+      --ink: #111827;  --ink-soft: #374151;  --muted: #596579;  --faint: #596579;
 
-      /* --- brend va holat */
-      --accent:      #22C55E;   /* yorqin yashil — asosiy aksent */
-      --accent-deep: #13A657;   /* grafik ustunlari (tekshirilgan palitra) */
-      --accent-ink:  #04240F;   /* yashil ustidagi matn */
-      --accent-soft: rgba(34,197,94,.13);
-      --accent-line: rgba(34,197,94,.34);
-      --danger:      #F2595B;   --danger-soft: rgba(242,89,91,.13);
-      --danger-line: rgba(242,89,91,.34);
-      --warn:        #E3A13A;   --warn-soft:   rgba(227,161,58,.13);
-      --warn-line:   rgba(227,161,58,.32);
-      --info:        #5B8DEF;   --info-soft:   rgba(91,141,239,.13);
-      --info-line:   rgba(91,141,239,.32);
-      --brand-red:   #E0484D;   /* chap yuqoridagi «S» */
+      /* --- asosiy rang: bosiladigan narsalar */
+      --accent: #1A5FD0;  --accent-deep: #164FB0;  --accent-ink: #FFFFFF;
+      --accent-text: #1A5FD0;   /* fon ustidagi ko'k MATN (tungi rejimda ochroq) */
+      --accent-soft: #E7EFFD;  --accent-line: #B5CDF7;
 
-      /* --- o'lcham: hamma joyda 4px qadam */
-      --radius:      12px;
-      --radius-sm:   8px;
-      --shadow:      0 1px 2px rgba(0,0,0,.45), 0 8px 24px rgba(0,0,0,.26);
-      --sidebar:     244px;
-      --sidebar-min: 72px;
+      /* --- holat */
+      --ok: #17713A;  --ok-soft: #E5F4EA;  --ok-line: #B4DEC2;  --ok-dot: #1F9D55;
+      --ok-solid: #17713A;  --ok-solid-ink: #FFFFFF;
+      --danger: #B42318;  --danger-soft: #FDECEA;  --danger-line: #F3B8B2;
+      --danger-dot: #D92D20;  --danger-solid: #C8281C;
+      --warn: #8A5300;  --warn-soft: #FFF3D6;  --warn-line: #EFD08A;  --warn-dot: #C27F00;
+      --gold-bg: #8A5300;  --gold-bg-hover: #734500;  --gold-ink: #FFFFFF;
+      --info: #1A5FD0;  --info-soft: #E7EFFD;  --info-line: #B5CDF7;
+      --brand-red: #D93A40;     /* chap yuqoridagi «S» */
+
+      /* --- tepa menyu */
+      --nav-bg: #13213C;  --nav-ink: #C4CFE0;  --nav-line: #5C9DFF;
+
+      /* --- grafik: bitta asosiy qator (savdo), ikkinchi qator (chek soni), taqqoslash (kulrang).
+             --c0…--c4 — toifalar uchun (to'lov turlari, KPI): dataviz validatoridan o'tgan
+             tartib, o'zgartirilmaydi. */
+      --series: #1A5FD0;  --series-strong: #0F3F91;  --series-soft: rgba(26,95,208,.10);
+      --series-2: #EB6834;  --series-2-soft: rgba(235,104,52,.12);
+      --series-ctx: #8A94A6;  --grid: #E8EBF0;  --axis: #C9D0DA;
+      --c0: #2A78D6;  --c1: #EB6834;  --c2: #1BAF7A;  --c3: #EDA100;  --c4: #E87BA4;
+
+      /* --- o'lcham: 7 pog'onali shrift, 4/8 qadamli oraliq */
+      --fs-1: 11px;  --fs-2: 12px;  --fs-3: 13px;  --fs-4: 14px;  --fs-5: 16px;
+      --fs-6: 20px;  --fs-7: 24px;
+      --ctl: 32px;              /* tugma, maydon, yorliq balandligi */
+      --head-h: 52px;           /* tepa menyu balandligi (yopishqoq qismlar shunga tayanadi) */
+      --wrap-x: 20px;  --wrap-top: 14px;
+      --radius: 6px;  --radius-sm: 4px;
+      --shadow: 0 0 0 0 rgba(0,0,0,0);
+      --pop-shadow: 0 12px 32px rgba(17,24,39,.18);
+
+      /* --- eski nomlar (avvalgi sahifalar ishlatadi) */
+      --sidebar: 0px;  --sidebar-min: 0px;
+      --border: var(--line-strong);  --text: var(--ink);  --soft: var(--ink-soft);
+      --wine: var(--accent-text);  --wine-soft: var(--accent-soft);
+      color-scheme: light;
     }
 
-    /* «Tungi rejim» o'chirilganda — och ko'rinish */
-    html[data-theme="light"] {
-      --bg:          #F2F5F8;
-      --surface:     #FFFFFF;
-      --surface-2:   #F5F8FA;
-      --surface-3:   #EDF2F6;
-      --line:        #E0E7EE;
-      --line-strong: #CAD5DF;
-      --ink:         #0E1721;
-      --ink-soft:    #2C3B4C;
-      --muted:       #5C6C7E;
-      --faint:       #7C8B9C;
-      --accent:      #128A4B;
-      --accent-deep: #12854A;
-      --accent-ink:  #FFFFFF;
-      --accent-soft: rgba(18,138,75,.10);
-      --accent-line: rgba(18,138,75,.30);
-      --danger:      #C4373A;   --danger-soft: rgba(196,55,58,.10);
-      --danger-line: rgba(196,55,58,.28);
-      --warn:        #9C6A12;   --warn-soft:   rgba(156,106,18,.10);
-      --warn-line:   rgba(156,106,18,.26);
-      --info:        #2A62C9;   --info-soft:   rgba(42,98,201,.10);
-      --info-line:   rgba(42,98,201,.26);
-      --shadow:      0 1px 2px rgba(14,23,33,.05), 0 8px 24px rgba(14,23,33,.07);
+    /* «Tungi rejim» — to'q ko'rinish */
+    html[data-theme="dark"] {
+      --bg: #0E131A;  --surface: #161C25;  --surface-2: #1B222D;  --surface-3: #222B38;
+      --line: #28313E;  --line-strong: #364152;  --ctl-line: #66758C;
+      --ink: #E7EBF1;  --ink-soft: #C3CBD7;  --muted: #97A3B4;  --faint: #97A3B4;
+      --accent: #2C6BD8;  --accent-deep: #2560C4;  --accent-ink: #FFFFFF;
+      --accent-text: #7BAEFF;
+      --accent-soft: rgba(92,157,255,.16);  --accent-line: rgba(92,157,255,.36);
+      --ok: #5CD08A;  --ok-soft: rgba(74,222,128,.12);  --ok-line: rgba(74,222,128,.30);
+      --ok-dot: #34C472;  --ok-solid: #34C472;  --ok-solid-ink: #04240F;
+      --danger: #FF8A80;  --danger-soft: rgba(249,112,102,.12);
+      --danger-line: rgba(249,112,102,.32);  --danger-dot: #F2595B;  --danger-solid: #C8281C;
+      --warn: #F0B44A;  --warn-soft: rgba(240,180,74,.12);  --warn-line: rgba(240,180,74,.30);
+      --warn-dot: #E3A13A;
+      --gold-bg: #E3A13A;  --gold-bg-hover: #C8891F;  --gold-ink: #241704;
+      --info: #7BAEFF;  --info-soft: rgba(92,157,255,.12);  --info-line: rgba(92,157,255,.30);
+      --nav-bg: #0A1019;  --nav-ink: #A9B4C6;  --nav-line: #5C9DFF;
+      --series: #3987E5;  --series-strong: #8DBBFF;  --series-soft: rgba(57,135,229,.16);
+      --series-2: #D95926;  --series-2-soft: rgba(217,89,38,.18);
+      --series-ctx: #7E8A9C;  --grid: #232C38;  --axis: #364152;
+      --c0: #3987E5;  --c1: #D95926;  --c2: #199E70;  --c3: #C98500;  --c4: #D55181;
+      --pop-shadow: 0 12px 32px rgba(0,0,0,.5);
+      color-scheme: dark;
     }
 
     * { box-sizing: border-box; }
@@ -90,10 +105,10 @@
     body {
       margin: 0; background: var(--bg); color: var(--ink);
       font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-      font-size: 15px; line-height: 1.55;
+      font-size: var(--fs-3); line-height: 1.5;
       -webkit-font-smoothing: antialiased;
     }
-    a { color: var(--accent); text-decoration: none; }
+    a { color: var(--accent-text); text-decoration: none; }
     a:hover { text-decoration: underline; }
     .num { font-variant-numeric: tabular-nums; }
     .icon { width: 18px; height: 18px; flex: 0 0 18px; stroke: currentColor;
@@ -105,229 +120,244 @@
     }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-    /* ---------------------------------------------------------- karkas */
-    .shell { display: flex; min-height: 100%; }
-
-    aside.nav {
-      width: var(--sidebar); flex: 0 0 var(--sidebar);
-      background: var(--surface); border-right: 1px solid var(--line);
-      display: flex; flex-direction: column; padding: 8px 10px;
-      position: sticky; top: 0; height: 100vh; overflow-y: auto;
-      transition: width .14s ease, flex-basis .14s ease;
+    /* ---------------------------------------------------------- karkas
+       Tepada bo'limlar (to'q ko'k qator), ostida tanlangan bo'lim sahifalari. */
+    header.topnav {
+      display: flex; align-items: center; gap: 8px; height: var(--head-h);
+      background: var(--nav-bg); padding: 0 16px; position: sticky; top: 0; z-index: 6;
     }
-    aside.nav .brand {
-      padding: 16px 12px 22px; display: flex; align-items: center; gap: 11px;
+    .topnav .brand {
+      display: flex; align-items: center; gap: 10px; padding-right: 8px; flex: 0 0 auto;
     }
-    aside.nav .brand .mark {
-      width: 36px; height: 36px; border-radius: 10px; flex: 0 0 36px;
+    .topnav .brand:hover { text-decoration: none; }
+    .topnav .mark {
+      width: 30px; height: 30px; border-radius: 8px; flex: 0 0 30px;
       background: var(--brand-red); color: #fff;
       display: flex; align-items: center; justify-content: center;
-      font-weight: 800; font-size: 18px; letter-spacing: -.5px;
+      font-weight: 800; font-size: var(--fs-5);
     }
-    aside.nav .brand .name {
-      font-weight: 700; font-size: 17px; letter-spacing: 1.4px; color: var(--ink);
+    .topnav .name {
+      display: block; font-weight: 700; font-size: var(--fs-4); letter-spacing: .09em;
+      color: #fff; line-height: 1.2;
     }
-    aside.nav .brand .sub { font-size: 11.5px; color: var(--muted); margin-top: -2px; }
+    .topnav .bsub { display: block; font-size: var(--fs-1); color: var(--nav-ink); line-height: 1.2; }
+    nav.mainnav {
+      display: flex; align-self: stretch; gap: 2px; margin-left: 8px; min-width: 0;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    nav.mainnav::-webkit-scrollbar, nav.subnav::-webkit-scrollbar { display: none; }
+    nav.mainnav a.item {
+      display: flex; align-items: center; gap: 8px; padding: 0 13px; white-space: nowrap;
+      color: var(--nav-ink); font-weight: 600;
+      border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+      transition: background .12s, color .12s;
+    }
+    nav.mainnav a.item:hover { color: #fff; background: rgba(255,255,255,.06); text-decoration: none; }
+    nav.mainnav a.item.on {
+      color: #fff; background: rgba(255,255,255,.10); border-bottom-color: var(--nav-line);
+    }
+    .topnav .sys { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
+    .topnav .when, .topnav .clock { color: var(--nav-ink); font-size: var(--fs-2); white-space: nowrap; }
+    .topnav :focus-visible { outline-color: #fff; }
 
-    aside.nav .group {
-      font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px;
-      text-transform: uppercase; color: var(--faint);
-      padding: 18px 12px 6px;
+    nav.subnav {
+      display: flex; align-items: stretch; gap: 2px; min-height: 40px;
+      background: var(--surface); border-bottom: 1px solid var(--line); padding: 0 16px;
+      overflow-x: auto; scrollbar-width: none;
     }
-    aside.nav a.item {
-      display: flex; align-items: center; gap: 11px; min-height: 44px;
-      padding: 10px 12px; margin: 2px 0; border-radius: var(--radius-sm);
-      color: var(--ink-soft); font-size: 14.5px; font-weight: 500;
-      text-decoration: none; transition: background .12s, color .12s;
+    nav.subnav a {
+      display: flex; align-items: center; padding: 0 12px; white-space: nowrap;
+      color: var(--ink-soft); font-weight: 500; border-bottom: 2px solid transparent;
     }
-    aside.nav a.item .icon { opacity: .8; }
-    aside.nav a.item:hover {
-      background: var(--surface-3); color: var(--ink); text-decoration: none;
+    nav.subnav a:hover { color: var(--ink); text-decoration: none; }
+    nav.subnav a.on {
+      color: var(--accent-text); border-bottom-color: var(--accent); font-weight: 700;
     }
-    aside.nav a.item:active { background: var(--line); }
-    aside.nav a.item.on {
-      background: var(--accent-soft); color: var(--accent); font-weight: 600;
-      box-shadow: inset 0 0 0 1px var(--accent-line);
-    }
-    aside.nav a.item.on .icon { opacity: 1; }
-    aside.nav .spacer { flex: 1; }
-    aside.nav .foot {
-      padding: 14px 12px 10px; font-size: 12.5px; color: var(--muted);
-      border-top: 1px solid var(--line); margin-top: 10px;
-    }
-    aside.nav .foot .row { display: flex; align-items: center; gap: 7px; }
-    aside.nav .foot a { color: var(--ink-soft); }
-    aside.nav .foot a:hover { color: var(--accent); }
 
-    /* yig'ilgan menyu — faqat ikonkalar */
-    .shell.tight { --sidebar: var(--sidebar-min); }
-    .shell.tight aside.nav .brand .txt,
-    .shell.tight aside.nav .group,
-    .shell.tight aside.nav .foot .txt,
-    .shell.tight aside.nav a.item .txt { display: none; }
-    .shell.tight aside.nav a.item,
-    .shell.tight aside.nav .brand { justify-content: center; padding: 11px 0; }
-    .shell.tight aside.nav .foot { text-align: center; }
-    .shell.tight aside.nav .foot .row { justify-content: center; }
-
-    main.body { flex: 1; min-width: 0; }
-    header.top {
-      background: var(--surface); border-bottom: 1px solid var(--line);
-      padding: 0 24px; min-height: 68px; display: flex; align-items: center;
-      gap: 16px; position: sticky; top: 0; z-index: 5;
-    }
-    header.top .crumb { font-size: 15px; font-weight: 600; color: var(--ink); }
-    header.top .when { color: var(--muted); font-size: 13.5px; white-space: nowrap; }
-    header.top .clock {
-      color: var(--ink-soft); font-size: 13.5px; white-space: nowrap;
-    }
+    main.body { min-width: 0; }
     .iconbtn {
       display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-      height: 36px; min-width: 36px; padding: 0 9px; margin: 0;
-      border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
-      background: var(--surface-2); color: var(--ink-soft);
-      font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;
+      height: var(--ctl); min-width: var(--ctl); min-height: 0; padding: 0 8px; margin: 0;
+      border-radius: var(--radius-sm); border: 1px solid var(--ctl-line);
+      background: var(--surface); color: var(--ink-soft);
+      font-size: var(--fs-2); font-weight: 500; font-family: inherit; cursor: pointer;
       transition: background .12s, color .12s, border-color .12s;
     }
-    .iconbtn:hover { background: var(--surface-3); color: var(--ink);
-                     border-color: var(--muted); }
+    .iconbtn:hover { background: var(--surface-3); color: var(--ink); text-decoration: none; }
     .iconbtn:active { background: var(--line); }
     .iconbtn[aria-pressed="true"] {
-      color: var(--accent); border-color: var(--accent-line);
+      color: var(--accent-text); border-color: var(--accent-line);
       background: var(--accent-soft);
     }
-    .topsep { width: 1px; height: 26px; background: var(--line); flex: 0 0 1px; }
     .avatar {
-      width: 34px; height: 34px; border-radius: 50%; flex: 0 0 34px;
+      width: var(--ctl); height: var(--ctl); border-radius: 50%; flex: 0 0 var(--ctl);
       background: var(--surface-3); border: 1px solid var(--line-strong);
       color: var(--ink-soft); display: flex; align-items: center;
       justify-content: center;
     }
-
-    /* ------------------------------------------------- aloqa chiroqlari */
-    .aloqa {
-      margin-left: auto; display: flex; align-items: center; gap: 14px;
-      font-size: 12.5px; color: var(--muted); white-space: nowrap;
-      overflow-x: auto; scrollbar-width: none;
+    /* to'q menyu ustidagi tugmalar */
+    .topnav .iconbtn, .topnav .pill, .topnav .avatar {
+      background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.22); color: #E6ECF5;
     }
-    .aloqa::-webkit-scrollbar { display: none; }
-    .aloqa + .when { margin-left: 0; }
-    .aloqa-item { display: inline-flex; align-items: center; gap: 6px; }
+    .topnav .iconbtn:hover, .topnav button.pill:hover {
+      background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.4); color: #fff;
+    }
+    .topnav .iconbtn[aria-pressed="true"] {
+      background: rgba(255,255,255,.20); border-color: rgba(255,255,255,.5); color: #fff;
+    }
+
+    /* ------------------------------------------------- aloqa chiroqlari
+       Tepada ixcham: «7/8 kassa ulangan» va MoySklad. Bosilganda har bir kassa ro'yxati. */
+    .aloqa { position: relative; display: flex; align-items: center; gap: 8px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px; height: 28px; min-height: 0;
+      padding: 0 10px; margin: 0; border-radius: 999px;
+      border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft);
+      font-size: var(--fs-2); font-weight: 500; font-family: inherit; white-space: nowrap;
+    }
+    button.pill { cursor: pointer; }
+    .pill b { font-weight: 700; color: inherit; }
+    .aloqa-list {
+      position: absolute; top: calc(100% + 10px); right: 0; z-index: 30;
+      min-width: 280px; max-width: min(380px, 92vw);
+      background: var(--surface); border: 1px solid var(--line-strong);
+      border-radius: var(--radius); box-shadow: var(--pop-shadow); padding: 6px;
+      display: grid; gap: 1px;
+    }
+    .aloqa-list[hidden] { display: none; }
+    .aloqa-item {
+      display: grid; grid-template-columns: 9px auto 1fr; gap: 10px; align-items: center;
+      padding: 6px 8px; border-radius: var(--radius-sm); font-size: var(--fs-2);
+    }
+    .aloqa-item:hover { background: var(--surface-3); }
+    .aloqa-text {
+      color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .dot {
       display: inline-block; width: 9px; height: 9px; border-radius: 50%;
       background: var(--line-strong); vertical-align: middle; flex: 0 0 9px;
     }
-    .dot.ok   { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    .dot.warn { background: var(--warn);   box-shadow: 0 0 0 3px var(--warn-soft);
+    .dot.ok   { background: var(--ok-dot);     box-shadow: 0 0 0 3px var(--ok-soft); }
+    .dot.warn { background: var(--warn-dot);   box-shadow: 0 0 0 3px var(--warn-soft);
                 animation: dot-blink 1.6s ease-in-out infinite; }
-    .dot.bad  { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft);
+    .dot.bad  { background: var(--danger-dot); box-shadow: 0 0 0 3px var(--danger-soft);
                 animation: dot-blink .9s ease-in-out infinite; }
     @keyframes dot-blink { 50% { opacity: .35; } }
     .dot-label { color: var(--ink-soft); }
+    .aloqa-list .dot-label { color: var(--ink); font-weight: 600; }
+    .topnav .pill .dot { box-shadow: none; }
+    .topnav .pill .dot-label { color: inherit; }
     td .dot { margin-right: 7px; }
 
-    .wrap { max-width: 1600px; padding: 26px 24px 64px; }
+    .wrap { max-width: 1640px; padding: var(--wrap-top) var(--wrap-x) 48px; }
 
-    h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -.7px; font-weight: 700; }
-    .sub { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+    h1 { font-size: var(--fs-6); line-height: 1.2; margin: 0 0 2px; letter-spacing: -.015em; font-weight: 700; }
+    .sub { color: var(--muted); font-size: var(--fs-2); margin-bottom: 12px; }
     /* Uzun izoh ikki qatorga bo'linadi — bitta qator ekran bo'ylab
        cho'zilib ketmasin, ko'z sana bilan raqamni alohida o'qisin. */
     .sub .subline + .subline { margin-top: 4px; }
     h2 {
-      font-size: 12px; margin: 34px 0 12px; font-weight: 700;
-      letter-spacing: .9px; text-transform: uppercase; color: var(--faint);
+      font-size: var(--fs-1); margin: 20px 0 8px; font-weight: 700;
+      letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
     }
+    h3 { font-size: var(--fs-4); margin: 16px 0 8px; font-weight: 700; }
 
     /* --------------------------------------------------------- xabarlar */
     .alert {
-      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px;
-      font-size: 14.5px; display: flex; gap: 12px; align-items: flex-start;
+      border-radius: var(--radius); padding: 9px 12px; margin-bottom: 10px;
+      font-size: var(--fs-3); display: flex; gap: 10px; align-items: flex-start;
       border: 1px solid transparent; background: var(--surface);
     }
     .alert span:first-child {
-      flex: 0 0 22px; height: 22px; border-radius: 50%; font-size: 13px;
+      flex: 0 0 20px; height: 20px; border-radius: 50%; font-size: var(--fs-2);
       display: flex; align-items: center; justify-content: center;
       font-weight: 700; color: var(--accent-ink);
     }
     .alert.err  { background: var(--danger-soft); border-color: var(--danger-line);
                   color: var(--ink); }
-    .alert.err  span:first-child { background: var(--danger); color: #fff; }
+    .alert.err  span:first-child { background: var(--danger-solid); color: #fff; }
     .alert.warn { background: var(--warn-soft); border-color: var(--warn-line);
                   color: var(--ink); }
-    .alert.warn span:first-child { background: var(--warn); color: #241704; }
-    .alert.ok   { background: var(--accent-soft); border-color: var(--accent-line);
+    .alert.warn span:first-child { background: var(--gold-bg); color: var(--gold-ink); }
+    .alert.ok   { background: var(--ok-soft); border-color: var(--ok-line);
                   color: var(--ink); }
-    .alert.ok   span:first-child { background: var(--accent); color: var(--accent-ink); }
+    .alert.ok   span:first-child { background: var(--ok-solid); color: var(--ok-solid-ink); }
+    /* Yo'riqnoma («Qanday ishlaydi») — ogohlantirish emas, shuning uchun sariq emas */
+    .alert.note { background: var(--surface); border-color: var(--line-strong); color: var(--ink-soft); }
+    .alert.note span:first-child { background: var(--info-soft); color: var(--info);
+                                   box-shadow: inset 0 0 0 1px var(--info-line); }
     .alert b { display: block; margin-bottom: 2px; }
     .alert .fix {
       margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-sm);
-      background: rgba(0,0,0,.22); font-size: 13.5px; color: var(--ink-soft);
+      background: rgba(255,255,255,.7); font-size: var(--fs-2); color: var(--ink-soft);
     }
-    html[data-theme="light"] .alert .fix { background: rgba(255,255,255,.7); }
+    html[data-theme="dark"] .alert .fix { background: rgba(0,0,0,.22); }
     .alert .fix b { display: inline; margin: 0; }
 
     /* ------------------------------------------------ savdo dashboardi */
     form.davr {
       display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
-      margin: 0 0 18px; font-size: 13.5px; color: var(--muted);
+      margin: 0 0 12px; font-size: var(--fs-2); color: var(--muted);
     }
     form.davr .presets { display: inline-flex; gap: 6px; flex-wrap: wrap; }
     form.davr .chip {
-      padding: 8px 14px; border: 1px solid var(--line-strong);
-      border-radius: var(--radius-sm); background: var(--surface-2);
-      color: var(--ink-soft); font-size: 13px; text-decoration: none;
+      display: inline-flex; align-items: center; min-height: var(--ctl); padding: 0 12px;
+      border: 1px solid var(--ctl-line);
+      border-radius: var(--radius-sm); background: var(--surface);
+      color: var(--ink-soft); font-size: var(--fs-2); font-weight: 500; text-decoration: none;
       transition: background .12s, color .12s, border-color .12s;
     }
     form.davr .chip:hover { background: var(--surface-3); color: var(--ink);
-                            border-color: var(--muted); text-decoration: none; }
+                            text-decoration: none; }
     form.davr .chip.on {
       background: var(--accent); color: var(--accent-ink);
       border-color: var(--accent); font-weight: 600;
     }
     form.davr label { display: inline-flex; align-items: center; gap: 6px; }
-    form.davr input[type=date] { padding: 6px 10px; font-size: 13px; margin: 0;
-                                 min-height: 38px; }
+    form.davr input[type=date] { padding: 0 10px; font-size: var(--fs-2); margin: 0;
+                                 min-height: var(--ctl); }
+    form.davr button, form.davr button.small { margin: 0; min-height: var(--ctl); }
     .delta { font-weight: 600; white-space: nowrap; }
-    .delta.up   { color: var(--accent); }
+    .delta.up   { color: var(--ok); }
     .delta.down { color: var(--danger); }
 
-    table.rating tr.best td { background: var(--accent-soft); }
+    table.rating tr.best td { background: var(--ok-soft); }
     .sharecell { min-width: 160px; }
     .share {
       display: inline-block; vertical-align: middle; width: 104px; height: 8px;
       border-radius: 4px; background: var(--surface-3); margin-right: 8px;
       overflow: hidden;
     }
-    .share .fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .share .fill { height: 100%; background: var(--series); border-radius: 4px; }
 
     .chartwrap {
       overflow-x: auto; background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 16px 14px 8px; margin-bottom: 14px;
-      box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 12px 12px 6px; margin-bottom: 12px;
     }
     svg.chart { display: block; max-width: 100%; height: auto; font-family: inherit; }
-    svg.chart .grid { stroke: var(--line); stroke-width: 1; }
-    svg.chart .axis { stroke: var(--line-strong); stroke-width: 1; }
-    svg.chart .tick { fill: var(--faint); font-size: 10.5px; text-anchor: end; }
+    svg.chart .grid { stroke: var(--grid); stroke-width: 1; }
+    svg.chart .axis { stroke: var(--axis); stroke-width: 1; }
+    svg.chart .tick { fill: var(--muted); font-size: 11px; text-anchor: end; }
     svg.chart .tick.r { text-anchor: start; }
-    svg.chart .day  { fill: var(--muted); font-size: 10.5px; text-anchor: middle; }
+    svg.chart .day  { fill: var(--muted); font-size: 11px; text-anchor: middle; }
     svg.chart .val  { fill: var(--ink); font-size: 11px; font-weight: 600;
                       text-anchor: middle; }
-    svg.chart .bar path { fill: var(--accent-deep); }
-    svg.chart .bar.sel path { fill: var(--accent); }
+    svg.chart .bar path { fill: var(--series); }
+    svg.chart .bar.sel path { fill: var(--series-strong); }
     svg.chart .bar .hit { fill: transparent; }
-    svg.chart .bar:hover path { fill: var(--accent); }
-    svg.chart .bar:hover .hit { fill: rgba(255,255,255,.04); }
-    html[data-theme="light"] svg.chart .bar:hover .hit { fill: rgba(0,0,0,.035); }
+    svg.chart .bar:hover path { fill: var(--series-strong); }
+    svg.chart .bar:hover .hit { fill: rgba(0,0,0,.035); }
+    html[data-theme="dark"] svg.chart .bar:hover .hit { fill: rgba(255,255,255,.04); }
     svg.chart .line {
-      fill: none; stroke: var(--info); stroke-width: 2;
+      fill: none; stroke: var(--series-2); stroke-width: 2;
       stroke-linejoin: round; stroke-linecap: round;
     }
-    svg.chart .lined { fill: var(--info); stroke: var(--surface); stroke-width: 1.5; }
+    svg.chart .lined { fill: var(--series-2); stroke: var(--surface); stroke-width: 2; }
 
     .legend {
       display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
-      font-size: 12.5px; color: var(--muted); margin: 0 0 10px 2px;
+      font-size: var(--fs-2); color: var(--muted); margin: 0 0 8px 2px;
     }
     .legend .key { display: inline-flex; align-items: center; gap: 7px; }
     .legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 12px; }
@@ -337,62 +367,60 @@
     table.daily tr.sel td { background: var(--accent-soft); }
 
     /* bo'lim ichidagi yorliqlar (SEVIMLI BONUS: cheklar / mijozlar) */
-    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 20px;
+    .tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 0 0 12px;
             border-bottom: 1px solid var(--line); }
-    .tabs a { padding: 10px 16px; font-size: 14px; font-weight: 600;
+    .tabs a { padding: 8px 12px; font-size: var(--fs-3); font-weight: 600;
               color: var(--muted); border-bottom: 2px solid transparent;
               margin-bottom: -1px; }
     .tabs a:hover { color: var(--ink); text-decoration: none; }
-    .tabs a.on { color: var(--accent); border-bottom-color: var(--accent); }
+    .tabs a.on { color: var(--accent-text); border-bottom-color: var(--accent); }
     form.davr .grow { flex: 1 1 220px; min-width: 180px; margin: 0;
-                      min-height: 38px; padding: 6px 12px; font-size: 13.5px; }
-    form.davr select { padding: 6px 10px; font-size: 13px; margin: 0;
-                       min-height: 38px; }
+                      min-height: var(--ctl); padding: 0 10px; font-size: var(--fs-2); }
+    form.davr select { padding: 0 10px; font-size: var(--fs-2); margin: 0;
+                       min-height: var(--ctl); }
     td.code { font-family: "IBM Plex Mono", "Courier New", monospace;
-              font-size: 13px; white-space: nowrap; }
-    .plus  { color: var(--accent); font-weight: 700; }
+              font-size: var(--fs-2); white-space: nowrap; }
+    .plus  { color: var(--ok); font-weight: 700; }
     .minus { color: var(--danger); font-weight: 700; }
     .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 14px 24px; }
-    .kv .k { font-size: 12px; color: var(--faint); text-transform: uppercase;
-             letter-spacing: .6px; font-weight: 700; }
-    .kv .v { font-size: 15px; color: var(--ink); margin-top: 3px; }
+          gap: 10px 20px; }
+    .kv .k { font-size: var(--fs-1); color: var(--muted); text-transform: uppercase;
+             letter-spacing: .04em; font-weight: 700; }
+    .kv .v { font-size: var(--fs-3); color: var(--ink); margin-top: 2px; }
 
     /* ------------------------------------------------------------ plita */
-    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-             gap: 16px; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+             gap: 12px; }
     .tile {
       background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 12px 14px;
       position: relative; min-width: 0;
     }
     .tile .head {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
     }
     .tile .label {
-      font-size: 11px; font-weight: 700; letter-spacing: .9px;
-      color: var(--faint); text-transform: uppercase;
+      font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
+      color: var(--muted); text-transform: uppercase;
     }
     .tile .tileicon {
-      width: 32px; height: 32px; border-radius: var(--radius-sm); flex: 0 0 32px;
+      width: 28px; height: 28px; border-radius: var(--radius-sm); flex: 0 0 28px;
       display: flex; align-items: center; justify-content: center;
       background: var(--surface-3); color: var(--muted);
     }
+    /* Katta raqam bo'linmaydi (avval «179 060 2 / 42» bo'lib sinardi) — sig'masa kichrayadi */
     .tile .value {
-      font-size: 29px; font-weight: 700; margin-top: 8px; letter-spacing: -1px;
-      font-variant-numeric: tabular-nums; line-height: 1.15; overflow-wrap: anywhere;
+      font-size: clamp(18px, 1.55vw, 24px); font-weight: 700; margin-top: 4px;
+      letter-spacing: -.01em; line-height: 1.2; white-space: nowrap;
     }
-    .tile .note { font-size: 13px; color: var(--muted); margin-top: 3px; }
+    .tile .note { font-size: var(--fs-2); color: var(--muted); margin-top: 2px; }
 
-    .tile.hero {
-      background: var(--surface-2); border-color: var(--accent-line);
-      box-shadow: var(--shadow), inset 3px 0 0 var(--accent);
-    }
-    .tile.hero .label { color: var(--accent); }
-    .tile.hero .value { color: var(--ink); font-size: 33px; }
-    .tile.hero .tileicon { background: var(--accent-soft); color: var(--accent); }
+    .tile.hero { border-color: var(--accent-line); box-shadow: inset 3px 0 0 var(--accent); }
+    .tile.hero .label { color: var(--accent-text); }
+    .tile.hero .value { color: var(--ink); }
+    .tile.hero .tileicon { background: var(--accent-soft); color: var(--accent-text); }
 
-    .tile.good .value { color: var(--accent); }
+    .tile.good .value { color: var(--ok); }
     .tile.bad  .value { color: var(--danger); }
     .tile.gold .value { color: var(--warn); }
 
@@ -400,16 +428,17 @@
     table {
       width: 100%; border-collapse: separate; border-spacing: 0;
       background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow);
+      border-radius: var(--radius); overflow: hidden;
     }
+    /* Zich jadval: bir ekranga ikki barobar ko'p qator sig'adi */
     th {
-      text-align: left; font-size: 11.5px; font-weight: 700; letter-spacing: .5px;
-      color: var(--faint); text-transform: uppercase; padding: 13px 16px;
+      text-align: left; font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
+      color: var(--muted); text-transform: uppercase; padding: 8px 12px;
       background: var(--surface-2); border-bottom: 1px solid var(--line);
       white-space: nowrap;
     }
-    td { padding: 14px 16px; border-bottom: 1px solid var(--line);
-         vertical-align: top; color: var(--ink-soft); }
+    td { padding: 7px 12px; border-bottom: 1px solid var(--line);
+         vertical-align: middle; color: var(--ink-soft); }
     td b { color: var(--ink); }
     tbody tr:last-child td, tr:last-child td { border-bottom: none; }
     tbody tr:hover td, tr:hover td { background: var(--surface-3); }
@@ -420,12 +449,12 @@
 
     /* ---------------------------------------------------------- nishon */
     .badge {
-      display: inline-block; font-size: 12px; font-weight: 600;
-      padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+      display: inline-block; font-size: var(--fs-1); font-weight: 600; line-height: 16px;
+      padding: 2px 8px; border-radius: 20px; white-space: nowrap;
       border: 1px solid transparent;
     }
-    .badge.ok   { color: var(--accent); background: var(--accent-soft);
-                  border-color: var(--accent-line); }
+    .badge.ok   { color: var(--ok); background: var(--ok-soft);
+                  border-color: var(--ok-line); }
     .badge.warn { color: var(--warn);   background: var(--warn-soft);
                   border-color: var(--warn-line); }
     .badge.err  { color: var(--danger); background: var(--danger-soft);
@@ -433,180 +462,220 @@
     .badge.off  { color: var(--muted);  background: var(--surface-3);
                   border-color: var(--line-strong); }
 
-    .sec { color: var(--muted); font-size: 13px; }
-    .empty { color: var(--muted); padding: 28px; text-align: center; }
+    .sec { color: var(--muted); font-size: var(--fs-2); }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
 
     /* -------------------------------------------------------- sahifalash */
     .pager {
       display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-      margin-top: 16px; font-size: 13.5px; color: var(--muted); flex-wrap: wrap;
+      margin-top: 12px; font-size: var(--fs-2); color: var(--muted); flex-wrap: wrap;
     }
     .pager .count { margin-right: auto; }
     .pager a, .pager span.cur, .pager span.disabled {
-      display: inline-flex; align-items: center; min-width: 38px; min-height: 40px;
-      padding: 0 12px; justify-content: center; border-radius: var(--radius-sm);
-      border: 1px solid var(--line-strong); font-weight: 600; font-size: 14px;
+      display: inline-flex; align-items: center; min-width: var(--ctl); min-height: var(--ctl);
+      padding: 0 8px; justify-content: center; border-radius: var(--radius-sm);
+      border: 1px solid var(--ctl-line); font-weight: 600; font-size: var(--fs-2);
     }
-    .pager a { color: var(--ink-soft); background: var(--surface-2); }
-    .pager a:hover { border-color: var(--accent); color: var(--accent);
+    .pager a { color: var(--ink-soft); background: var(--surface); }
+    .pager a:hover { border-color: var(--accent); color: var(--accent-text);
                      text-decoration: none; }
     .pager span.cur { background: var(--accent); border-color: var(--accent);
                       color: var(--accent-ink); }
-    .pager span.disabled { color: var(--faint); background: var(--surface);
-                           border-color: var(--line); }
+    .pager span.disabled { color: var(--muted); background: var(--surface);
+                           border-color: var(--line-strong); opacity: .6; }
 
     pre.receipt {
       background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 20px 24px; overflow-x: auto;
-      font-family: "IBM Plex Mono", "Courier New", monospace; font-size: 13px;
-      line-height: 1.45; color: var(--ink-soft); margin: 0; box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 14px 16px; overflow-x: auto;
+      font-family: "IBM Plex Mono", "Courier New", monospace; font-size: var(--fs-3);
+      line-height: 1.45; color: var(--ink-soft); margin: 0;
     }
 
     /* ----------------------------------------------------------- karta */
     .card {
       background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 20px 22px; margin-bottom: 10px;
-      box-shadow: var(--shadow);
+      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
     }
-    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-              gap: 15px; }
-    .fields label { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px;
-                    color: var(--muted); font-weight: 600; }
+    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+              gap: 12px; }
+    .fields label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-2);
+                    color: var(--ink-soft); font-weight: 600; }
     .fields label.check { flex-direction: row; align-items: flex-start; gap: 10px;
                           grid-column: 1 / -1; font-weight: 400; color: var(--ink-soft);
-                          font-size: 14px; }
-    .fields label.check input { margin-top: 3px; }
+                          font-size: var(--fs-3); }
+    .fields label.check input { margin-top: 1px; }
 
     input, select, textarea {
-      border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
-      padding: 10px 12px; font-size: 15px; color: var(--ink);
-      background: var(--surface-2); font-family: inherit; font-weight: 400;
-      min-height: 42px; transition: border-color .12s, box-shadow .12s;
+      border: 1px solid var(--ctl-line); border-radius: var(--radius-sm);
+      padding: 5px 10px; font-size: var(--fs-3); color: var(--ink);
+      background: var(--surface); font-family: inherit; font-weight: 400;
+      min-height: 34px; transition: border-color .12s, box-shadow .12s;
     }
-    input::placeholder, textarea::placeholder { color: var(--faint); }
-    input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+    input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+    input:hover, select:hover, textarea:hover { border-color: var(--ink-soft); }
     input:focus, select:focus, textarea:focus {
       outline: none; border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-soft);
     }
-    input[type=checkbox] { width: 18px; height: 18px; min-height: 0;
-                           accent-color: var(--accent); }
-    input[type=date] { color-scheme: dark; }
-    html[data-theme="light"] input[type=date] { color-scheme: light; }
+    input[type=checkbox], input[type=radio] { width: 16px; height: 16px; min-height: 0;
+                                              padding: 0; accent-color: var(--accent); }
 
+    /* Tugma turlari: asosiy (ko'k) — sahifada bitta asosiy amal; .ghost — ikkinchi darajali;
+       .danger — o'chirish kabi xavfli amal; .gold — diqqat talab qiladigan amal. */
     button {
-      margin-top: 14px; background: var(--accent); color: var(--accent-ink);
+      margin-top: 12px; background: var(--accent); color: var(--accent-ink);
       border: 1px solid var(--accent); border-radius: var(--radius-sm);
-      padding: 11px 20px; font-size: 15px; font-weight: 600; min-height: 42px;
+      padding: 0 14px; font-size: var(--fs-3); font-weight: 600; min-height: 34px;
       cursor: pointer; font-family: inherit; transition: background .12s, border-color .12s;
     }
     button:hover  { background: var(--accent-deep); border-color: var(--accent-deep); }
     button:active { background: var(--accent-deep); filter: brightness(.9); }
     button[disabled] { opacity: .55; cursor: default; }
-    button.small  { margin: 0; padding: 8px 14px; font-size: 13px; min-height: 38px; }
+    button.small  { margin: 0; padding: 0 10px; font-size: var(--fs-2); min-height: 30px; }
     button.ghost  {
-      background: var(--surface-2); color: var(--ink-soft);
-      border: 1px solid var(--line-strong);
+      background: var(--surface); color: var(--ink-soft);
+      border: 1px solid var(--ctl-line);
     }
     button.ghost:hover { background: var(--surface-3); color: var(--ink);
-                         border-color: var(--muted); }
-    button.gold { background: var(--warn); border-color: var(--warn); color: #241704; }
-    button.gold:hover { background: #C8891F; border-color: #C8891F; }
+                         border-color: var(--ink-soft); }
+    button.danger {
+      background: var(--surface); color: var(--danger); border: 1px solid var(--danger-line);
+    }
+    button.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+    button.gold { background: var(--gold-bg); border-color: var(--gold-bg); color: var(--gold-ink); }
+    button.gold:hover { background: var(--gold-bg-hover); border-color: var(--gold-bg-hover); }
 
     form.inline { display: inline-flex; gap: 6px; align-items: center;
                   margin-left: 6px; flex-wrap: wrap; }
     form.inline input, form.inline select {
-      padding: 7px 10px; font-size: 13.5px; min-height: 38px;
+      padding: 4px 8px; font-size: var(--fs-2); min-height: 30px;
     }
 
     code.token {
-      font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line);
-      border-radius: 6px; padding: 3px 7px; color: var(--ink-soft);
+      font-size: var(--fs-2); background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: var(--radius-sm); padding: 2px 6px; color: var(--ink-soft);
       word-break: break-all; font-family: "IBM Plex Mono", "Courier New", monospace;
     }
+
+    /* Keng jadval sahifani surmaydi — o'z ichida aylanadi (skript har jadvalni shu qutiga oladi) */
+    .tablewrap { overflow-x: auto; max-width: 100%; }
 
     @media (prefers-reduced-motion: reduce) {
       .dot { animation: none !important; }
       * { transition: none !important; }
     }
-    @media (max-width: 1100px) {
-      :root { --sidebar: var(--sidebar-min); }
-      aside.nav .brand .txt, aside.nav .group,
-      aside.nav .foot .txt, aside.nav a.item .txt { display: none; }
-      aside.nav a.item, aside.nav .brand { justify-content: center; padding: 11px 0; }
-      aside.nav .foot { text-align: center; }
-      aside.nav .foot .row { justify-content: center; }
-      .tiles { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+    @media (max-width: 1180px) {
+      .topnav .hide-md { display: none; }
     }
     @media (max-width: 760px) {
-      header.top { min-height: 64px; flex-wrap: wrap; padding: 10px 14px; gap: 10px; }
-      .aloqa { white-space: normal; flex-wrap: wrap; margin-left: 0;
-               order: 3; width: 100%; }
+      :root { --head-h: 0px; --wrap-x: 12px; --wrap-top: 12px; }
+      /* Telefonda menyu yopishmaydi (ekranning uchdan birini egallab qo'yardi); bo'limlar
+         barmoq bilan suriladigan qatorda */
+      header.topnav { position: static; flex-wrap: wrap; height: auto; padding: 8px 12px 0; gap: 0 8px; }
+      nav.mainnav { order: 3; flex: 0 0 calc(100% + 24px); margin: 8px -12px 0; padding: 0 4px; height: 44px; }
+      nav.subnav { min-height: 44px; padding: 0 4px; }
+      .topnav .hide-sm, .topnav .when, .topnav .clock { display: none; }
       .tiles { grid-template-columns: 1fr; }
-      .wrap { padding: 18px 14px 48px; }
-      h1 { font-size: 23px; }
-      .topsep, header.top .clock { display: none; }
-      #theme-toggle span { display: none; }
-      /* Tovaroved telefonda: chap menyu o'rniga KPI yorliqlari (Reyting, Mening ishim, Minuslar) */
-      body.role-tov aside.nav, body.role-tov #menu-toggle { display: none; }
-      body.role-tov header.top .crumb { display: none; }
+      .tile .value { font-size: var(--fs-6); }
+      /* barmoq uchun: bosiladigan narsalar kamida 44 px */
+      button, input, select, textarea, .iconbtn, .pager a, .pager span.cur,
+      .pager span.disabled, form.davr .chip { min-height: 44px; }
+      .iconbtn, .avatar { min-width: 44px; }
+      .avatar { height: 44px; flex-basis: 44px; }
+      .pill { height: 36px; }
+      button.pill { height: 44px; }
+      button.small, form.inline input, form.inline select { min-height: 40px; }
+      form.davr button, form.davr button.small { min-height: 44px; }
+      input[type=checkbox], input[type=radio] { min-height: 0; width: 20px; height: 20px; }
+      form.davr input[type=date], form.davr select, form.davr .grow { min-height: 44px; }
+      .tabs a { padding: 12px 12px; }
+      .tablewrap > table { min-width: min(920px, calc(var(--cols, 3) * 104px)); }
+      /* Tovaroved telefonda: tepa menyu o'rniga KPI yorliqlari (Reyting, Mening ishim, Minuslar) */
+      body.role-tov nav.mainnav { display: none; }
+      body.role-tov header.topnav { padding-bottom: 8px; }
+    }
+
+    /* ------------------------------------------------ bosh sahifa joylashuvi
+       Tepada raqamlar qatori, ostida ikki ustun (grafik | do'konlar), keyin kassalar. */
+    .tabpanel[hidden] { display: none; }
+    .tabs .badge { margin-left: 6px; }
+    .home-cols {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px;
+      align-items: start; margin-bottom: 4px;
+    }
+    .home-col { min-width: 0; }
+    .home-col > h2:first-of-type { margin-top: 0; }
+    .home-col .c-opt { display: none; }            /* tor ustunda ikkinchi darajali ustunlar */
+    .home-col .insights { grid-template-columns: minmax(0, 1fr); margin: 12px 0 0; }
+    .home-col .sharecell { min-width: 0; white-space: nowrap; }
+    .home-col .share { width: 64px; }
+    /* Raqamlar bitta qator bo'lib turadi (kartalar orasida bo'shliq emas, ingichka chiziq) */
+    .tiles.strip {
+      gap: 0; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); overflow: hidden; margin-bottom: 12px;
+    }
+    .tiles.strip .tile, .tiles.strip button.tile {
+      border: 0; border-radius: 0; box-shadow: 1px 0 0 var(--line), 0 1px 0 var(--line);
+    }
+    .tiles.strip .tile.hero {
+      box-shadow: inset 3px 0 0 var(--accent), 1px 0 0 var(--line), 0 1px 0 var(--line);
+    }
+    @media (max-width: 1100px) {
+      .home-cols { grid-template-columns: minmax(0, 1fr); }
+      .home-col .c-opt { display: table-cell; }
     }
 
     /* -------------------------------------------- ikki ustunli tarmoq */
     .grid2 {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 16px; margin-bottom: 10px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px; margin-bottom: 12px;
     }
     .grid2 .card { margin-bottom: 0; }
 
-    /* ================================================ grafik palitrasi
-       Beshta qator rangi — dataviz validatoridan o'tgan (dark rejimda
-       yorqinlik oralig'i, rang to'yinganligi, rang ko'rmaslikda ajralish
-       va fon bilan kontrast: 5/5 PASS). Tartibi o'zgarmaydi: bir xil
-       narsa doim bir xil rangda bo'lsin. */
-    :root {
-      --c0: #13A657;  --c1: #5B8DEF;  --c2: #C2861C;
-      --c3: #A472E8;  --c4: #12A5A0;
-    }
+    /* Grafik palitrasi (--c0…--c4, --series…) yuqoridagi tokenlarda — har rejim uchun alohida. */
 
     /* ------------------------------------------- bosiladigan KPI karta */
     button.tile {
-      margin: 0; min-height: 0; padding: 18px 20px; font-family: inherit;
-      font-size: 15px; font-weight: 400; line-height: inherit; text-align: left;
+      margin: 0; min-height: 0; padding: 12px 14px; font-family: inherit;
+      font-size: var(--fs-3); font-weight: 400; line-height: inherit; text-align: left;
       background: var(--surface); color: var(--ink);
       border: 1px solid var(--line); border-radius: var(--radius);
-      box-shadow: var(--shadow); cursor: pointer; width: 100%;
+      cursor: pointer; width: 100%;
       transition: background .12s, border-color .12s;
     }
+    /* Tugma ichidagi mazmun tepadan boshlanadi (brauzer tugmada o'rtaga qo'yadi — sarlavhalar
+       har xil balandlikda turib qolardi); «Batafsil» havolasi pastda bir chiziqda */
+    button.tile { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; }
+    button.tile .more { margin-top: auto; padding-top: 8px; }
     button.tile:hover { background: var(--surface-2); border-color: var(--accent-line); }
     button.tile:active { background: var(--surface-3); filter: none; }
-    button.tile.hero { background: var(--surface-2); border-color: var(--accent-line); }
-    button.tile.hero:hover { background: var(--surface-3); }
+    button.tile.hero { background: var(--surface); border-color: var(--accent-line); }
+    button.tile.hero:hover { background: var(--surface-2); }
     .tile .more {
-      margin-top: 10px; font-size: 12px; color: var(--faint);
-      display: flex; align-items: center; gap: 5px; opacity: .55;
+      margin-top: 8px; font-size: var(--fs-2); color: var(--muted);
+      display: flex; align-items: center; gap: 5px; opacity: .85;
       transition: opacity .12s, color .12s;
     }
     button.tile:hover .more, button.tile:focus-visible .more {
-      opacity: 1; color: var(--accent);
+      opacity: 1; color: var(--accent-text);
     }
 
     /* ------------------------------------------------- mini-grafiklar */
-    .spark { display: block; width: 100%; height: 46px; margin-top: 12px; }
-    .spark .area { fill: var(--accent-soft); stroke: none; }
-    .spark .line { fill: none; stroke: var(--accent); stroke-width: 2;
+    .spark { display: block; width: 100%; height: 40px; margin-top: 8px; }
+    .spark .area { fill: var(--series-soft); stroke: none; }
+    .spark .line { fill: none; stroke: var(--series); stroke-width: 2;
                    stroke-linejoin: round; stroke-linecap: round; }
-    .spark .hi { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
-    .spark .lo { fill: var(--muted); stroke: var(--surface); stroke-width: 2; }
-    .spark.info .line { stroke: var(--info); }
-    .spark.info .area { fill: var(--info-soft); }
-    .spark.info .hi { fill: var(--info); }
-    .sbar { display: block; width: 100%; height: 46px; margin-top: 12px; }
-    .sbar rect { fill: var(--accent-deep); }
-    .sbar rect.hi { fill: var(--accent); }
-    .sbar.info rect { fill: var(--info); }
-    .sbar.danger rect { fill: var(--danger); }
-    .sbar.danger rect.hi { fill: var(--danger); }
+    .spark .hi { fill: var(--series); stroke: var(--surface); stroke-width: 2; }
+    .spark .lo { fill: var(--series-ctx); stroke: var(--surface); stroke-width: 2; }
+    .spark.info .line { stroke: var(--series-2); }
+    .spark.info .area { fill: var(--series-2-soft); }
+    .spark.info .hi { fill: var(--series-2); }
+    .sbar { display: block; width: 100%; height: 40px; margin-top: 8px; }
+    .sbar rect { fill: var(--series); }
+    .sbar rect.hi { fill: var(--series-strong); }
+    .sbar.info rect { fill: var(--series-2); }
+    .sbar.danger rect { fill: var(--danger-dot); }
+    .sbar.danger rect.hi { fill: var(--danger-dot); }
 
     /* ------------------------------------------------------- donut */
     .donutwrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
@@ -620,13 +689,13 @@
     svg.donut .slice:hover { filter: brightness(1.18); }
     .donut-legend { list-style: none; margin: 0; padding: 0; min-width: 240px;
                     flex: 1 1 auto; }
-    .tile .donut-legend { min-width: 0; font-size: 12.5px; }
+    .tile .donut-legend { min-width: 0; font-size: var(--fs-2); }
     .tile .donut-legend li { padding: 4px 0; gap: 8px; }
     .tile { overflow: hidden; }
     .donut-legend li {
       display: grid; grid-template-columns: 14px 1fr auto auto; gap: 10px;
-      align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line);
-      font-size: 13.5px;
+      align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line);
+      font-size: var(--fs-3);
     }
     .donut-legend li:last-child { border-bottom: none; }
     .dl-name { color: var(--ink-soft); }
@@ -638,88 +707,92 @@
     .swatch.s2 { background: var(--c2); }
     .swatch.s3 { background: var(--c3); }
     .swatch.s4 { background: var(--c4); }
-    .legend .swatch.line.l0 { background: var(--accent); }
-    .legend .swatch.line.l1 { background: var(--muted); }
-    .legend .swatch.line.l2 { background: var(--warn); }
+    .legend .swatch.line.l0 { background: var(--series); }
+    .legend .swatch.line.l1 { background: var(--series-ctx); }
+    .legend .swatch.line.l2 { background: var(--warn-dot); }
     .legend .swatch.line.dashed {
       background: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px);
-      color: var(--muted);
+      color: var(--series-ctx);
     }
 
     /* --------------------------------------------------- katta grafik */
-    svg.chart.big .area.a0 { fill: var(--accent-soft); stroke: none; }
+    svg.chart.big .area.a0 { fill: var(--series-soft); stroke: none; }
     svg.chart.big .area.a1 { fill: none; }
     svg.chart.big .line { fill: none; stroke-width: 2; stroke-linejoin: round;
                           stroke-linecap: round; }
-    svg.chart.big .line.l0 { stroke: var(--accent); }
-    svg.chart.big .line.l1 { stroke: var(--muted); }
-    svg.chart.big .line.l2 { stroke: var(--warn); }
+    svg.chart.big .line.l0 { stroke: var(--series); }
+    svg.chart.big .line.l1 { stroke: var(--series-ctx); }
+    svg.chart.big .line.l2 { stroke: var(--warn-dot); }
     svg.chart.big .line.dashed { stroke-dasharray: 6 5; }
-    svg.chart.big .line.goal { stroke: var(--warn); stroke-dasharray: 2 6; stroke-width: 1.6; }
+    svg.chart.big .line.goal { stroke: var(--warn-dot); stroke-dasharray: 2 6; stroke-width: 1.6; }
     svg.chart .hov .hit { fill: transparent; }
-    svg.chart.big .hov:hover .hit { fill: rgba(255,255,255,.035); }
-    html[data-theme="light"] svg.chart.big .hov:hover .hit { fill: rgba(0,0,0,.03); }
+    svg.chart.big .hov:hover .hit { fill: rgba(0,0,0,.03); }
+    html[data-theme="dark"] svg.chart.big .hov:hover .hit { fill: rgba(255,255,255,.035); }
     svg.chart.big .hov .cross { stroke: var(--line-strong); stroke-width: 1; opacity: 0; }
-    svg.chart.big .hov .dot { opacity: 0; stroke: var(--surface); stroke-width: 1.5; }
-    svg.chart.big .hov .dot.d0 { fill: var(--accent); }
-    svg.chart.big .hov .dot.d1 { fill: var(--muted); }
-    svg.chart.big .hov .dot.d2 { fill: var(--warn); }
+    svg.chart.big .hov .dot { opacity: 0; stroke: var(--surface); stroke-width: 2; box-shadow: none; }
+    svg.chart.big .hov .dot.d0 { fill: var(--series); }
+    svg.chart.big .hov .dot.d1 { fill: var(--series-ctx); }
+    svg.chart.big .hov .dot.d2 { fill: var(--warn-dot); }
     svg.chart.big .hov:hover .cross, svg.chart.big .hov:hover .dot { opacity: 1; }
 
     /* ------------------------ bosh sahifa: katta kunlik grafik (birinchi) */
     .trend {
       background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); padding: 20px 22px 14px; margin-bottom: 18px;
-      box-shadow: var(--shadow), inset 3px 0 0 var(--accent);
+      border-radius: var(--radius); padding: 14px 16px 10px; margin-bottom: 12px;
     }
     .trend-head { display: flex; justify-content: space-between; align-items: flex-end;
                   gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
     .trend-title { margin: 0 0 6px; }
-    .trend-value { font-size: 36px; font-weight: 700; color: var(--ink);
-                   letter-spacing: -1px; line-height: 1.1; }
-    .trend-value .unit { font-size: 16px; font-weight: 500; color: var(--muted);
+    .trend-value { font-size: 28px; font-weight: 700; color: var(--ink);
+                   letter-spacing: -.02em; line-height: 1.15; white-space: nowrap; }
+    .trend-value .unit { font-size: var(--fs-4); font-weight: 500; color: var(--muted);
                          letter-spacing: 0; }
-    .trend-note { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    .trend-note { color: var(--muted); font-size: var(--fs-2); margin-top: 4px; }
     .trend-note b { color: var(--ink-soft); }
     .trend-note .sep { margin: 0 4px; }
     .trend .legend { margin: 0; }
-    .trend-chart { position: relative; }
-    svg.chart.wide { width: 100%; max-width: none; height: auto; }
-    svg.chart.wide .tick, svg.chart.wide .day { font-size: 12px; }
-    svg.chart.wide .line { stroke-width: 2.6; }
+    /* yozuvlar grafik chetidan biroz chiqishi mumkin — karta ichida qoladi, sahifani surmaydi */
+    .trend-chart { position: relative; overflow: hidden; margin: 0 -12px; padding: 0 12px 8px; }
+    /* Keng grafik joyiga qarab kichrayadi; yozuv va chiziq ekranda bir xil qalinlikda qolishi
+       uchun skript masshtabni --k ga yozadi (1 … 1.9). */
+    svg.chart.wide { width: 100%; max-width: none; height: auto; overflow: visible; }
+    svg.chart.wide .tick, svg.chart.wide .day { font-size: calc(11px * var(--k, 1)); }
+    svg.chart.wide .line { stroke-width: calc(2px * var(--k, 1)); }
+    /* kattalashgan soat yozuvlari «0» belgisiga tegmasin */
+    svg.chart.wide .day { transform: translateY(calc((var(--k, 1) - 1) * 8px)); }
     .trend-tip {
       position: absolute; top: 4px; transform: translateX(-50%); pointer-events: none;
       background: var(--surface-2); border: 1px solid var(--line-strong);
-      border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px;
-      color: var(--ink-soft); box-shadow: var(--shadow); white-space: nowrap; z-index: 2;
+      border-radius: var(--radius-sm); padding: 8px 10px; font-size: var(--fs-2);
+      color: var(--ink-soft); box-shadow: var(--pop-shadow); white-space: nowrap; z-index: 2;
     }
     .trend-tip b { color: var(--ink); }
     .trend-tip .k0, .trend-tip .k1 { display: inline-block; width: 10px; height: 3px;
                                      border-radius: 2px; margin-right: 6px; vertical-align: middle; }
-    .trend-tip .k0 { background: var(--accent); }
-    .trend-tip .k1 { background: var(--muted); }
-    .trend-tip .up { color: var(--accent); font-weight: 700; }
+    .trend-tip .k0 { background: var(--series); }
+    .trend-tip .k1 { background: var(--series-ctx); }
+    .trend-tip .up { color: var(--ok); font-weight: 700; }
     .trend-tip .down { color: var(--danger); font-weight: 700; }
     .trend-table { margin-top: 8px; }
-    .trend-table summary { cursor: pointer; color: var(--muted); font-size: 13.5px;
+    .trend-table summary { cursor: pointer; color: var(--muted); font-size: var(--fs-2);
                            padding: 6px 0; }
     .trend-table summary:hover { color: var(--ink); }
-    .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-                gap: 16px; margin-bottom: 18px; }
+    .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+                gap: 12px; margin-bottom: 12px; }
     .insight { margin: 0; min-width: 0; }
-    .insight h3 { margin: 0 0 4px; font-size: 16px; }
-    .insight .verdict { font-size: 22px; font-weight: 700; margin: 6px 0 2px; }
-    .insight .verdict.up { color: var(--accent); }
+    .insight h3 { margin: 0 0 4px; font-size: var(--fs-4); }
+    .insight .verdict { font-size: var(--fs-5); font-weight: 700; margin: 6px 0 2px; }
+    .insight .verdict.up { color: var(--ok); }
     .insight .verdict.down { color: var(--danger); }
     .insight table { box-shadow: none; }
-    .insight td, .insight th { padding: 8px 10px; }
-    .insight .more { display: inline-block; margin-top: 10px; font-size: 13.5px; }
-    svg.chart .bar.now path { fill: var(--accent); }
+    .insight td, .insight th { padding: 6px 10px; }
+    .insight .more { display: inline-block; margin-top: 8px; font-size: var(--fs-2); }
+    svg.chart .bar.now path { fill: var(--series-strong); }
     @media (max-width: 560px) {
       .insights { grid-template-columns: 1fr; }
-      .trend-value { font-size: 28px; }
+      .trend-value { font-size: 24px; }
     }
-    svg.chart.big.danger .bar path { fill: var(--danger); }
+    svg.chart.big.danger .bar path { fill: var(--danger-dot); }
     svg.chart.big.danger .bar:hover path { filter: brightness(1.15); }
 
     /* ------------------------------------------- gorizontal ustunlar */
@@ -728,24 +801,24 @@
     .hrow:hover { background: var(--surface-2); }
     .hrow .top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
     .hrow .nm { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis;
-                white-space: nowrap; font-size: 13.5px; flex: 1; min-width: 0; }
+                white-space: nowrap; font-size: var(--fs-3); flex: 1; min-width: 0; }
     .hrow .vl { margin-left: auto; }
-    .hrow .track { height: 10px; border-radius: 5px; background: var(--surface-3);
+    .hrow .track { height: 8px; border-radius: 4px; background: var(--surface-3);
                    overflow: hidden; }
-    .hrow .fill { height: 100%; background: var(--accent-deep); border-radius: 5px; }
-    .hrow.danger .fill { background: var(--danger); }
-    .hrow .vl { font-variant-numeric: tabular-nums; font-size: 13.5px;
+    .hrow .fill { height: 100%; background: var(--series); border-radius: 0 4px 4px 0; }
+    .hrow.danger .fill { background: var(--danger-dot); }
+    .hrow .vl { font-variant-numeric: tabular-nums; font-size: var(--fs-3);
                 color: var(--ink); white-space: nowrap; }
-    .hrow .pc { color: var(--muted); font-size: 12.5px; margin-left: 8px; }
+    .hrow .pc { color: var(--muted); font-size: var(--fs-2); margin-left: 8px; }
 
     /* ------------------------------------------------------- halqa */
     .ringwrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
     svg.ring { flex: 0 0 auto; }
     svg.ring circle { fill: none; }
     svg.ring circle.bg { stroke: var(--surface-3); }
-    svg.ring circle.fg { stroke: var(--accent); stroke-linecap: round;
+    svg.ring circle.fg { stroke: var(--ok-dot); stroke-linecap: round;
                          transform: rotate(-90deg); transform-origin: 50% 50%; }
-    svg.ring text { fill: var(--ink); font-size: 19px; font-weight: 700;
+    svg.ring text { fill: var(--ink); font-size: 18px; font-weight: 700;
                     text-anchor: middle; font-variant-numeric: tabular-nums; }
 
     /* ============================================ «Batafsil» paneli */
@@ -753,6 +826,9 @@
       position: fixed; inset: 0; background: rgba(3,7,13,.6); z-index: 40;
       opacity: 0; pointer-events: none; transition: opacity .16s;
     }
+    /* `hidden` — haqiqatan yashirin: avval panel ekrandan tashqarida turib, sahifani yonga
+       surish mumkin bo'lganda ko'rinib qolardi */
+    .bx[hidden], .bx-scrim[hidden] { display: none; }
     .bx-scrim.on { opacity: 1; pointer-events: auto; }
     .bx {
       position: fixed; top: 0; right: 0; bottom: 0; width: min(1000px, 94vw);
@@ -766,24 +842,24 @@
       border-bottom: 1px solid var(--line); background: var(--surface);
       flex: 0 0 auto;
     }
-    .bx-top .t { font-weight: 600; font-size: 15px; }
+    .bx-top .t { font-weight: 600; font-size: var(--fs-4); }
     .bx-close { margin-left: auto; }
-    .bx-body { overflow-y: auto; padding: 20px 22px 48px; flex: 1; }
-    .bx-kicker { font-size: 11px; font-weight: 700; letter-spacing: .9px;
-                 text-transform: uppercase; color: var(--faint); }
-    .bx-value { font-size: 34px; font-weight: 700; letter-spacing: -1px;
+    .bx-body { overflow: auto; padding: 16px 18px 40px; flex: 1; }
+    .bx-kicker { font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
+                 text-transform: uppercase; color: var(--muted); }
+    .bx-value { font-size: 28px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap;
                 margin-top: 4px; line-height: 1.1; }
-    .bx-unit { font-size: 14px; font-weight: 500; color: var(--muted);
+    .bx-unit { font-size: var(--fs-4); font-weight: 500; color: var(--muted);
                letter-spacing: 0; margin-left: 4px; }
-    .bx-period { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .bx-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-              margin: 18px 0 20px; }
+    .bx-period { color: var(--muted); font-size: var(--fs-2); margin-top: 4px; }
+    .bx-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+              margin: 14px 0 16px; }
     .bx-bar .presets { display: inline-flex; gap: 6px; flex-wrap: wrap; }
     .bx-bar .chip {
-      padding: 8px 14px; border: 1px solid var(--line-strong);
-      border-radius: var(--radius-sm); background: var(--surface-2);
-      color: var(--ink-soft); font-size: 13px; font-family: inherit;
-      cursor: pointer; margin: 0; min-height: 0; font-weight: 500;
+      padding: 0 12px; border: 1px solid var(--ctl-line);
+      border-radius: var(--radius-sm); background: var(--surface);
+      color: var(--ink-soft); font-size: var(--fs-2); font-family: inherit;
+      cursor: pointer; margin: 0; min-height: var(--ctl); font-weight: 500;
     }
     .bx-bar .chip:hover { background: var(--surface-3); color: var(--ink); }
     .bx-bar .chip.on { background: var(--accent); color: var(--accent-ink);
@@ -792,28 +868,28 @@
     .iconbtn.tov-exit { text-decoration: none; }
     .bx-facts {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 12px; margin-bottom: 22px;
+      gap: 10px; margin-bottom: 16px;
     }
     .fact { background: var(--surface); border: 1px solid var(--line);
-            border-radius: var(--radius-sm); padding: 13px 15px; }
-    .fact-label { font-size: 11px; font-weight: 700; letter-spacing: .7px;
-                  text-transform: uppercase; color: var(--faint); }
-    .fact-value { font-size: 19px; font-weight: 700; margin-top: 4px;
+            border-radius: var(--radius-sm); padding: 10px 12px; }
+    .fact-label { font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
+                  text-transform: uppercase; color: var(--muted); }
+    .fact-value { font-size: var(--fs-5); font-weight: 700; margin-top: 2px;
                   overflow-wrap: anywhere; }
-    .fact-note { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-    .bx-block { margin-bottom: 26px; }
-    .bx-title { font-size: 12px; font-weight: 700; letter-spacing: .9px;
-                text-transform: uppercase; color: var(--faint); margin-bottom: 10px; }
+    .fact-note { font-size: var(--fs-2); color: var(--muted); margin-top: 2px; }
+    .bx-block { margin-bottom: 20px; }
+    .bx-title { font-size: var(--fs-1); font-weight: 700; letter-spacing: .04em;
+                text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
     .bx-empty { text-align: center; color: var(--muted); padding: 48px 20px;
                 border: 1px dashed var(--line-strong); border-radius: var(--radius); }
     .bx-empty b { display: block; color: var(--ink); margin-bottom: 4px; }
     .bx-target { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-    .bx-target label { display: flex; flex-direction: column; gap: 6px;
-                       font-size: 12.5px; color: var(--muted); font-weight: 600; }
+    .bx-target label { display: flex; flex-direction: column; gap: 4px;
+                       font-size: var(--fs-2); color: var(--ink-soft); font-weight: 600; }
     .bx-load { text-align: center; color: var(--muted); padding: 60px 20px; }
     @media (max-width: 760px) {
       .bx { width: 100vw; }
-      .bx-value { font-size: 28px; }
+      .bx-value { font-size: 24px; }
     }
   </style>
 </head>
@@ -839,122 +915,64 @@
   <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 9h16v11H4z"/><path d="M3 9l2-5h14l2 5"/><path d="M9 20v-6h6v6"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5l9 4.5 9-4.5M12 12v9"/></symbol>
   <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9.5h8M8 13h5"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.5A6 6 0 0 1 21 20"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5"/><path d="M15 8l4 4-4 4M19 12H9"/></symbol>
 </svg>
 
-<div class="shell" id="shell">
-  <aside class="nav" aria-label="Asosiy menyu">
-    <div class="brand">
-      <div class="mark" aria-hidden="true">S</div>
-      <div class="txt">
-        <div class="name">SEVIMLI</div>
-        <div class="sub">{% if panel_manager %}{{ panel_manager.warehouse_name|default:"market paneli" }}{% elif panel_tovaroved %}{{ panel_tovaroved.name }}{% else %}boshqaruv paneli{% endif %}</div>
-      </div>
-    </div>
+{% panel_menu as menu %}
+<header class="topnav">
+  <a class="brand" href="{% if panel_tovaroved %}/kpi/{% else %}/{% endif %}">
+    <span class="mark" aria-hidden="true">S</span>
+    <span class="txt">
+      <span class="name">SEVIMLI</span>
+      {% if panel_manager %}<span class="bsub">{{ panel_manager.warehouse_name|default:"market paneli" }}</span>{% elif panel_tovaroved %}<span class="bsub">{{ panel_tovaroved.name }}</span>{% endif %}
+    </span>
+  </a>
 
-    {% if panel_tovaroved %}{# tovaroved hammaning KPI'sini ko'radi, faqat ko'rish (dashboard/access.py) #}
-    <nav aria-label="Nazorat">
-      <div class="group">Nazorat</div>
-      <a class="item {% if request.path == '/kpi/' or '/kpi/minus' in request.path or '/kpi/qayta' in request.path %}on{% endif %}" href="/kpi/">
-        <svg class="icon" aria-hidden="true"><use href="#i-store"/></svg>
-        <span class="txt">Reyting</span></a>
-      <a class="item {% block nav_kpi_men %}{% endblock %}" href="/kpi/men/">
-        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
-        <span class="txt">Mening ishim</span></a>
-    </nav>
-    {% else %}
-    <nav aria-label="Savdo">
-      <div class="group">Savdo</div>
-      <a class="item {% block nav_points %}{% endblock %}" href="/">
-        <svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg>
-        <span class="txt">Bugungi savdo</span></a>
-      <a class="item {% block nav_shifts %}{% endblock %}" href="/smenalar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>
-        <span class="txt">Smenalar</span></a>
-      <a class="item {% block nav_receipts %}{% endblock %}" href="/cheklar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-receipt"/></svg>
-        <span class="txt">Cheklar</span></a>
-      <a class="item {% block nav_top %}{% endblock %}" href="/tovarlar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-box"/></svg>
-        <span class="txt">Top tovarlar</span></a>
-    </nav>
-    {% endif %}
+  {# Bo'limlar — dashboard/menu.py; kim nimani ko'rishi dashboard/access.py dagi ro'yxatlardan #}
+  <nav class="mainnav" aria-label="Bo'limlar">
+    {% for s in menu.sections %}
+    <a class="item{% if s.on %} on{% endif %}" href="{{ s.url }}"{% if s.on %} aria-current="true"{% endif %}>
+      <svg class="icon" aria-hidden="true"><use href="#i-{{ s.icon }}"/></svg>
+      <span class="txt">{{ s.title }}</span></a>
+    {% endfor %}
+  </nav>
 
-    {% if not panel_manager and not panel_tovaroved %}
-    <nav aria-label="Nazorat">
-      <div class="group">Nazorat</div>
-      <a class="item {% block nav_kpi %}{% endblock %}" href="/kpi/">
-        <svg class="icon" aria-hidden="true"><use href="#i-store"/></svg>
-        <span class="txt">Tovarovedlar</span></a>
-    </nav>
-    {% endif %}
+  <div class="sys">
+    {% if not panel_tovaroved %}{% aloqa_strip %}{% endif %}{# tovarovedga kassa/MoySklad aloqasi kerak emas #}
+    <span class="when hide-md">{% block when %}{% endblock %}</span>
+    <span class="clock num hide-md" id="clock" aria-live="off"></span>
+    <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="false" title="Tungi rejim">
+      <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>
+      <span class="sr-only">Tungi rejim</span>
+    </button>
+    <span class="avatar hide-sm" title="{{ request.user.username|default:'Foydalanuvchi' }}">
+      <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+      <span class="sr-only">{{ request.user.username|default:"Foydalanuvchi" }}</span>
+    </span>
+    <a class="iconbtn" href="/chiqish/" title="Chiqish">
+      <svg class="icon" aria-hidden="true"><use href="#i-out"/></svg>
+      <span class="hide-md">Chiqish</span><span class="sr-only">Paneldan chiqish</span>
+    </a>
+  </div>
+</header>
 
-    {% if not panel_manager and not panel_tovaroved %}{# boshqaruvchi va tovaroved sozlamalarni ko'rmaydi (dashboard/access.py) #}
-    <nav aria-label="Sozlash">
-      <div class="group">Sozlash</div>
-      <a class="item {% block nav_registers %}{% endblock %}" href="/kassalar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg>
-        <span class="txt">Kassalar</span></a>
-      <a class="item {% block nav_bonus %}{% endblock %}" href="/bonus/">
-        <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
-        <span class="txt">SEVIMLI BONUS</span></a>
-      <a class="item {% block nav_sms %}{% endblock %}" href="/sms/">
-        <svg class="icon" aria-hidden="true"><use href="#i-msg"/></svg>
-        <span class="txt">Mijozlarga SMS</span></a>
-      <a class="item {% block nav_prices %}{% endblock %}" href="/narxlar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-tag"/></svg>
-        <span class="txt">Sotuv narxi</span></a>
-      <a class="item {% block nav_pay %}{% endblock %}" href="/tolov-turlari/">
-        <svg class="icon" aria-hidden="true"><use href="#i-card"/></svg>
-        <span class="txt">To'lov turlari</span></a>
-      <a class="item {% block nav_releases %}{% endblock %}" href="/versiyalar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-down"/></svg>
-        <span class="txt">Versiyalar</span></a>
-      <a class="item {% block nav_managers %}{% endblock %}" href="/boshqaruvchilar/">
-        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
-        <span class="txt">Boshqaruvchilar</span></a>
-    </nav>
-    {% endif %}
+{% if menu.sub %}
+<nav class="subnav" aria-label="{{ menu.sub_title }}">
+  {% for i in menu.sub %}<a{% if i.on %} class="on" aria-current="page"{% endif %} href="{{ i.url }}">{{ i.title }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
 
-    <div class="spacer"></div>
-    <div class="foot">
-      {% if not panel_tovaroved %}<div class="row">
-        <span class="dot ok" data-aloqa="moysklad" title="MoySklad aloqasi"></span>
-        <span class="txt">MoySklad bilan bog'langan</span>
-      </div>{% endif %}
-      <div class="row" style="margin-top: 8px;">
-        <svg class="icon" aria-hidden="true" style="width:15px;height:15px;flex:0 0 15px"><use href="#i-return"/></svg>
-        <a href="/chiqish/"><span class="txt">Chiqish</span><span class="sr-only">Chiqish</span></a>
-      </div>
-    </div>
-  </aside>
-
-  <main class="body">
-    <header class="top">
-      <button type="button" class="iconbtn" id="menu-toggle"
-              aria-controls="shell" aria-expanded="true" title="Menyuni yig'ish">
-        <svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg>
-        <span class="sr-only">Menyuni yig'ish</span>
-      </button>
-      <span class="crumb">{% block crumb %}{% endblock %}</span>
-      {% if not panel_tovaroved %}{% aloqa_strip %}{% endif %}{# tovarovedga kassa/MoySklad aloqasi kerak emas #}
-      <span class="topsep" aria-hidden="true"></span>
-      <button type="button" class="iconbtn" id="theme-toggle" aria-pressed="true">
-        <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>
-        <span>Tungi rejim</span>
-      </button>
-      <span class="when">{% block when %}{% endblock %}</span>
-      <span class="clock num" id="clock" aria-live="off"></span>
-      <span class="avatar" title="{{ request.user.username|default:'Foydalanuvchi' }}">
-        <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
-        <span class="sr-only">{{ request.user.username|default:"Foydalanuvchi" }}</span>
-      </span>
-      {% if panel_tovaroved %}<a class="iconbtn tov-exit" href="/chiqish/">Chiqish</a>{% endif %}
-    </header>
-    <div class="wrap">
-      {% block body %}{% endblock %}
-    </div>
-  </main>
-</div>
+<main class="body">
+  <span class="sr-only">{% block crumb %}{% endblock %}</span>
+  <div class="wrap">
+    {% block body %}{% endblock %}
+  </div>
+</main>
 
 
 {# ------------------------------------------------- «Batafsil» paneli #}
@@ -1023,7 +1041,7 @@
         if (!r.ok) throw new Error(r.status);
         return r.text();
       })
-      .then(function (html) { body.innerHTML = html; wire(); })
+      .then(function (html) { body.innerHTML = html; wire(); if (window.sevimliWrapTables) window.sevimliWrapTables(body); })
       .catch(function () {
         body.innerHTML = '<div class="bx-empty"><b>Ma\'lumot olinmadi</b>' +
           '<div class="sec">Internetni tekshirib, qaytadan urinib ko\'ring.</div></div>';
@@ -1090,9 +1108,8 @@
   }
 })();
 
-// --------------------------------------------------- menyu, mavzu, soat
+// --------------------------------------------------- mavzu, soat, jadvallar
 (function () {
-  var shell = document.getElementById("shell");
   var root = document.documentElement;
 
   function saved(key) {
@@ -1102,25 +1119,13 @@
     try { localStorage.setItem(key, value); } catch (e) { /* xotira yopiq */ }
   }
 
-  // Menyuni yig'ish — tanlov eslab qolinadi
-  var mt = document.getElementById("menu-toggle");
-  if (saved("sevimli-menu") === "tight") shell.classList.add("tight");
-  if (mt) {
-    mt.setAttribute("aria-expanded", shell.classList.contains("tight") ? "false" : "true");
-    mt.addEventListener("click", function () {
-      var tight = shell.classList.toggle("tight");
-      mt.setAttribute("aria-expanded", tight ? "false" : "true");
-      save("sevimli-menu", tight ? "tight" : "wide");
-    });
-  }
-
-  // Tungi rejim — standart yoqilgan
+  // Tungi rejim — standart kunduzgi; tanlov eslab qolinadi
   var tt = document.getElementById("theme-toggle");
   function applyTheme(dark) {
     root.setAttribute("data-theme", dark ? "dark" : "light");
     if (tt) tt.setAttribute("aria-pressed", dark ? "true" : "false");
   }
-  applyTheme(saved("sevimli-theme") !== "light");
+  applyTheme(saved("sevimli-theme") === "dark");
   if (tt) {
     tt.addEventListener("click", function () {
       var dark = root.getAttribute("data-theme") !== "dark";
@@ -1140,6 +1145,42 @@
     tick();
     setInterval(tick, 20000);
   }
+
+  // Keng jadval sahifani yonga surmasin: har bir jadval o'z qutisida aylanadi.
+  // (Telefonda Kassalar sahifasi ekrandan 977 px chiqib ketardi.)
+  window.sevimliWrapTables = function (scope) {
+    (scope || document).querySelectorAll("table").forEach(function (t) {
+      if (t.closest(".tablewrap") || !t.closest("main.body, .bx-body")) return;
+      var w = document.createElement("div");
+      w.className = "tablewrap";
+      t.parentNode.insertBefore(w, t);
+      w.appendChild(t);
+    });
+    // Telefonda ko'p ustunli jadval siqilib, har so'z alohida qatorga tushmasin: ustun soniga
+    // qarab eng kichik kenglik beriladi (CSS: .tablewrap > table), ortig'i quti ichida suriladi
+    (scope || document).querySelectorAll(".tablewrap > table").forEach(function (t) {
+      var row = t.rows && t.rows[0];
+      if (row) t.style.setProperty("--cols", row.cells.length);
+    });
+  };
+  window.sevimliWrapTables(document);
+
+  // Keng grafik (bosh sahifa) tor joyda kichrayadi — yozuvlari o'qiladigan bo'lib qolsin
+  window.sevimliFitCharts = function () {
+    document.querySelectorAll("svg.chart.wide").forEach(function (svg) {
+      var vb = svg.viewBox && svg.viewBox.baseVal, w = svg.getBoundingClientRect().width;
+      if (!vb || !vb.width || !w) return;
+      svg.style.setProperty("--k", Math.min(1.9, Math.max(1, vb.width / w)).toFixed(3));
+    });
+  };
+  window.sevimliFitCharts();
+  window.addEventListener("resize", window.sevimliFitCharts);
+
+  // Tanlangan bo'lim telefonda ko'rinib tursin (menyu qatori suriladi)
+  var on = document.querySelector("nav.mainnav a.item.on");
+  if (on && on.scrollIntoView) {
+    try { on.scrollIntoView({ block: "nearest", inline: "center" }); } catch (e) { /* eski brauzer */ }
+  }
 })();
 
 // Aloqa va navbat — sahifani qayta yuklamasdan 15 soniyada bir yangilanadi.
@@ -1156,7 +1197,37 @@
       STATES.forEach(function (s) { el.classList.remove(s); });
       el.classList.add(link.state);
       el.title = link.text || "";
+      var txt = el.parentNode && el.parentNode.querySelector(".aloqa-text");
+      if (txt) txt.textContent = link.text || "";
     }
+  }
+  // Tepadagi ixcham ko'rsatkich: «7/8» va eng yomon holat rangi (server bilan bir xil qoida)
+  function summary() {
+    var dots = document.querySelectorAll('#aloqa-list [data-aloqa^="reg-"]');
+    var ok = 0, bad = false;
+    for (var i = 0; i < dots.length; i++) {
+      if (dots[i].classList.contains("ok")) ok++;
+      else if (dots[i].classList.contains("bad")) bad = true;
+    }
+    var num = document.getElementById("aloqa-sum"), dot = document.getElementById("aloqa-sum-dot");
+    if (num) num.textContent = ok + "/" + dots.length;
+    if (dot) {
+      STATES.forEach(function (s) { dot.classList.remove(s); });
+      dot.classList.add(ok === dots.length ? "ok" : (bad ? "bad" : "warn"));
+    }
+  }
+  // Ro'yxatni ochish/yopish: bosish, tashqariga bosish, Escape
+  var btn = document.getElementById("aloqa-btn"), list = document.getElementById("aloqa-list");
+  function shut() { list.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+  if (btn && list) {
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (list.hidden) { list.hidden = false; btn.setAttribute("aria-expanded", "true"); } else { shut(); }
+    });
+    document.addEventListener("click", function (e) { if (!list.hidden && !list.contains(e.target)) shut(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !list.hidden) { shut(); btn.focus(); }
+    });
   }
   function tick() {
     var banner = document.querySelector("[data-queue-banner]");
@@ -1172,6 +1243,7 @@
         if (!snap) return;
         paint("moysklad", snap.moysklad);
         (snap.registers || []).forEach(function (r) { paint("reg-" + r.id, r); });
+        summary();
         var q = snap.queue;
         if (!banner || !q || !Number.isInteger(q.queued) || !Number.isInteger(q.stuck)) return;
         banner.style.display = q.queued ? "" : "none";

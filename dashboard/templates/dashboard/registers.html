@@ -60,22 +60,19 @@
   <h2>Ro'yxat <span class="sec" style="font-weight:400; letter-spacing:0; text-transform:none;">— ustun nomini bosib tartiblang</span></h2>
   <style>
     /* Kassalar ro'yxati: ixcham va tartiblanadigan (egasining so'rovi, 2026-09-17) */
-    table.kassalar { font-size: 13.5px; }
     table.kassalar th { cursor: pointer; user-select: none; white-space: nowrap; }
     table.kassalar th:hover { color: var(--ink); }
     table.kassalar th .arr { display: inline-block; width: 12px; margin-left: 3px; opacity: .35; font-size: 10px; }
     table.kassalar th.asc .arr, table.kassalar th.desc .arr { opacity: 1; color: var(--ok); }
     table.kassalar th.noSort { cursor: default; }
-    table.kassalar td { padding: 9px 12px; vertical-align: middle; }
-    table.kassalar td .sec { font-size: 12px; }
-    table.kassalar .badge { font-size: 11.5px; padding: 3px 9px; }
-    table.kassalar code.token { font-size: 12px; }
+    table.kassalar td { padding: 6px 10px; }
+    table.kassalar th { padding: 8px 10px; }
     table.kassalar td.actions { white-space: nowrap; }
-    table.kassalar td.actions form.inline, table.kassalar td.actions a.badge { margin-left: 6px; vertical-align: middle; }
-    table.kassalar td.actions input { width: 96px; padding: 5px 8px; font-size: 12.5px; }
-    table.kassalar td.actions button.small { padding: 5px 10px; font-size: 12.5px; }
+    table.kassalar td.actions form.inline { margin-left: 4px; vertical-align: middle; }
+    table.kassalar td.actions a.iconbtn { height: 30px; min-width: 0; padding: 0 10px; font-weight: 600; vertical-align: middle; }
+    table.kassalar td.actions input { width: 92px; }
     table.kassalar td.who form.inline { display: inline-block; margin: 0 0 0 6px; }
-    table.kassalar td.who button.small { padding: 3px 8px; font-size: 12px; }
+    table.kassalar td.who button.small { min-height: 26px; padding: 0 8px; }
   </style>
   <table class="kassalar" id="kassalar">
     <thead>
@@ -133,13 +130,13 @@
           {% endif %}
         </td>
         <td class="actions">
-          <a href="{% url 'dashboard:register-edit' r.pk %}" class="badge ok" style="padding:6px 12px;">Sozlash</a>
+          <a href="{% url 'dashboard:register-edit' r.pk %}" class="iconbtn">Sozlash</a>
           <form method="post" class="inline">
             {% csrf_token %}
             <input type="hidden" name="action" value="password">
             <input type="hidden" name="id" value="{{ r.pk }}">
             <input name="password" placeholder="yangi parol" size="12">
-            <button type="submit" class="small">Almashtirish</button>
+            <button type="submit" class="small ghost">Almashtirish</button>
           </form>
           <form method="post" class="inline">
             {% csrf_token %}
@@ -160,7 +157,7 @@
               {% csrf_token %}
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="id" value="{{ r.pk }}">
-              <button type="submit" class="small ghost" style="color: var(--danger);">O'chirish</button>
+              <button type="submit" class="small danger">O'chirish</button>
             </form>
             {% if not r.active %}
               <form method="post" class="inline">
@@ -254,7 +251,7 @@
     </p>
   {% endif %}
 
-  <div class="alert warn" style="margin-top: 22px;">
+  <div class="alert note" style="margin-top: 16px;">
     <span>i</span>
     <div>
       <b>Kassa qanday ishga tushadi</b>

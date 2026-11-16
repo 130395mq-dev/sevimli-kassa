@@ -61,8 +61,11 @@ class OpenPagesTest(ManagerBase):
     def test_egasi_hammasini_koradi(self):
         r = self.boss.get("/")
         self.assertEqual(r.context["board"]["summary"]["total"], 111_111 + 999_999)
-        for word in ("Kassa-1", "Kassa-2", "MoySklad tekshiruvi", 'href="/boshqaruvchilar/"'):
+        for word in ("Kassa-1", "Kassa-2", "MoySklad tekshiruvi", 'href="/kassalar/"', 'href="/bonus/"'):
             self.assertContains(r, word)
+        # Menyu bo'limlarga ajratildi (egasi, 2026-11-16): «Boshqaruvchilar» endi har sahifada emas,
+        # «Sozlash» bo'limining ikkinchi qatorida turadi.
+        self.assertContains(self.boss.get("/kassalar/"), 'href="/boshqaruvchilar/"')
 
     def test_batafsil_va_csv(self):
         for kpi in batafsil.KPIS:

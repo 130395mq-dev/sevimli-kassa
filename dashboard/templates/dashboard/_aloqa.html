@@ -1,15 +1,31 @@
 {% if snap %}
-{# Aloqa chiroqlari — har sahifaning tepasida. Yashil: yaxshi, sariq: kechikish, qizil (yonib-o'chadi): aloqa yo'q. #}
-<div class="aloqa" id="aloqa" title="Aloqa holati — 15 soniyada bir yangilanadi">
-  <span class="aloqa-item">
+{% comment %}Aloqa holati — tepada ixcham: nechta kassa ulangani va MoySklad. Bosilganda har bir kassa
+ro'yxati ochiladi. Yashil: yaxshi, sariq: kechikish, qizil (yonib-o'chadi): aloqa yo'q. 15 soniyada bir
+yangilanadi.{% endcomment %}
+<div class="aloqa" id="aloqa">
+  <button type="button" class="pill" id="aloqa-btn" aria-expanded="false" aria-controls="aloqa-list"
+          title="Kassalar aloqasi — bosing, har bir kassa ko'rinadi">
+    <span class="dot {{ sum.state }}" id="aloqa-sum-dot"></span>
+    <b class="num" id="aloqa-sum">{{ sum.ok }}/{{ sum.total }}</b>
+    <span class="hide-sm">kassa ulangan</span><span class="sr-only">— ro'yxatni ochish</span>
+  </button>
+  <span class="pill hide-sm">
     <span class="dot {{ snap.moysklad.state }}" data-aloqa="moysklad" title="{{ snap.moysklad.text }}"></span>
     <span class="dot-label">MoySklad</span>
   </span>
-  {% for r in snap.registers %}
+  <div class="aloqa-list" id="aloqa-list" hidden>
+    <span class="aloqa-item">
+      <span class="dot {{ snap.moysklad.state }}" data-aloqa="moysklad" title="{{ snap.moysklad.text }}"></span>
+      <span class="dot-label">MoySklad</span>
+      <span class="aloqa-text">{{ snap.moysklad.text }}</span>
+    </span>
+    {% for r in snap.registers %}
     <span class="aloqa-item">
       <span class="dot {{ r.state }}" data-aloqa="reg-{{ r.id }}" title="{{ r.text }}"></span>
       <span class="dot-label">{{ r.name }}</span>
+      <span class="aloqa-text">{{ r.text }}</span>
     </span>
-  {% endfor %}
+    {% endfor %}
+  </div>
 </div>
 {% endif %}

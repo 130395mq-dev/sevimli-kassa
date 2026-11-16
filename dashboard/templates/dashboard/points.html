@@ -1,7 +1,7 @@
 {% extends "dashboard/base.html" %}
 {% load pul aloqa_tags l10n %}
 
-{% block title %}Savdo — Sevimli Kassa{% endblock %}
+{% block title %}Bosh sahifa — Sevimli Kassa{% endblock %}
 {% block nav_points %}on{% endblock %}
 {% block when %}{{ today|date:"d.m.Y" }}{% endblock %}
 
@@ -9,8 +9,8 @@
 
 {% block body %}
 
-  <h1>Savdo</h1>
-  <div class="sub">Nuqtalar bo'yicha — {{ board.label }}</div>
+  <h1>Bosh sahifa</h1>
+  <div class="sub">Savdo nuqtalar bo'yicha — {{ board.label }}</div>
 
   {% if messages %}
     {% for m in messages %}
@@ -65,147 +65,6 @@
     <span class="sec">Solishtirish: {{ board.prev_label }}</span>
   </form>
 
-  {% with t=board.trend c=board.trend.chart %}
-  <section class="trend" aria-label="Kunlik savdo dinamikasi">
-    <div class="trend-head">
-      <div>
-        <h2 class="trend-title">Kunlik savdo dinamikasi</h2>
-        <div class="trend-value num">{{ t.total|som }} <span class="unit">so'm</span></div>
-        <div class="trend-note">
-          {% if t.live %}Kecha shu vaqtgacha{% else %}{{ t.prev_name }}{% endif %}:
-          <b class="num">{{ t.base|som }}</b> so'm
-          {% if t.delta is not None %}
-            <span class="delta {% if t.delta >= 0 %}up{% else %}down{% endif %}">
-              {% if t.delta >= 0 %}▲ +{% else %}▼ {% endif %}{{ t.delta }}%</span>
-          {% endif %}
-          {% if t.by_hour and t.peak %}<span class="sep">·</span> eng gavjum soat <b>{{ t.peak.label }}</b>
-            ({{ t.peak.total|som }} so'm, {{ t.peak.n }} chek){% endif %}
-        </div>
-      </div>
-      <div class="legend">
-        <span class="key"><span class="swatch line l0"></span> {{ t.cur_name }}</span>
-        <span class="key"><span class="swatch line l1 dashed"></span> {{ t.prev_name }}</span>
-      </div>
-    </div>
-
-    {% localize off %}
-    <div class="trend-chart" data-trend>
-      <svg class="chart big wide" viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="xMidYMid meet"
-           role="img" aria-label="{{ t.cur_name }} va {{ t.prev_name }} savdosi">
-        {% for tk in c.ticks %}
-          <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="grid"></line>
-          <text x="{{ c.left|add:'-10' }}" y="{{ tk.y|add:'4' }}" class="tick">{{ tk.label }}</text>
-        {% endfor %}
-        {% for s in c.series %}{% if s.area %}<path class="area a{{ forloop.counter0 }}" d="{{ s.area }}"></path>{% endif %}{% endfor %}
-        {% for s in c.series %}<path class="line l{{ forloop.counter0 }}{% if s.dash %} dashed{% endif %}" d="{{ s.line }}"></path>{% endfor %}
-        {% for p in t.tips %}
-          <g class="hov" data-label="{{ p.label }}"
-             data-cur="{% if p.cur is not None %}{{ p.cur|som }}{% endif %}"
-             data-n="{% if p.n is not None %}{{ p.n }}{% endif %}"
-             data-prev="{{ p.prev|som }}"
-             data-delta="{% if p.delta is not None %}{{ p.delta }}{% endif %}">
-            <rect x="{{ p.x }}" y="{{ c.top }}" width="{{ p.w }}" height="{{ c.plot_h }}" class="hit"></rect>
-            <line class="cross" x1="{{ p.cx }}" x2="{{ p.cx }}" y1="{{ c.top }}" y2="{{ c.baseline }}"></line>
-            {% if p.dot_y is not None %}<circle class="dot d0" cx="{{ p.cx }}" cy="{{ p.dot_y }}" r="5"></circle>{% endif %}
-            {% if p.prev_y is not None %}<circle class="dot d1" cx="{{ p.cx }}" cy="{{ p.prev_y }}" r="4"></circle>{% endif %}
-          </g>
-        {% endfor %}
-        {% for x in c.xlabels %}<text x="{{ x.x }}" y="{{ c.baseline|add:'20' }}" class="day">{{ x.label }}</text>{% endfor %}
-        <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
-      </svg>
-      <div class="trend-tip" hidden></div>
-    </div>
-    {% endlocalize %}
-
-    <div class="sec" style="margin-top: 4px;">Manba: Sevimli Kassa kassalari (server bazasi).{% if not panel_manager %} Oylik karta esa MoySklad'dagi butun tarmoq savdosi — shuning uchun summalar farq qiladi.{% endif %}</div>
-    {% if board.trend.open_hour %}
-      <div class="sec" style="margin-top: 4px;">Joriy soat ({{ board.trend.open_hour }}) tugagach grafikka qo'shiladi — uning savdosi yuqoridagi jami summada bor.</div>
-    {% endif %}
-    <details class="trend-table">
-      <summary>{% if t.by_hour %}Soatma-soat jadval{% else %}Kunma-kun jadval{% endif %}</summary>
-      <div class="tablewrap">
-        <table>
-          <thead><tr>
-            <th>{% if t.by_hour %}Soat{% else %}Kun{% endif %}</th>
-            <th class="right">{{ t.cur_name }}</th><th class="right">Cheklar</th>
-            <th class="right">{{ t.prev_name }}</th><th class="right">Farq</th>
-          </tr></thead>
-          <tbody>
-          {% for r in t.rows %}
-            <tr>
-              <td class="num tight">{{ r.label }}</td>
-              <td class="right num"><b>{{ r.cur|som }}</b></td>
-              <td class="right num">{{ r.n }}</td>
-              <td class="right num">{{ r.prev|som }}</td>
-              <td class="right num">{% if r.delta is not None %}<span class="delta {% if r.delta >= 0 %}up{% else %}down{% endif %}">{% if r.delta >= 0 %}+{% endif %}{{ r.delta }}%</span>{% else %}<span class="sec">—</span>{% endif %}</td>
-            </tr>
-          {% empty %}
-            <tr><td colspan="5" class="empty">Bu davrda savdo bo'lmagan.</td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </details>
-  </section>
-  {% endwith %}
-
-  {# ------------------------ oylar kesimida va tushib ketgan tovarlar #}
-  {% comment %}
-    Ikkalasi ham sahifadan KEYIN yuklanadi: oylik raqamlar MoySklad'dan
-    keladi (sekin bo'lishi mumkin), tovarlar tahlili og'irroq so'rov —
-    bosh sahifa ularni kutib qolmasin.
-  {% endcomment %}
-  <div class="insights">
-    {% if not panel_manager %}{# oylik — butun tarmoq (MoySklad), faqat egasiga #}
-    <section class="card insight" data-lazy="/oylik/">
-      <div class="sec">Oylar kesimida savdo yuklanmoqda…</div>
-    </section>
-    {% endif %}
-    <section class="card insight" data-lazy="/tovarlar/tushgan/?qism=1">
-      <div class="sec">Tushib ketgan tovarlar hisoblanmoqda…</div>
-    </section>
-  </div>
-
-  <script>
-  (function () {
-    // Katta grafik: sichqoncha ostidagi to'liq izoh
-    var box = document.querySelector("[data-trend]");
-    if (box) {
-      var tip = box.querySelector(".trend-tip");
-      var curName = "{{ board.trend.cur_name|escapejs }}";
-      var prevName = "{{ board.trend.prev_name|escapejs }}";
-      box.querySelectorAll(".hov").forEach(function (g) {
-        g.addEventListener("mouseenter", function () {
-          var d = g.dataset, html = "<b>" + d.label + "</b>";
-          if (d.cur) {
-            html += "<div><span class='k0'></span>" + curName + ": <b>" + d.cur + "</b> so'm";
-            if (d.n) html += " · " + d.n + " chek";
-            html += "</div>";
-          }
-          html += "<div><span class='k1'></span>" + prevName + ": " + d.prev + " so'm</div>";
-          if (d.delta) {
-            var up = parseFloat(d.delta) >= 0;
-            html += "<div class='" + (up ? "up" : "down") + "'>" + (up ? "▲ +" : "▼ ") + d.delta + "%</div>";
-          }
-          tip.innerHTML = html;
-          tip.hidden = false;
-          var r = g.getBoundingClientRect(), b = box.getBoundingClientRect();
-          var x = r.left - b.left + r.width / 2;
-          tip.style.left = Math.min(Math.max(x, 90), b.width - 90) + "px";
-        });
-        g.addEventListener("mouseleave", function () { tip.hidden = true; });
-      });
-    }
-    // Keyin yuklanadigan bo'laklar
-    document.querySelectorAll("[data-lazy]").forEach(function (el) {
-      fetch(el.dataset.lazy, {credentials: "same-origin"})
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
-        .then(function (html) { el.innerHTML = html; })
-        .catch(function () { el.innerHTML = "<div class='sec'>Yuklab bo'lmadi — sahifani yangilang.</div>"; });
-    });
-  })();
-  </script>
-
   <div class="alert warn" data-queue-banner {% if not queued %}style="display: none;"{% endif %}>
     <span>⧗</span>
     <div>
@@ -222,9 +81,25 @@
     </div>
   {% endif %}
 
+  {% comment %}
+    Bosh sahifa uch yorliqqa bo'lingan (egasi, 2026-11-15: «panel ichi professional ERP
+    dasturlardek tartibga olinsin»): avval hammasi bitta 8–9 ekranlik varaq edi.
+      Umumiy          — bugungi savdo: raqamlar, grafik, do'konlar, kassalar
+      Kunlar bo'yicha — kunlik jadval, to'lov turlari, so'nggi cheklar
+      Tizim holati    — texnik: kassalar navbati, yozilmagan cheklar, MoySklad sinovi, katalog
+    Bloklarning o'zi o'zgarmagan — faqat joyi. Skriptsiz hammasi ketma-ket ko'rinadi.
+  {% endcomment %}
+  <nav class="tabs hometabs" aria-label="Bosh sahifa bo'limlari">
+    <a href="#umumiy" data-tab="umumiy" class="on">Umumiy</a>
+    <a href="#kunlar" data-tab="kunlar">Kunlar bo'yicha</a>
+    <a href="#tizim" data-tab="tizim">Tizim holati{% if not panel_manager %} <span class="badge err" data-queue-stuck{% if not stuck %} style="display: none;"{% endif %}>diqqat</span>{% endif %}</a>
+  </nav>
+
+  <div class="tabpanel" data-panel="umumiy">
+
   {# --------------------------------------- asosiy raqamlar (bosiladi) #}
   {% localize off %}
-  <div class="tiles">
+  <div class="tiles strip">
     {% with c=board.cards %}
 
     <button type="button" class="tile hero" data-detail="savdo" data-detail-name="Savdo">
@@ -359,19 +234,106 @@
   </div>
   {% endlocalize %}
 
+  <div class="home-cols">
+  <div class="home-col">
+  {% with t=board.trend c=board.trend.chart %}
+  <section class="trend" aria-label="Kunlik savdo dinamikasi">
+    <div class="trend-head">
+      <div>
+        <h2 class="trend-title">Kunlik savdo dinamikasi</h2>
+        <div class="trend-value num">{{ t.total|som }} <span class="unit">so'm</span></div>
+        <div class="trend-note">
+          {% if t.live %}Kecha shu vaqtgacha{% else %}{{ t.prev_name }}{% endif %}:
+          <b class="num">{{ t.base|som }}</b> so'm
+          {% if t.delta is not None %}
+            <span class="delta {% if t.delta >= 0 %}up{% else %}down{% endif %}">
+              {% if t.delta >= 0 %}▲ +{% else %}▼ {% endif %}{{ t.delta }}%</span>
+          {% endif %}
+          {% if t.by_hour and t.peak %}<span class="sep">·</span> eng gavjum soat <b>{{ t.peak.label }}</b>
+            ({{ t.peak.total|som }} so'm, {{ t.peak.n }} chek){% endif %}
+        </div>
+      </div>
+      <div class="legend">
+        <span class="key"><span class="swatch line l0"></span> {{ t.cur_name }}</span>
+        <span class="key"><span class="swatch line l1 dashed"></span> {{ t.prev_name }}</span>
+      </div>
+    </div>
+
+    {% localize off %}
+    <div class="trend-chart" data-trend>
+      <svg class="chart big wide" viewBox="0 0 {{ c.w }} {{ c.h }}" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="{{ t.cur_name }} va {{ t.prev_name }} savdosi">
+        {% for tk in c.ticks %}
+          <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="grid"></line>
+          <text x="{{ c.left|add:'-10' }}" y="{{ tk.y|add:'4' }}" class="tick">{{ tk.label }}</text>
+        {% endfor %}
+        {% for s in c.series %}{% if s.area %}<path class="area a{{ forloop.counter0 }}" d="{{ s.area }}"></path>{% endif %}{% endfor %}
+        {% for s in c.series %}<path class="line l{{ forloop.counter0 }}{% if s.dash %} dashed{% endif %}" d="{{ s.line }}"></path>{% endfor %}
+        {% for p in t.tips %}
+          <g class="hov" data-label="{{ p.label }}"
+             data-cur="{% if p.cur is not None %}{{ p.cur|som }}{% endif %}"
+             data-n="{% if p.n is not None %}{{ p.n }}{% endif %}"
+             data-prev="{{ p.prev|som }}"
+             data-delta="{% if p.delta is not None %}{{ p.delta }}{% endif %}">
+            <rect x="{{ p.x }}" y="{{ c.top }}" width="{{ p.w }}" height="{{ c.plot_h }}" class="hit"></rect>
+            <line class="cross" x1="{{ p.cx }}" x2="{{ p.cx }}" y1="{{ c.top }}" y2="{{ c.baseline }}"></line>
+            {% if p.dot_y is not None %}<circle class="dot d0" cx="{{ p.cx }}" cy="{{ p.dot_y }}" r="5"></circle>{% endif %}
+            {% if p.prev_y is not None %}<circle class="dot d1" cx="{{ p.cx }}" cy="{{ p.prev_y }}" r="4"></circle>{% endif %}
+          </g>
+        {% endfor %}
+        {% for x in c.xlabels %}<text x="{{ x.x }}" y="{{ c.baseline|add:'20' }}" class="day">{{ x.label }}</text>{% endfor %}
+        <line x1="{{ c.left }}" x2="{{ c.axis_right }}" y1="{{ c.baseline }}" y2="{{ c.baseline }}" class="axis"></line>
+      </svg>
+      <div class="trend-tip" hidden></div>
+    </div>
+    {% endlocalize %}
+
+    <div class="sec" style="margin-top: 4px;">Manba: Sevimli Kassa kassalari (server bazasi).{% if not panel_manager %} Oylik karta esa MoySklad'dagi butun tarmoq savdosi — shuning uchun summalar farq qiladi.{% endif %}</div>
+    {% if board.trend.open_hour %}
+      <div class="sec" style="margin-top: 4px;">Joriy soat ({{ board.trend.open_hour }}) tugagach grafikka qo'shiladi — uning savdosi yuqoridagi jami summada bor.</div>
+    {% endif %}
+    <details class="trend-table">
+      <summary>{% if t.by_hour %}Soatma-soat jadval{% else %}Kunma-kun jadval{% endif %}</summary>
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th>{% if t.by_hour %}Soat{% else %}Kun{% endif %}</th>
+            <th class="right">{{ t.cur_name }}</th><th class="right">Cheklar</th>
+            <th class="right">{{ t.prev_name }}</th><th class="right">Farq</th>
+          </tr></thead>
+          <tbody>
+          {% for r in t.rows %}
+            <tr>
+              <td class="num tight">{{ r.label }}</td>
+              <td class="right num"><b>{{ r.cur|som }}</b></td>
+              <td class="right num">{{ r.n }}</td>
+              <td class="right num">{{ r.prev|som }}</td>
+              <td class="right num">{% if r.delta is not None %}<span class="delta {% if r.delta >= 0 %}up{% else %}down{% endif %}">{% if r.delta >= 0 %}+{% endif %}{{ r.delta }}%</span>{% else %}<span class="sec">—</span>{% endif %}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty">Bu davrda savdo bo'lmagan.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+  {% endwith %}
+  </div>
+  <div class="home-col">
   {# ------------------------------------------- nuqtalar bo'yicha savdo #}
   <h2>Nuqtalar bo'yicha savdo</h2>
   <div class="tablewrap">
   <table class="rating">
     <thead><tr>
-      <th class="tight">#</th><th>Nuqta</th><th class="right">Savdo</th><th>Ulush</th>
+      <th class="tight c-opt">#</th><th>Nuqta</th><th class="right">Savdo</th><th>Ulush</th>
       <th class="right">Chek</th><th class="right">O'rtacha chek</th>
-      <th class="right">Oldingi davr</th><th class="right">Farq</th>
+      <th class="right c-opt">Oldingi davr</th><th class="right">Farq</th>
     </tr></thead>
     <tbody>
     {% for p in board.ranking %}
       <tr class="{% if p.rank == 1 and p.total %}best{% endif %}">
-        <td class="tight num">{{ p.rank }}</td>
+        <td class="tight num c-opt">{{ p.rank }}</td>
         <td>
           <b>{{ p.name }}</b>
           {% if p.rank == 1 and p.total %}<span class="badge ok">eng yaxshi</span>{% endif %}
@@ -384,7 +346,7 @@
         </td>
         <td class="right num">{{ p.receipts }}</td>
         <td class="right num">{{ p.avg|som }}</td>
-        <td class="right num sec">{{ p.prev_total|som }}</td>
+        <td class="right num sec c-opt">{{ p.prev_total|som }}</td>
         <td class="right num">
           {% if p.delta_total is not None %}
             <span class="delta {% if p.delta_total >= 0 %}up{% else %}down{% endif %}">
@@ -395,6 +357,129 @@
     {% empty %}
       <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>
     {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {# ------------------------ oylar kesimida va tushib ketgan tovarlar #}
+  {% comment %}
+    Ikkalasi ham sahifadan KEYIN yuklanadi: oylik raqamlar MoySklad'dan
+    keladi (sekin bo'lishi mumkin), tovarlar tahlili og'irroq so'rov —
+    bosh sahifa ularni kutib qolmasin.
+  {% endcomment %}
+  <div class="insights">
+    {% if not panel_manager %}{# oylik — butun tarmoq (MoySklad), faqat egasiga #}
+    <section class="card insight" data-lazy="/oylik/">
+      <div class="sec">Oylar kesimida savdo yuklanmoqda…</div>
+    </section>
+    {% endif %}
+    <section class="card insight" data-lazy="/tovarlar/tushgan/?qism=1">
+      <div class="sec">Tushib ketgan tovarlar hisoblanmoqda…</div>
+    </section>
+  </div>
+
+  <script>
+  (function () {
+    // Katta grafik: sichqoncha ostidagi to'liq izoh
+    var box = document.querySelector("[data-trend]");
+    if (box) {
+      var tip = box.querySelector(".trend-tip");
+      var curName = "{{ board.trend.cur_name|escapejs }}";
+      var prevName = "{{ board.trend.prev_name|escapejs }}";
+      box.querySelectorAll(".hov").forEach(function (g) {
+        g.addEventListener("mouseenter", function () {
+          var d = g.dataset, html = "<b>" + d.label + "</b>";
+          if (d.cur) {
+            html += "<div><span class='k0'></span>" + curName + ": <b>" + d.cur + "</b> so'm";
+            if (d.n) html += " · " + d.n + " chek";
+            html += "</div>";
+          }
+          html += "<div><span class='k1'></span>" + prevName + ": " + d.prev + " so'm</div>";
+          if (d.delta) {
+            var up = parseFloat(d.delta) >= 0;
+            html += "<div class='" + (up ? "up" : "down") + "'>" + (up ? "▲ +" : "▼ ") + d.delta + "%</div>";
+          }
+          tip.innerHTML = html;
+          tip.hidden = false;
+          var r = g.getBoundingClientRect(), b = box.getBoundingClientRect();
+          var x = r.left - b.left + r.width / 2;
+          tip.style.left = Math.min(Math.max(x, 90), b.width - 90) + "px";
+        });
+        g.addEventListener("mouseleave", function () { tip.hidden = true; });
+      });
+    }
+    // Keyin yuklanadigan bo'laklar
+    document.querySelectorAll("[data-lazy]").forEach(function (el) {
+      fetch(el.dataset.lazy, {credentials: "same-origin"})
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+        .then(function (html) { el.innerHTML = html; })
+        .catch(function () { el.innerHTML = "<div class='sec'>Yuklab bo'lmadi — sahifani yangilang.</div>"; });
+    });
+  })();
+  </script>
+  </div>
+  </div>
+
+  {# ---------------------------------------------------- kassalar (davr) #}
+  <h2>Kassalar · {{ board.label }}</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>Nuqta</th>
+      <th>Kassa</th>
+      <th>Holat</th>
+      <th>Smena</th>
+      <th class="right">Chek</th>
+      <th class="right">Naqd</th>
+      <th class="right">Naqdsiz</th>
+      <th class="right">Jami</th>
+      <th class="right">Farq</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td>{{ r.point }}</td>
+        <td>{% dot r.link %}{{ r.register.name }}</td>
+        <td>
+          {% if r.link.state == 'ok' %}<span class="badge ok">Ulangan</span>
+          {% elif r.link.state == 'warn' %}<span class="badge warn">Kechikmoqda</span>
+          {% elif r.link.state == 'bad' %}<span class="badge err">Aloqa yo'q</span>
+          {% else %}<span class="badge off">O'chirilgan</span>{% endif %}
+          <span class="badge warn num" data-queue-register="{{ r.register.pk }}"
+                {% if not r.pending %}style="display: none;"{% endif %}>navbat {{ r.pending }}</span>
+        </td>
+        <td>
+          {% if r.shift %}
+            <a href="/smena/{{ r.shift.pk }}/">#{{ r.shift.number }}</a>
+            <div class="sec">{{ r.shift.cashier }}</div>
+          {% else %}
+            <span class="sec">yopiq</span>
+          {% endif %}
+        </td>
+        <td class="right num">{{ r.receipts }}</td>
+        <td class="right num">{{ r.cash|som }}</td>
+        <td class="right num">{{ r.cashless|som }}</td>
+        <td class="right num"><b>{{ r.total|som }}</b></td>
+        <td class="right num">
+          {% if r.delta_total is not None %}
+            <span class="delta {% if r.delta_total >= 0 %}up{% else %}down{% endif %}">
+              {% if r.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ r.delta_total }}%</span>
+          {% else %}<span class="sec">—</span>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="empty">Kassa qo'shilmagan.</td></tr>
+    {% endfor %}
+    {% if rows %}
+      <tr class="total">
+        <td colspan="4">Jami</td>
+        <td class="right num">{{ board.summary.receipts }}</td>
+        <td class="right num">{{ board.summary.cash|som }}</td>
+        <td class="right num">{{ board.summary.cashless|som }}</td>
+        <td class="right num">{{ board.summary.total|som }}</td>
+        <td></td>
+      </tr>
+    {% endif %}
     </tbody>
   </table>
   </div>
@@ -496,35 +581,9 @@
   </div>
   {% endlocalize %}
 
-  {# ---------------------------------------- kassalardagi yuborish holati #}
-  <h2>Kassalardagi yuborish holati</h2>
-  <div class="sub">Kompyuterdagi navbat va MoySklad navbati alohida hisoblanadi. Aloqa uzilganda oxirgi ma'lumot ko'rsatiladi.</div>
-  <div class="tablewrap"><table>
-    <thead><tr><th>Kassa</th><th>Versiya</th><th>Serverga kutilmoqda</th><th>Tiqilgan</th><th>Oxirgi ma'lumot</th><th>Sabab</th></tr></thead>
-    <tbody>{% for k in board.kassas %}<tr>
-      <td><b>{{ k.register.name }}</b></td>
-      <td class="num">{{ k.register.app_version|default:"—" }}</td>
-      <td class="num">{% if k.register.local_pending %}<span class="badge warn">{{ k.register.local_pending }}</span>{% else %}{{ k.register.local_pending|default_if_none:"Noma'lum" }}{% endif %}</td>
-      <td class="num">{% if k.register.local_stuck %}<span class="badge err">{{ k.register.local_stuck }}</span>{% else %}{{ k.register.local_stuck|default_if_none:"—" }}{% endif %}</td>
-      <td class="num">{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
-      <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
-    </tr>{% empty %}<tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>
-  </table></div>
+  </div>{# /umumiy #}
 
-  {# -------------------------------------------------- so'nggi 10 ta chek #}
-  <h2>So'nggi 10 ta chek</h2>
-  <div class="tablewrap"><table>
-    <thead><tr><th class="tight">№</th><th>Nuqta</th><th class="right">Summa</th><th class="right">Vaqt</th></tr></thead>
-    <tbody>{% for s in last_sales %}<tr>
-      <td class="tight num"><b>{{ s.number }}</b></td>
-      <td>
-        {{ s.shift.register.point_name }}
-        <div class="sec">{{ s.shift.register.name }}</div>
-      </td>
-      <td class="right num"><b>{{ s.net_sum|som }}</b></td>
-      <td class="right num">{{ s.created_at|date:"d.m H:i" }}</td>
-    </tr>{% empty %}<tr><td colspan="4" class="empty">Hali chek yo'q.</td></tr>{% endfor %}</tbody>
-  </table></div>
+  <div class="tabpanel" data-panel="kunlar">
 
   {# ---------------------------------------------------- kunlik ko'rsatkichlar #}
   <h2>Kunlik ko'rsatkichlar</h2>
@@ -587,70 +646,6 @@
   </table>
   </div>
 
-  {# ---------------------------------------------------- kassalar (davr) #}
-  <h2>Kassalar · {{ board.label }}</h2>
-  <div class="tablewrap">
-  <table>
-    <thead><tr>
-      <th>Nuqta</th>
-      <th>Kassa</th>
-      <th>Holat</th>
-      <th>Smena</th>
-      <th class="right">Chek</th>
-      <th class="right">Naqd</th>
-      <th class="right">Naqdsiz</th>
-      <th class="right">Jami</th>
-      <th class="right">Farq</th>
-    </tr></thead>
-    <tbody>
-    {% for r in rows %}
-      <tr>
-        <td>{{ r.point }}</td>
-        <td>{% dot r.link %}{{ r.register.name }}</td>
-        <td>
-          {% if r.link.state == 'ok' %}<span class="badge ok">Ulangan</span>
-          {% elif r.link.state == 'warn' %}<span class="badge warn">Kechikmoqda</span>
-          {% elif r.link.state == 'bad' %}<span class="badge err">Aloqa yo'q</span>
-          {% else %}<span class="badge off">O'chirilgan</span>{% endif %}
-          <span class="badge warn num" data-queue-register="{{ r.register.pk }}"
-                {% if not r.pending %}style="display: none;"{% endif %}>navbat {{ r.pending }}</span>
-        </td>
-        <td>
-          {% if r.shift %}
-            <a href="/smena/{{ r.shift.pk }}/">#{{ r.shift.number }}</a>
-            <div class="sec">{{ r.shift.cashier }}</div>
-          {% else %}
-            <span class="sec">yopiq</span>
-          {% endif %}
-        </td>
-        <td class="right num">{{ r.receipts }}</td>
-        <td class="right num">{{ r.cash|som }}</td>
-        <td class="right num">{{ r.cashless|som }}</td>
-        <td class="right num"><b>{{ r.total|som }}</b></td>
-        <td class="right num">
-          {% if r.delta_total is not None %}
-            <span class="delta {% if r.delta_total >= 0 %}up{% else %}down{% endif %}">
-              {% if r.delta_total >= 0 %}▲{% else %}▼{% endif %} {{ r.delta_total }}%</span>
-          {% else %}<span class="sec">—</span>{% endif %}
-        </td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="9" class="empty">Kassa qo'shilmagan.</td></tr>
-    {% endfor %}
-    {% if rows %}
-      <tr class="total">
-        <td colspan="4">Jami</td>
-        <td class="right num">{{ board.summary.receipts }}</td>
-        <td class="right num">{{ board.summary.cash|som }}</td>
-        <td class="right num">{{ board.summary.cashless|som }}</td>
-        <td class="right num">{{ board.summary.total|som }}</td>
-        <td></td>
-      </tr>
-    {% endif %}
-    </tbody>
-  </table>
-  </div>
-
   {% if by_method %}
     <h2>To'lov turlari · {{ board.label }}</h2>
     <div class="tablewrap">
@@ -668,6 +663,40 @@
     </table>
     </div>
   {% endif %}
+
+  {# -------------------------------------------------- so'nggi 10 ta chek #}
+  <h2>So'nggi 10 ta chek</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th class="tight">№</th><th>Nuqta</th><th class="right">Summa</th><th class="right">Vaqt</th></tr></thead>
+    <tbody>{% for s in last_sales %}<tr>
+      <td class="tight num"><b>{{ s.number }}</b></td>
+      <td>
+        {{ s.shift.register.point_name }}
+        <div class="sec">{{ s.shift.register.name }}</div>
+      </td>
+      <td class="right num"><b>{{ s.net_sum|som }}</b></td>
+      <td class="right num">{{ s.created_at|date:"d.m H:i" }}</td>
+    </tr>{% empty %}<tr><td colspan="4" class="empty">Hali chek yo'q.</td></tr>{% endfor %}</tbody>
+  </table></div>
+
+  </div>{# /kunlar #}
+
+  <div class="tabpanel" data-panel="tizim">
+
+  {# ---------------------------------------- kassalardagi yuborish holati #}
+  <h2>Kassalardagi yuborish holati</h2>
+  <div class="sub">Kompyuterdagi navbat va MoySklad navbati alohida hisoblanadi. Aloqa uzilganda oxirgi ma'lumot ko'rsatiladi.</div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Kassa</th><th>Versiya</th><th>Serverga kutilmoqda</th><th>Tiqilgan</th><th>Oxirgi ma'lumot</th><th>Sabab</th></tr></thead>
+    <tbody>{% for k in board.kassas %}<tr>
+      <td><b>{{ k.register.name }}</b></td>
+      <td class="num">{{ k.register.app_version|default:"—" }}</td>
+      <td class="num">{% if k.register.local_pending %}<span class="badge warn">{{ k.register.local_pending }}</span>{% else %}{{ k.register.local_pending|default_if_none:"Noma'lum" }}{% endif %}</td>
+      <td class="num">{% if k.register.local_stuck %}<span class="badge err">{{ k.register.local_stuck }}</span>{% else %}{{ k.register.local_stuck|default_if_none:"—" }}{% endif %}</td>
+      <td class="num">{{ k.register.local_queue_at|date:"d.m.Y H:i:s"|default:"Hali kelmagan" }}</td>
+      <td style="max-width:340px;overflow-wrap:anywhere">{{ k.register.local_queue_error|default:"—" }}</td>
+    </tr>{% empty %}<tr><td colspan="6" class="empty">Kassa qo'shilmagan.</td></tr>{% endfor %}</tbody>
+  </table></div>
 
   {% if not panel_manager %}{# tiqilgan cheklar, MoySklad sinovi, bonus, katalog — egasining ishi #}
   {% if stuck %}
@@ -774,5 +803,41 @@
   </table>
   </div>
   {% endif %}
+
+  </div>{# /tizim #}
+
+  <script>
+  // Bosh sahifa yorliqlari. Tanlangan yorliq manzilda (#kunlar) saqlanadi — davr almashtirilsa
+  // yoki sahifa yangilansa ham o'sha yorliqda qoladi.
+  (function () {
+    var tabs = document.querySelectorAll(".hometabs a[data-tab]");
+    var panels = document.querySelectorAll(".tabpanel");
+    if (!tabs.length || !panels.length) return;
+    function show(name, remember) {
+      var found = false;
+      panels.forEach(function (p) { if (p.dataset.panel === name) found = true; });
+      if (!found) name = "umumiy";
+      panels.forEach(function (p) { p.hidden = p.dataset.panel !== name; });
+      if (window.sevimliFitCharts) window.sevimliFitCharts();
+      tabs.forEach(function (a) {
+        var on = a.dataset.tab === name;
+        a.classList.toggle("on", on);
+        if (on) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+      });
+      var hash = name === "umumiy" ? "" : "#" + name;
+      // davr tugmalari va shakli shu yorliqqa qaytarsin
+      document.querySelectorAll("#davr a.chip").forEach(function (a) { a.href = a.href.split("#")[0] + hash; });
+      var form = document.getElementById("davr");
+      if (form) form.action = window.location.pathname + hash;
+      if (remember) {
+        try { history.replaceState(null, "", window.location.pathname + window.location.search + hash); } catch (e) { /* eski brauzer */ }
+      }
+    }
+    tabs.forEach(function (a) {
+      a.addEventListener("click", function (e) { e.preventDefault(); show(a.dataset.tab, true); });
+    });
+    show((window.location.hash || "").slice(1) || "umumiy", false);
+  })();
+  </script>
 
 {% endblock %}

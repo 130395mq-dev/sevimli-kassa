@@ -19,7 +19,17 @@ def aloqa_strip(context):
     if not (user and user.is_authenticated):
         return {"snap": None}
     from dashboard import access
-    return {"snap": aloqa.snapshot(register_ids=access.register_ids())}
+    snap = aloqa.snapshot(register_ids=access.register_ids())
+    return {"snap": snap, "sum": summary(snap["registers"])}
+
+
+def summary(registers) -> dict:
+    """Tepadagi ixcham ko'rsatkich: nechta kassadan nechtasi ulangan va eng yomon holat.
+    Sahifadagi skript har 15 soniyada xuddi shu qoida bilan qayta hisoblaydi."""
+    states = [r["state"] for r in registers]
+    ok = states.count("ok")
+    state = "ok" if ok == len(states) else ("bad" if "bad" in states else "warn")
+    return {"ok": ok, "total": len(states), "state": state}
 
 
 @register.inclusion_tag("dashboard/_dot.html")
