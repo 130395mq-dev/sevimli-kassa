@@ -30,6 +30,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 
+from . import telefon
 from .models import Customer
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,14 @@ def register(name: str, phone: str, card: str,
     from . import tugilgan_kun
 
     name, phone, card = (name or "").strip(), (phone or "").strip(), (card or "").strip()
+    # Telefon bir xil ko'rinishda saqlanadi: +998XXXXXXXXX (egasi, 2026-11-17).
+    # Tushunib bo'lmaydigan raqam bilan mijoz yaratilmaydi — kassir shu yerda to'g'rilaydi.
+    phone_asl = ""
+    if phone:
+        if telefon.tartibla(phone) is None:
+            raise RegistrationError(
+                "Telefon raqami noto'g'ri. 9 ta raqam kiriting, masalan: 90 123 45 67", status=400)
+        phone, phone_asl = telefon.saqlash_uchun(phone)
     birth = None
     if (birthday or "").strip():
         try:
@@ -128,7 +137,7 @@ def register(name: str, phone: str, card: str,
                 return old, True
         cust = Customer.objects.create(
             ms_id=uuid.uuid4(), ms_local=True,
-            name=name, phone=phone, discount_card=card,
+            name=name, phone=phone, phone_asl=phone_asl, discount_card=card,
             birth_day=birth[0] if birth else None,
             birth_month=birth[1] if birth else None,
             birth_year=birth[2] if birth else None,

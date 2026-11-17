@@ -7,13 +7,19 @@ Qoidalar (2026-yil 1-noyabrdan kuchda, 15.07.2026 dagi prezident qarori):
   * 18:00 dan 09:00 gacha reklama SMS yuborish mumkin emas.
 
 Tabrik reklama hisoblanadimi — buni SMS xizmati (operator) matnni
-tasdiqlaganda o'zi belgilaydi. Shuning uchun biz HAR DOIM ikkala qoidaga amal
-qilamiz: SMS faqat rozi bo'lgan mijozga (`Customer.sms_rozi`) va faqat kunduzi
-ketadi. Qoidalarning o'zi — sms/xizmat.py da.
+tasdiqlaganda o'zi belgilaydi. Shuning uchun standart holatda ikkala qoidaga
+amal qilamiz: SMS faqat rozi bo'lgan mijozga (`Customer.sms_rozi`) va faqat
+kunduzi ketadi. Qoidalarning o'zi — sms/xizmat.py da.
+
+Rozilik talabini egasi panelda o'zi o'chira oladi (egasi, 2026-11-17: «rozilik
+kerakmas»): `SmsSozlama.rozilik_kerak`. O'chirilsa tabrik telefoni va tug'ilgan
+kuni bor har bir mijozga ketadi — faqat «rad etgan» (`sms_rozi is False`)
+mijozga hech qachon ketmaydi. Kunduzgi vaqt qoidasi o'chirilmaydi.
 
 Ikki jadval:
 
-  * `SmsSozlama` — bitta qator: yoqilgan/o'chiq, matn, soat, kunlik chegara;
+  * `SmsSozlama` — bitta qator: yoqilgan/o'chiq, matn, soat, kunlik chegara,
+    rozilik talabi (kim va qachon o'zgartirgani bilan);
   * `SmsXabar` — har bir SMS jurnali: kimga, qachon, holati, xatosi.
     Bir mijozga bir yilda BITTA tabrik, bitta telefonga kuniga BITTA —
     bazadagi cheklovlar bilan kafolatlanadi (ikki jarayon bir vaqtda ishlasa
@@ -45,6 +51,14 @@ class SmsSozlama(models.Model):
     matn = models.CharField("Tabrik matni", max_length=480, default=standart_matn)
     soat = models.PositiveSmallIntegerField("Yuborish soati", default=10)
     kunlik_chegara = models.PositiveIntegerField("Kuniga eng ko'p SMS", default=300)
+    #: Tabrik faqat «rozi» deb belgilangan mijozga ketsinmi. Yoqiq (standart) — ha.
+    #: O'chiq — rozilik so'ralmagan mijozga ham ketadi; «rad etgan»ga baribir ketmaydi.
+    #: Bazaning o'zida ham standart qiymat bor: deploy paytida eski kod ishlab tursa
+    #: yoki kod orqaga qaytarilsa ham qator yozilaveradi.
+    rozilik_kerak = models.BooleanField("Rozilik talab qilinsin", default=True, db_default=True)
+    #: Rozilik talabini oxirgi marta kim va qachon o'zgartirgani (o'zgarmagan bo'lsa — bo'sh)
+    rozilik_at = models.DateTimeField(null=True, blank=True)
+    rozilik_by = models.CharField(max_length=150, blank=True, default="", db_default="")
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.CharField(max_length=150, blank=True)
 

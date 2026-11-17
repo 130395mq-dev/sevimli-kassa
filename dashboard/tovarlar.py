@@ -18,6 +18,7 @@ from io import StringIO
 
 from django.db.models import Count, Q, Sum
 
+from catalog import telefon
 from catalog.models import Barcode, Product
 from sales.models import POINT_TIYIN, BonusEntry, Register, Sale
 
@@ -85,6 +86,8 @@ def bonus_receipts(params) -> dict:
         )
         if q.isdigit():
             cond |= Q(number=int(q))
+        if telefon.qidiruv_raqami(q):            # telefon bazada +998XXXXXXXXX ko'rinishida
+            cond |= Q(customer__phone__icontains=telefon.qidiruv_raqami(q))
         qs = qs.filter(cond)
     qs = qs.select_related("customer", "shift__register__store").order_by("-created_at", "-pk")
 
@@ -152,6 +155,8 @@ def all_receipts(params, base=None) -> dict:
         )
         if q.isdigit():
             cond |= Q(number=int(q))
+        if telefon.qidiruv_raqami(q):            # telefon bazada +998XXXXXXXXX ko'rinishida
+            cond |= Q(customer__phone__icontains=telefon.qidiruv_raqami(q))
         qs = qs.filter(cond)
     qs = (
         qs.annotate(

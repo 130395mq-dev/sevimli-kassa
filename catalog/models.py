@@ -192,7 +192,13 @@ class Customer(models.Model):
 
     ms_id = models.UUIDField(unique=True, db_index=True)
     name = models.CharField(max_length=512, db_index=True)
+    #: Bir xil ko'rinishda: «+998901234567» (catalog/telefon.py). Tushunib bo'lmagan
+    #: yozuv o'zgarmay qoladi.
     phone = models.CharField(max_length=64, blank=True, db_index=True)
+    #: Telefonning manbadagi (MoySklad yoki kassa) asl yozuvi — tartiblanganda
+    #: o'zgargan bo'lsa (egasi, 2026-11-17). Hech narsa yo'qolmasin va kerak bo'lsa
+    #: orqaga qaytarish mumkin bo'lsin.
+    phone_asl = models.CharField(max_length=64, blank=True, default="", db_default="")
     discount_card = models.CharField(max_length=128, blank=True, db_index=True)
 
     # Balans — MoySklad'dagi o'zaro hisob. Bizda qarz savdosi yo'q, shuning

@@ -30,7 +30,7 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 
-from catalog import tugilgan_kun
+from catalog import telefon, tugilgan_kun
 from catalog.models import Customer, Product, SyncState
 from dashboard import access
 from dashboard import batafsil as batafsil_mod
@@ -979,12 +979,19 @@ def bonus(request):
     )
     q = (request.GET.get("q") or "").strip()
     tk = request.GET.get("tk") if request.GET.get("tk") in ("bor", "yoq") else ""
+    # ?tel=xato — telefoni tartibga tushmagan (tushunib bo'lmagan) mijozlar (2026-11-17)
+    tel = "xato" if request.GET.get("tel") == "xato" else ""
     customers = Customer.objects.filter(archived=False)
+    telefon_xato = customers.exclude(phone="").exclude(phone__regex=telefon.TARTIBLI)
     if q:
-        customers = customers.filter(
-            Q(name__icontains=q) | Q(phone__icontains=q) | Q(discount_card__icontains=q)
-        )
-    if tk == "yoq":
+        shart = Q(name__icontains=q) | Q(phone__icontains=q) | Q(discount_card__icontains=q)
+        # telefon qanday yozilsa ham topilsin: «90 123-45-67» → «901234567»
+        if telefon.qidiruv_raqami(q):
+            shart |= Q(phone__icontains=telefon.qidiruv_raqami(q))
+        customers = customers.filter(shart)
+    if tel:
+        customers = customers.exclude(phone="").exclude(phone__regex=telefon.TARTIBLI).order_by("name")
+    elif tk == "yoq":
         # Tug'ilgan kuni kiritilmagan kartali mijozlar — kassir so'rashi kerak
         customers = customers.exclude(discount_card="").filter(birth_day__isnull=True).order_by("name")
     elif tk == "bor":
@@ -1011,6 +1018,8 @@ def bonus(request):
         "page": page,
         "q": q,
         "tk": tk,
+        "tel": tel,
+        "telefon_xato": telefon_xato.count(),
         "recent": recent,
         "tugilgan": tugilgan,
         "yaqin": _tugilgan_yaqin(today),
@@ -1033,8 +1042,9 @@ def _tugilgan_yaqin(today, kun: int = tugilgan_kun.YAQIN_KUN) -> dict:
     ichida, eng yaqini tepada. Har birida SMS holati — tabrik kimga ketishini
     oldindan ko'rish va rozilikni vaqtida so'rab qo'yish uchun."""
     from sms.models import SmsXabar
-    from sms.xizmat import sms_holati
+    from sms.xizmat import rozilik_kerak, sms_holati
 
+    kerak = rozilik_kerak()              # rozilik talab qilinadimi (panel belgisi) — bir marta o'qiladi
     q = Q()
     for i in range(kun + 1):
         for d, m in tugilgan_kun.kun_juftlari(today + timedelta(days=i)):
@@ -1044,7 +1054,7 @@ def _tugilgan_yaqin(today, kun: int = tugilgan_kun.YAQIN_KUN) -> dict:
         qolgan = tugilgan_kun.qolgan_kun(c.birth_day, c.birth_month, today)
         if qolgan is None or qolgan > kun:
             continue
-        kod, matn = sms_holati(c)
+        kod, matn = sms_holati(c, kerak)
         rows.append({"mijoz": c, "qolgan": qolgan, "sms": kod, "sms_matn": matn, "xabar": None})
     # Bugun tug'ilganlarga SMS allaqachon yuborilgan/urinilgan bo'lsa — o'sha holat
     bugungi = {r["mijoz"].pk: r for r in rows if r["qolgan"] == 0}
@@ -1053,7 +1063,7 @@ def _tugilgan_yaqin(today, kun: int = tugilgan_kun.YAQIN_KUN) -> dict:
                                          customer_id__in=list(bugungi)):
             bugungi[x.customer_id]["xabar"] = x
     rows.sort(key=lambda r: (r["qolgan"], r["mijoz"].name.lower()))
-    return {"kun": kun, "rows": rows, "jami": len(rows),
+    return {"kun": kun, "rows": rows, "jami": len(rows), "rozilik_kerak": kerak,
             "sms": sum(1 for r in rows if r["sms"] == "ok")}
 
 
@@ -1128,8 +1138,10 @@ def customer_bonus(request, pk: int):
         receipts=Count("sale", distinct=True),
     )
     cust.tk_qolgan = _yaqin_kun(cust, _bugun())
+    from sms.xizmat import rozilik_kerak
+
     return render(request, "dashboard/customer_bonus.html", {
-        "cust": cust, "entries": entries,
+        "cust": cust, "entries": entries, "rozilik_kerak": rozilik_kerak(),
         "earned": agg["earned"] or 0, "spent": -(agg["spent"] or 0),
         "receipts": agg["receipts"] or 0,
     })

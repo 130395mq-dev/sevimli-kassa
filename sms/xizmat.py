@@ -4,6 +4,9 @@ Qoidalar:
 
   1. SMS faqat rozi bo'lgan mijozga ketadi (`Customer.sms_rozi is True`).
      Rozilik kassada yoki panelda yoziladi, kim va qachon yozgani saqlanadi.
+     Egasi panelda «Rozilik talab qilinsin» belgisini o'chirsa
+     (`SmsSozlama.rozilik_kerak`) — rozilik so'ralmagan mijozga ham ketadi;
+     «rad etgan» mijozga (`sms_rozi is False`) hech qachon ketmaydi.
   2. SMS faqat kunduzi ketadi: sozlamadagi soatdan 17:45 gacha
      (qonun: 18:00–09:00 oralig'ida reklama SMS mumkin emas).
   3. Bir mijozga bir yilda bitta tabrik; bitta telefonga bir kunda bitta.
@@ -139,6 +142,24 @@ def tugilganlar(today: date):
     return Customer.objects.filter(q, archived=False)
 
 
+# --------------------------------------------------------------- rozilik
+
+def rozilik_kerak() -> bool:
+    """Tabrik faqat «rozi» deb belgilangan mijozga ketadimi (paneldagi belgi)."""
+    return SmsSozlama.get().rozilik_kerak
+
+
+def rozilik_mos(c: Customer, kerak: bool) -> bool:
+    """Rozilik tomondan bu mijozga tabrik yuborsa bo'ladimi. «Rad etgan»ga —
+    hech qachon; rozilik so'ralmaganga — faqat rozilik talabi o'chirilganda."""
+    return c.sms_rozi is True if kerak else c.sms_rozi is not False
+
+
+def _rozilik_filtri(qs, kerak: bool, maydon: str = "sms_rozi"):
+    """`rozilik_mos` ning so'rov ko'rinishi (`maydon` — rozilik ustuni yo'li)."""
+    return qs.filter(**{maydon: True}) if kerak else qs.exclude(**{maydon: False})
+
+
 # --------------------------------------------------------------- shablon
 
 @dataclass(frozen=True)
@@ -260,9 +281,10 @@ def _yubor(x: SmsXabar, p, now, qayta_mumkin: bool = True) -> prov.Natija:
     return n
 
 
-def _yangi_nomzodlar(today: date) -> list[tuple[Customer, str]]:
-    """Bugun tabrik oladigan, hali yuborilmagan mijozlar: (mijoz, telefon)."""
-    cands = list(tugilganlar(today).filter(sms_rozi=True).exclude(phone="").order_by("pk"))
+def _yangi_nomzodlar(today: date, kerak: bool = True) -> list[tuple[Customer, str]]:
+    """Bugun tabrik oladigan, hali yuborilmagan mijozlar: (mijoz, telefon).
+    `kerak` — rozilik talab qilinadimi (`rozilik_mos`)."""
+    cands = list(_rozilik_filtri(tugilganlar(today), kerak).exclude(phone="").order_by("pk"))
     if not cands:
         return []
     olgan = set(SmsXabar.objects.filter(tur=T, yil=today.year, customer_id__in=[c.pk for c in cands])
@@ -312,9 +334,10 @@ def tabriklarni_yubor(now=None, p=None) -> dict:
         out["sabab"] = "tabrik matni bo'sh"
         return out
 
+    kerak = s.rozilik_kerak
     qayta = list(SmsXabar.objects.filter(tur=T, holat=SmsXabar.QAYTA, sana=today)
                  .select_related("customer").order_by("pk"))
-    yangi = _yangi_nomzodlar(today)
+    yangi = _yangi_nomzodlar(today, kerak)
     if not qayta and not yangi:
         out["sabab"] = "bugun yuboriladigan tabrik yo'q"
         return out
@@ -349,8 +372,15 @@ def tabriklarni_yubor(now=None, p=None) -> dict:
         if tamom():
             break
         c = x.customer
-        if c is None or c.archived or c.sms_rozi is not True:
-            x.holat, x.xato = SmsXabar.XATO, "Mijozning roziligi yo'q — yuborilmadi"
+        if c is None or c.archived or not rozilik_mos(c, kerak):
+            # navbatda turganida mijoz rad etgan, arxivlangan yoki rozilik talabi qayta yoqilgan
+            if c is None or c.archived:
+                sabab = "Mijoz o'chirilgan yoki arxivda — yuborilmadi"
+            elif c.sms_rozi is False and not kerak:
+                sabab = "Mijoz SMS olishni rad etgan — yuborilmadi"
+            else:
+                sabab = "Mijozning roziligi yo'q — yuborilmadi"
+            x.holat, x.xato = SmsXabar.XATO, sabab
             x.save(update_fields=["holat", "xato"])
             continue
         # Ikki fon ishi bir vaqtda ishlab qolsa — yozuvni faqat bittasi oladi
@@ -390,8 +420,8 @@ def xatolarni_qayta_navbatga(now=None) -> int:
     QILMAGANLARI (holati «yuborilmadi»): «noma'lum»lar tegilmaydi."""
     now = now or timezone.now()
     today = timezone.localtime(now).date()
-    return SmsXabar.objects.filter(tur=T, holat=SmsXabar.XATO, sana=today,
-                                   customer__sms_rozi=True).update(holat=SmsXabar.QAYTA, urinish=0)
+    qs = SmsXabar.objects.filter(tur=T, holat=SmsXabar.XATO, sana=today, customer__isnull=False)
+    return _rozilik_filtri(qs, rozilik_kerak(), "customer__sms_rozi").update(holat=SmsXabar.QAYTA, urinish=0)
 
 
 def holatlarni_yangila(now=None, p=None) -> int:
@@ -465,45 +495,59 @@ def sinov_yubor(raw_telefon: str, kim: str = "", matn: str | None = None, now=No
 
 # ----------------------------------------------------------------- panel
 
-def sms_holati(c: Customer) -> tuple[str, str]:
+def sms_holati(c: Customer, kerak: bool | None = None) -> tuple[str, str]:
     """Mijozga tabrik SMS keta oladimi: (kod, matn).
-    kod: «ok» — oladi; «rad» — rad etgan; «soralmagan» — rozilik so'ralmagan;
-    «telefon» — telefon raqami yo'q yoki noto'g'ri."""
+    kod: «ok» — oladi; «rad» — rad etgan; «soralmagan» — rozilik so'ralmagan
+    (rozilik talabi o'chirilgan bo'lsa bunday mijoz ham oladi);
+    «telefon» — telefon raqami yo'q yoki noto'g'ri.
+    `kerak` — rozilik talab qilinadimi; berilmasa sozlamadan o'qiladi
+    (ro'yxat uchun bir marta o'qib, har mijozga berish kerak)."""
+    if kerak is None:
+        kerak = rozilik_kerak()
     if c.sms_rozi is False:
         return "rad", "SMS olishni rad etgan"
-    if c.sms_rozi is None:
+    if c.sms_rozi is None and kerak:
         return "soralmagan", "rozilik so'ralmagan"
     if not telefon_998(c.phone):
         return "telefon", "telefon raqami yo'q yoki noto'g'ri"
     return "ok", "SMS oladi"
 
 
-def bugungi_royxat(today: date) -> list[dict]:
-    """Bugun tug'ilgan mijozlar va har biriga SMS nima bo'lgani (panel uchun)."""
+def bugungi_royxat(today: date, kerak: bool | None = None) -> list[dict]:
+    """Bugun tug'ilgan mijozlar va har biriga SMS nima bo'lgani (panel uchun).
+    `kerak` — rozilik talab qilinadimi (bu va pastdagi ikki funksiyada):
+    berilmasa sozlamadan o'qiladi."""
     custs = list(tugilganlar(today).order_by("name")[:300])
     xabarlar = {x.customer_id: x for x in
                 SmsXabar.objects.filter(tur=T, yil=today.year, customer_id__in=[c.pk for c in custs])}
+    if kerak is None:
+        kerak = rozilik_kerak()
     out = []
     for c in custs:
         x = xabarlar.get(c.pk)
-        kod, matn = sms_holati(c)
+        kod, matn = sms_holati(c, kerak)
         izoh = "" if x else ("navbatda" if kod == "ok" else matn)
         out.append({"mijoz": c, "xabar": x, "izoh": izoh})
     return out
 
 
-def yaqin_kunlar(today: date, kun: int = 7) -> dict:
+def yaqin_kunlar(today: date, kun: int = 7, kerak: bool | None = None) -> dict:
     """Keyingi `kun` kunda tug'ilgan kuni bor mijozlar: jami va SMS oladiganlari."""
+    if kerak is None:
+        kerak = rozilik_kerak()
     q = Q()
     for i in range(1, kun + 1):
         for day, month in bugungi_kunlar(today + timedelta(days=i)):
             q |= Q(birth_day=day, birth_month=month)
     qs = Customer.objects.filter(q, archived=False)
-    return {"jami": qs.count(), "sms": qs.filter(sms_rozi=True).exclude(phone="").count()}
+    return {"jami": qs.count(), "sms": _rozilik_filtri(qs, kerak).exclude(phone="").count()}
 
 
-def statistika() -> dict:
-    """Mijozlar bazasi SMS uchun qanchalik tayyor."""
+def statistika(kerak: bool | None = None) -> dict:
+    """Mijozlar bazasi SMS uchun qanchalik tayyor. «tayyor» — tabrik oladiganlar:
+    rozilik talab qilinsa faqat rozi bo'lganlar, aks holda rad etmaganlarning hammasi."""
+    if kerak is None:
+        kerak = rozilik_kerak()
     faol = Customer.objects.filter(archived=False)
     kartali = faol.exclude(discount_card="")
     return {
@@ -513,7 +557,7 @@ def statistika() -> dict:
         "rozi": faol.filter(sms_rozi=True).count(),
         "rad": faol.filter(sms_rozi=False).count(),
         "soralmagan": kartali.filter(sms_rozi__isnull=True).count(),
-        "tayyor": faol.filter(sms_rozi=True, birth_day__isnull=False).exclude(phone="").count(),
+        "tayyor": _rozilik_filtri(faol, kerak).filter(birth_day__isnull=False).exclude(phone="").count(),
     }
 
 

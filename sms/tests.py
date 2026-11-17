@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import requests
 from django.contrib.auth.models import User
+from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 from urllib3.exceptions import NewConnectionError
@@ -466,6 +467,217 @@ class YuborishTest(TestCase):
             xizmat.sinov_yubor("901112233", now=self.now, p=self.p)
         with self.assertRaisesMessage(xizmat.SmsXato, "Bir soatda"):
             xizmat.sinov_yubor("901112233", now=self.now, p=self.p)
+
+
+# ========================================================== rozilik talabi
+
+class RozilikTalabiTest(TestCase):
+    """«Rozilik talab qilinsin» belgisi (egasi, 2026-11-17: «rozilik kerakmas»).
+    Yoqiq (standart) — tabrik faqat rozi bo'lgan mijozga. O'chiq — rozilik
+    so'ralmagan mijozga ham; «rad etgan» mijozga hech qachon."""
+
+    def setUp(self):
+        self.s = SmsSozlama.get()
+        self.s.yoqilgan, self.s.soat = True, 10
+        self.s.save()
+        self.p = Soxta()
+        self.now = vaqt(11)
+
+    def talab(self, kerak: bool) -> None:
+        self.assertEqual(SmsSozlama.objects.update(rozilik_kerak=kerak), 1)
+
+    def yubor(self, now=None, p=None):
+        return xizmat.tabriklarni_yubor(now or self.now, p or self.p)
+
+    def xato_yozuv(self, c: Customer, telefon: str) -> SmsXabar:
+        return SmsXabar.objects.create(customer=c, tur=SmsXabar.TUGILGAN_KUN, yil=2026, sana=self.now.date(),
+                                       telefon=telefon, matn="m", holat=SmsXabar.XATO, urinish=3,
+                                       xato="Balans yetarli emas")
+
+    def test_standart_holatda_talab_yoqiq(self):
+        self.assertIs(self.s.rozilik_kerak, True)
+        self.assertIs(xizmat.rozilik_kerak(), True)
+        self.assertEqual((self.s.rozilik_at, self.s.rozilik_by), (None, ""))
+        # Bazaning o'zida ham standart qiymat bor: yangilanish paytida hali eski kod ishlab
+        # tursa (yangi ustunlarni bilmaydi) va qator yozsa ham — talab yoqiq bo'lib yoziladi.
+        with connection.cursor() as cur:
+            cur.execute("DELETE FROM sms_smssozlama")
+            cur.execute("INSERT INTO sms_smssozlama (yoqilgan, matn, soat, kunlik_chegara, updated_at, updated_by) "
+                        "VALUES (true, 'Salom', 10, 300, now(), '')")
+        s = SmsSozlama.get()
+        self.assertEqual((s.matn, s.rozilik_kerak, s.rozilik_at, s.rozilik_by), ("Salom", True, None, ""))
+
+    def test_sorov_filtri_qoidaning_ozi(self):
+        for i, rozi in enumerate((True, None, False)):
+            mijoz(f"Mijoz {rozi}", phone=f"90111220{i}", rozi=rozi)
+        kutilgan = {True: {"Mijoz True"}, False: {"Mijoz True", "Mijoz None"}}
+        for kerak in (True, False):
+            sorov = set(xizmat._rozilik_filtri(Customer.objects.all(), kerak).values_list("name", flat=True))
+            qoida = {c.name for c in Customer.objects.all() if xizmat.rozilik_mos(c, kerak)}
+            self.assertEqual(sorov, kutilgan[kerak])
+            self.assertEqual(qoida, kutilgan[kerak])
+
+    def test_ochirilsa_rozilik_soralmagan_mijozga_ham_ketadi(self):
+        mijoz("Rozi")
+        mijoz("Soralmagan", phone="901112201", rozi=None)
+        mijoz("Rad etgan", phone="901112202", rozi=False)
+        mijoz("Telefoni yoq", phone="", rozi=None)
+        mijoz("Notogri telefon", phone="12345", rozi=None)
+        mijoz("Ertaga", phone="901112205", kun=9, rozi=None)
+        mijoz("Arxiv", phone="901112206", rozi=None, archived=True)
+        # talab yoqiq — faqat rozi bo'lgan mijozga
+        out = self.yubor()
+        self.assertEqual((out["yuborildi"], out["xato"]), (1, 0))
+        self.assertEqual([t for t, _ in self.p.yuborilgan], ["998901112233"])
+        # egasi talabni o'chirdi — keyingi fon ishida so'ralmagan mijozga ham ketadi
+        self.talab(False)
+        out = self.yubor(vaqt(11, 5))
+        self.assertEqual((out["yuborildi"], out["xato"]), (1, 0))
+        self.assertEqual([t for t, _ in self.p.yuborilgan], ["998901112233", "998901112201"])
+        self.assertEqual(set(SmsXabar.objects.values_list("customer__name", flat=True)), {"Rozi", "Soralmagan"})
+        # qayta chaqirilsa — hech kimga ikkinchi marta ketmaydi
+        self.assertEqual(self.yubor(vaqt(11, 10))["yuborildi"], 0)
+        self.assertEqual(len(self.p.yuborilgan), 2)
+
+    def test_ochiq_bolsa_ham_rad_etgan_mijozga_ketmaydi(self):
+        self.talab(False)
+        mijoz("Rad etgan", rozi=False)
+        out = self.yubor()
+        self.assertEqual((out["yuborildi"], out["sabab"]), (0, "bugun yuboriladigan tabrik yo'q"))
+        self.assertEqual(self.p.yuborilgan, [])
+        self.assertFalse(SmsXabar.objects.exists())
+
+    def test_ochiq_bolsa_ham_vaqt_va_boshqa_qoidalar_ozgarmaydi(self):
+        self.talab(False)
+        mijoz("Birinchi", rozi=None)
+        mijoz("Ikkinchi yozuv, shu telefon", rozi=None)                  # bitta telefonga kuniga bitta
+        self.assertEqual(self.yubor(vaqt(18, 30))["sabab"], "hozir SMS vaqti emas")
+        self.assertEqual(self.yubor(vaqt(8, 59))["sabab"], "hozir SMS vaqti emas")
+        self.s.yoqilgan = False
+        self.s.save()
+        self.assertEqual(self.yubor()["sabab"], "tabrik o'chirilgan")
+        self.assertEqual(self.p.yuborilgan, [])
+        self.s.yoqilgan = True
+        self.s.save()
+        self.talab(False)                                               # save() eski qiymatni qayta yozgan
+        self.assertEqual(self.yubor()["yuborildi"], 1)
+        self.assertEqual(self.yubor(vaqt(12))["yuborildi"], 0)
+        self.assertEqual(len(self.p.yuborilgan), 1)
+
+    def test_ochiq_bolsa_soralmagan_mijozga_qayta_ham_urinadi(self):
+        self.talab(False)
+        mijoz(rozi=None)
+        p = Soxta([prov.Natija(False, xato="Balans yetarli emas")])
+        self.assertEqual(self.yubor(p=p)["xato"], 1)
+        self.assertEqual(SmsXabar.objects.get().holat, SmsXabar.QAYTA)
+        self.assertEqual(self.yubor(vaqt(11, 5), p)["yuborildi"], 1)
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.urinish, x.xato), (SmsXabar.YUBORILDI, 2, ""))
+        self.assertEqual(len(p.yuborilgan), 2)
+
+    def test_navbatda_turganda_rad_etsa_ketmaydi(self):
+        self.talab(False)
+        c = mijoz(rozi=None)
+        p = Soxta([prov.Natija(False, xato="rad")])
+        self.yubor(p=p)
+        c.sms_rozi = False
+        c.save(update_fields=["sms_rozi"])
+        self.assertEqual(self.yubor(vaqt(11, 5), p)["yuborildi"], 0)
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.xato), (SmsXabar.XATO, "Mijoz SMS olishni rad etgan — yuborilmadi"))
+        self.assertEqual(len(p.yuborilgan), 1)
+
+    def test_navbatda_turganda_talab_yoqilsa_soralmagan_mijozga_ketmaydi(self):
+        self.talab(False)
+        mijoz(rozi=None)
+        p = Soxta([prov.Natija(False, xato="rad")])
+        self.yubor(p=p)
+        self.assertEqual(SmsXabar.objects.get().holat, SmsXabar.QAYTA)
+        self.talab(True)                                                # egasi talabni qayta yoqdi
+        self.assertEqual(self.yubor(vaqt(11, 5), p)["yuborildi"], 0)
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.xato), (SmsXabar.XATO, "Mijozning roziligi yo'q — yuborilmadi"))
+        self.assertEqual(len(p.yuborilgan), 1)
+
+    def test_navbatda_turganda_arxivlansa_ketmaydi(self):
+        for kerak in (True, False):
+            with self.subTest(kerak=kerak):
+                SmsXabar.objects.all().delete()
+                Customer.objects.all().delete()
+                self.talab(kerak)
+                c = mijoz()
+                p = Soxta([prov.Natija(False, xato="rad")])
+                self.yubor(p=p)
+                c.archived = True
+                c.save(update_fields=["archived"])
+                self.assertEqual(self.yubor(vaqt(11, 5), p)["yuborildi"], 0)
+                x = SmsXabar.objects.get()
+                self.assertEqual((x.holat, x.xato), (SmsXabar.XATO, "Mijoz o'chirilgan yoki arxivda — yuborilmadi"))
+                self.assertEqual(len(p.yuborilgan), 1)
+
+    def test_qayta_navbatga_qoyish_talabga_qaraydi(self):
+        self.xato_yozuv(mijoz("Rozi"), "998901112200")
+        self.xato_yozuv(mijoz("Soralmagan", phone="901112201", rozi=None), "998901112201")
+        self.xato_yozuv(mijoz("Rad etgan", phone="901112202", rozi=False), "998901112202")
+        self.xato_yozuv(None, "998901112203")                           # mijoz bazadan o'chirilgan
+
+        def holatlar():
+            return dict(SmsXabar.objects.values_list("telefon", "holat"))
+
+        Q, X = SmsXabar.QAYTA, SmsXabar.XATO
+        # talab yoqiq — faqat rozi bo'lgan mijozniki
+        self.assertEqual(xizmat.xatolarni_qayta_navbatga(vaqt(12)), 1)
+        self.assertEqual(holatlar(), {"998901112200": Q, "998901112201": X, "998901112202": X, "998901112203": X})
+        SmsXabar.objects.update(holat=X)
+        # talab o'chiq — so'ralmagan mijozniki ham; rad etgan va o'chirilgan mijozniki — yo'q
+        self.talab(False)
+        self.assertEqual(xizmat.xatolarni_qayta_navbatga(vaqt(12)), 2)
+        self.assertEqual(holatlar(), {"998901112200": Q, "998901112201": Q, "998901112202": X, "998901112203": X})
+        self.assertEqual(set(SmsXabar.objects.filter(holat=Q).values_list("urinish", flat=True)), {0})
+
+    def test_sms_holati(self):
+        rozi, soralmagan, rad, telefonsiz = (
+            Customer(phone="901112233", sms_rozi=True), Customer(phone="901112233", sms_rozi=None),
+            Customer(phone="901112233", sms_rozi=False), Customer(phone="", sms_rozi=None))
+        for kerak, kutilgan in ((True, ("ok", "soralmagan", "rad", "soralmagan")),
+                                (False, ("ok", "ok", "rad", "telefon"))):
+            self.assertEqual(tuple(xizmat.sms_holati(c, kerak)[0] for c in (rozi, soralmagan, rad, telefonsiz)),
+                             kutilgan)
+        # `kerak` berilmasa — sozlamadagi belgi bo'yicha
+        self.assertEqual(xizmat.sms_holati(soralmagan), ("soralmagan", "rozilik so'ralmagan"))
+        self.talab(False)
+        self.assertEqual(xizmat.sms_holati(soralmagan), ("ok", "SMS oladi"))
+        self.assertEqual(xizmat.sms_holati(rad), ("rad", "SMS olishni rad etgan"))
+
+    def test_panel_hisoblari_talabga_qaraydi(self):
+        bugun = self.now.date()
+        mijoz("Rozi", card="7700201")
+        mijoz("Soralmagan", phone="901112201", rozi=None, card="7700202")
+        mijoz("Rad etgan", phone="901112202", rozi=False, card="7700203")
+        mijoz("Telefonsiz", phone="", rozi=None, card="7700204")
+        mijoz("Ertaga", phone="901112205", kun=9, rozi=None, card="7700205")
+        mijoz("Ertaga rad", phone="901112206", kun=9, rozi=False, card="7700206")
+
+        def izohlar():
+            return {r["mijoz"].name: r["izoh"] for r in xizmat.bugungi_royxat(bugun)}
+
+        self.assertEqual(izohlar(), {"Rozi": "navbatda", "Soralmagan": "rozilik so'ralmagan",
+                                     "Rad etgan": "SMS olishni rad etgan", "Telefonsiz": "rozilik so'ralmagan"})
+        self.assertEqual(xizmat.statistika()["tayyor"], 1)
+        self.assertEqual(xizmat.yaqin_kunlar(bugun), {"jami": 2, "sms": 0})
+        self.talab(False)
+        self.assertEqual(izohlar(), {"Rozi": "navbatda", "Soralmagan": "navbatda",
+                                     "Rad etgan": "SMS olishni rad etgan",
+                                     "Telefonsiz": "telefon raqami yo'q yoki noto'g'ri"})
+        st = xizmat.statistika()
+        self.assertEqual(st["tayyor"], 3)                               # Rozi, Soralmagan, Ertaga
+        self.assertEqual(xizmat.yaqin_kunlar(bugun), {"jami": 2, "sms": 1})
+        # qolgan sonlar belgiga bog'liq emas
+        self.assertEqual((st["rozi"], st["rad"], st["soralmagan"], st["kartali"]), (1, 2, 3, 6))
+        # belgi qiymati tashqaridan berilsa — sozlama o'qilmaydi
+        self.assertEqual(xizmat.statistika(True)["tayyor"], 1)
+        self.assertEqual(xizmat.yaqin_kunlar(bugun, kerak=True)["sms"], 0)
+        self.assertEqual(xizmat.bugungi_royxat(bugun, True)[2]["izoh"], "rozilik so'ralmagan")
 
 
 # =================================================================== Eskiz
@@ -1258,6 +1470,124 @@ class PanelTest(TestCase):
 
     def test_bonus_sahifasidan_havola(self):
         self.assertContains(self.client.get("/bonus/"), 'href="/sms/"')
+
+    # --- «Rozilik talab qilinsin» belgisi (egasi, 2026-11-17)
+
+    ROZILIK_FORMA = {"action": "sozlama", "soat": "10", "kunlik_chegara": "300", "matn": "Salom",
+                     "rozilik_bor": "1"}
+
+    def test_rozilik_talabi_standart_yoqiq_korinadi(self):
+        r = self.client.get("/sms/")
+        self.assertContains(r, 'name="rozilik_bor" value="1"')
+        self.assertContains(r, 'name="rozilik_kerak" id="sms-rozilik-kerak" checked')
+        self.assertContains(r, "<b>Rozilik talab qilinsin</b>")
+        self.assertContains(r, "faqat rozi bo'lgan mijozlarga va faqat kunduzi.")
+        self.assertContains(r, "rozi + telefoni + tug'ilgan kuni bor")
+        self.assertNotContains(r, 'id="sms-rozilik-ochiq"')
+        self.assertNotContains(r, "Oxirgi marta o'zgartirdi")
+
+    def test_rozilik_talabini_ochirish_va_qayta_yoqish(self):
+        bugun = timezone.localdate()
+        mijoz("Soralmagan Mijoz", phone="901112201", kun=bugun.day, oy=bugun.month, rozi=None, card="7700102")
+        mijoz("Rad Etgan Mijoz", phone="901112202", kun=bugun.day, oy=bugun.month, rozi=False, card="7700103")
+        r = self.client.get("/sms/")
+        self.assertEqual(r.context["stat"]["tayyor"], 0)
+        self.assertEqual([x["izoh"] for x in r.context["bugun"]], ["SMS olishni rad etgan", "rozilik so'ralmagan"])
+
+        # belgini olib tashlab saqlash — talab o'chadi; kim va qachon o'chirgani yoziladi
+        r = self.client.post("/sms/", self.ROZILIK_FORMA, follow=True)
+        self.assertContains(r, "Saqlandi. Rozilik talabi o&#x27;chirildi")
+        s = SmsSozlama.get()
+        self.assertEqual((s.rozilik_kerak, s.rozilik_by), (False, "egasi"))
+        self.assertIsNotNone(s.rozilik_at)
+        self.assertContains(r, '<div class="alert warn" id="sms-rozilik-ochiq">')
+        self.assertContains(r, "O'chirdi: egasi")
+        self.assertContains(r, "SMS olishni rad etmagan har bir mijozga, faqat kunduzi.")
+        self.assertContains(r, "telefoni + tug'ilgan kuni bor, rad etmagan")
+        self.assertContains(r, "Hozir bu talab o'chirilgan")
+        self.assertContains(r, 'name="rozilik_kerak" id="sms-rozilik-kerak" >')
+        self.assertEqual(r.context["stat"]["tayyor"], 1)
+        self.assertEqual([x["izoh"] for x in r.context["bugun"]], ["SMS olishni rad etgan", "navbatda"])
+        self.assertContains(r, "SMS olishni rad etgan")                  # rad etgan mijoz baribir olmaydi
+
+        # o'zgarmagan bo'lsa — kim/qachon qayta yozilmaydi va xabar chiqmaydi
+        qachon = s.rozilik_at
+        r = self.client.post("/sms/", self.ROZILIK_FORMA, follow=True)
+        self.assertContains(r, "Saqlandi.")
+        self.assertNotContains(r, "Rozilik talabi o&#x27;chirildi")
+        self.assertEqual(SmsSozlama.get().rozilik_at, qachon)
+
+        # qayta yoqish
+        r = self.client.post("/sms/", {**self.ROZILIK_FORMA, "rozilik_kerak": "on"}, follow=True)
+        self.assertContains(r, "Saqlandi. Rozilik talabi yoqildi")
+        s = SmsSozlama.get()
+        self.assertEqual((s.rozilik_kerak, s.rozilik_by), (True, "egasi"))
+        self.assertGreater(s.rozilik_at, qachon)
+        self.assertNotContains(r, 'id="sms-rozilik-ochiq"')
+        self.assertContains(r, "Oxirgi marta o'zgartirdi: egasi")
+        self.assertContains(r, 'name="rozilik_kerak" id="sms-rozilik-kerak" checked')
+        self.assertEqual(r.context["stat"]["tayyor"], 0)
+
+    def test_eski_sahifadan_saqlash_rozilik_talabiga_tegmaydi(self):
+        """Belgisi yo'q forma (yangilanishdan oldin ochib qo'yilgan sahifa): belgilanmagan
+        katakcha so'rovda kelmaydi — shuning uchun talab bilmasdan o'chib ketmasligi kerak."""
+        eski = {"action": "sozlama", "yoqilgan": "on", "soat": "10", "kunlik_chegara": "300", "matn": "Salom"}
+        self.assertContains(self.client.post("/sms/", eski, follow=True), "Saqlandi.")
+        s = SmsSozlama.get()
+        self.assertEqual((s.yoqilgan, s.rozilik_kerak, s.rozilik_at, s.rozilik_by), (True, True, None, ""))
+        # o'chiq turgan bo'lsa — yoqilib ham qolmaydi
+        self.assertEqual(SmsSozlama.objects.update(rozilik_kerak=False), 1)
+        self.client.post("/sms/", {**eski, "rozilik_kerak": "on"})
+        s = SmsSozlama.get()
+        self.assertEqual((s.rozilik_kerak, s.rozilik_at), (False, None))
+
+    def test_notogri_sozlama_bilan_rozilik_talabi_ozgarmaydi(self):
+        r = self.client.post("/sms/", {**self.ROZILIK_FORMA, "soat": "18"}, follow=True)
+        self.assertContains(r, "Yuborish soati")
+        s = SmsSozlama.get()
+        self.assertEqual((s.rozilik_kerak, s.rozilik_at), (True, None))
+
+    def test_rozilik_talabini_faqat_egasi_ozgartiradi(self):
+        store = RetailStore.objects.create(ms_id=uuid.uuid4(), name="Sinov")
+        boshqaruvchi = User.objects.create_user("boshqaruvchi", password="parol-12345")
+        PanelManager.objects.create(user=boshqaruvchi, warehouse_ms_id=uuid.uuid4(), warehouse_name=store.name)
+        self.client.force_login(boshqaruvchi)
+        self.assertEqual(self.client.post("/sms/", self.ROZILIK_FORMA).status_code, 403)
+        self.client.logout()
+        self.assertEqual(self.client.post("/sms/", self.ROZILIK_FORMA).status_code, 302)
+        s = SmsSozlama.get()
+        self.assertEqual((s.rozilik_kerak, s.rozilik_at), (True, None))
+
+    def test_talab_ochiq_va_matn_reklama_bolsa_qattiq_ogohlantiradi(self):
+        matn = "Rozilik sinovi uchun alohida matn"
+        s = SmsSozlama.get()
+        s.rozilik_kerak, s.matn = False, matn
+        s.save()
+        p = Soxta(shablonlar=[prov.Shablon(matn, matn, "reklama")])
+        xizmat.shablon_holati(p, matn, yangi=True)
+        with patch.object(prov, "joriy", return_value=p):
+            r = self.client.get("/sms/")
+        self.assertContains(r, '<div class="alert err" id="sms-rozilik-ochiq">')
+        self.assertContains(r, "Hozirgi matnni SMS xizmati REKLAMA deb belgilagan")
+        # oddiy (reklama bo'lmagan) matnda — sariq ogohlantirish, bu gap yo'q
+        p = Soxta(shablonlar=[prov.Shablon(matn, matn, "service")])
+        xizmat.shablon_holati(p, matn, yangi=True)
+        with patch.object(prov, "joriy", return_value=p):
+            r = self.client.get("/sms/")
+        self.assertContains(r, '<div class="alert warn" id="sms-rozilik-ochiq">')
+        self.assertNotContains(r, "REKLAMA deb belgilagan — bunday SMS")
+
+    def test_mijoz_va_bonus_sahifasidagi_yozuv_talabga_qaraydi(self):
+        c = mijoz(rozi=None, card="7700104")
+        url = f"/bonus/mijoz/{c.pk}/"
+        self.assertContains(self.client.get(url), "Tabrik SMS faqat rozi bo'lgan mijozga yuboriladi")
+        self.assertEqual(SmsSozlama.objects.update(rozilik_kerak=False), 1)
+        r = self.client.get(url)
+        self.assertNotContains(r, "Tabrik SMS faqat rozi bo'lgan mijozga yuboriladi")
+        self.assertContains(r, "Rozilik talabi o'chirilgan: tabrik SMS rozilik so'ralmagan mijozga ham ketadi")
+        # belgilangan mijozda — kim belgilagani ko'rinadi (ikkala holatda ham)
+        self.client.post(url, {"action": "sms_rozi", "rozi": "yoq"})
+        self.assertContains(self.client.get(url), "Belgiladi: <b>Panel · egasi</b>")
 
 
 # ================================================================ kassa API

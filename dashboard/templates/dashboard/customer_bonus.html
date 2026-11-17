@@ -55,7 +55,7 @@
       </select>
     </label>
     <button type="submit" class="small ghost">Saqlash</button>
-    <span class="sec">{% if cust.sms_rozi_at %}Belgiladi: <b>{{ cust.sms_rozi_label }}</b> · {{ cust.sms_rozi_at|date:"d.m.Y H:i" }}{% else %}Tabrik SMS faqat rozi bo'lgan mijozga yuboriladi — avval mijozdan so'rang.{% endif %}</span>
+    <span class="sec">{% if cust.sms_rozi_at %}Belgiladi: <b>{{ cust.sms_rozi_label }}</b> · {{ cust.sms_rozi_at|date:"d.m.Y H:i" }}{% elif rozilik_kerak %}Tabrik SMS faqat rozi bo'lgan mijozga yuboriladi — avval mijozdan so'rang.{% else %}Rozilik talabi o'chirilgan: tabrik SMS rozilik so'ralmagan mijozga ham ketadi. Mijoz xohlamasa — «Rozi emas» deb belgilang.{% endif %}</span>
   </form>
 
   <p style="margin:16px 0 8px;">

@@ -29,6 +29,7 @@ from django.utils import timezone as dj_timezone
 from moysklad.client import MoySkladClient, MoySkladError
 from config.work_locks import work_lock
 
+from . import telefon
 from .models import (
     Barcode,
     Customer,
@@ -485,9 +486,13 @@ class CatalogSync:
 
         for row in self.client.iter_list("entity/counterparty", **params):
             discounts = row.get("discounts") or []
+            # Telefon bir xil ko'rinishda saqlanadi (+998XXXXXXXXX); MoySklad'dagi asl
+            # yozuv — phone_asl da. MoySklad'ga hech narsa yozilmaydi.
+            phone, phone_asl = telefon.saqlash_uchun((row.get("phone") or "")[:64])
             defaults = {
                 "name": row.get("name", ""),
-                "phone": (row.get("phone") or "")[:64],
+                "phone": phone[:64],
+                "phone_asl": phone_asl,
                 "discount_card": (row.get("discountCardNumber") or "")[:128],
                 "sales_amount": int(row.get("salesAmount") or 0),
                 "accumulation_discount": self._discount_value(
@@ -527,6 +532,7 @@ class CatalogSync:
             defaults["discount_card"] = old["discount_card"]
         if old["phone"] and not defaults["phone"]:
             defaults["phone"] = old["phone"]
+            defaults.pop("phone_asl", None)          # bizdagi telefon qoladi — asl yozuvi ham
 
     def force_import_bonus(self) -> int:
         """MoySklad'dan har mijozning JORIY bonus balansini MAJBURAN oladi

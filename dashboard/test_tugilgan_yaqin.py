@@ -60,6 +60,21 @@ class RoyxatTest(TestCase):
             ("Telefonsiz", 4, "telefon"), ("Yettinchi", 7, "rad")])
         self.assertEqual((y["kun"], y["jami"], y["sms"]), (7, 4, 1))
 
+    def test_rozilik_talabi_ochirilsa_soralmagan_mijoz_ham_oladi(self):
+        from sms.models import SmsSozlama
+
+        _mijoz("Bugungi", 14, 11)
+        _mijoz("Ertangi", 15, 11, rozi=None)
+        _mijoz("Yettinchi", 21, 11, rozi=False)
+        _mijoz("Telefonsiz", 18, 11, phone="", rozi=None)
+        y = _tugilgan_yaqin(BUGUN)
+        self.assertEqual((y["sms"], y["rozilik_kerak"]), (1, True))
+        self.assertEqual(SmsSozlama.objects.update(rozilik_kerak=False), 1)   # egasi belgini o'chirdi
+        y = _tugilgan_yaqin(BUGUN)
+        self.assertEqual([(r["mijoz"].name, r["sms"]) for r in y["rows"]], [
+            ("Bugungi", "ok"), ("Ertangi", "ok"), ("Telefonsiz", "telefon"), ("Yettinchi", "rad")])
+        self.assertEqual((y["sms"], y["rozilik_kerak"]), (2, False))
+
     def test_yil_oxiri(self):
         _mijoz("Yangi yil", 2, 1)
         _mijoz("Dekabr", 31, 12)
@@ -111,6 +126,22 @@ class SahifaTest(TestCase):
             self.assertIn(matn, jadval)
         # Rozilik so'ralmaganda — mijoz sahifasidagi rozilik joyiga havola
         self.assertIn(f'/bonus/mijoz/{self.b.pk}/#sms-rozilik">rozilik so\'ralmagan', jadval)
+
+    def test_rozilik_talabi_ochirilgan_bolsa_yozuv_ozgaradi(self, _):
+        from sms.models import SmsSozlama
+
+        html = self.client.get("/bonus/").content.decode()
+        self.assertIn("mijozdan kassada so'rab qoling", html)
+        self.assertNotIn("Rozilik talabi o'chirilgan", html)
+        self.assertEqual(SmsSozlama.objects.update(rozilik_kerak=False), 1)
+        html = self.client.get("/bonus/").content.decode()
+        self.assertIn("Rozilik talabi o'chirilgan — tabrik «rad etgan»lardan boshqa har bir mijozga ketadi", html)
+        self.assertNotIn("mijozdan kassada so'rab qoling", html)
+        jadval = self._qism(html, 'id="tk-yaqin"', "</table>")
+        # rozilik so'ralmagan mijoz endi «SMS oladi»; rozilik joyiga havola yo'q
+        self.assertEqual(jadval.count("SMS oladi"), 2)
+        self.assertNotIn("rozilik so'ralmagan", jadval)
+        self.assertIn("telefon raqami", jadval)
 
     def test_mijozlar_royxatida_belgi(self, _):
         html = self.client.get("/bonus/?tk=bor").content.decode()

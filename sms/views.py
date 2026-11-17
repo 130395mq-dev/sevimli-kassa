@@ -4,6 +4,8 @@ bu yerda ham qo'shimcha tekshiriladi)."""
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
@@ -14,6 +16,8 @@ from dashboard import access
 from . import provayder as prov
 from . import xizmat
 from .models import SmsSozlama, SmsXabar
+
+logger = logging.getLogger(__name__)
 
 #: Panel sahifasi SMS xizmatini uzoq kutib qolmasin
 PANEL_TIMEOUT = (3, 6)
@@ -54,11 +58,27 @@ def _sozlamani_saqla(request, s: SmsSozlama, p) -> None:
         messages.error(request, "Kunlik chegara 1 dan 5000 gacha bo'lsin.")
         return
     matn_ozgardi = matn != s.matn
+    kim = (getattr(request.user, "username", "") or "")[:150]
     s.yoqilgan = request.POST.get("yoqilgan") == "on"
     s.matn, s.soat, s.kunlik_chegara = matn, soat, chegara
-    s.updated_by = (getattr(request.user, "username", "") or "")[:150]
+    # «Rozilik talab qilinsin» faqat forma shu belgini ko'rsatgan bo'lsa o'qiladi (`rozilik_bor`).
+    # Belgisiz kelgan so'rov (masalan yangilanishdan oldin ochib qo'yilgan eski sahifa) talabni
+    # bilmasdan O'CHIRIB yubormasin: belgilanmagan katakcha so'rovda umuman kelmaydi.
+    rozilik_ozgardi = False
+    if request.POST.get("rozilik_bor") == "1":
+        kerak = request.POST.get("rozilik_kerak") == "on"
+        if kerak != s.rozilik_kerak:
+            s.rozilik_kerak, s.rozilik_at, s.rozilik_by = kerak, timezone.now(), kim
+            rozilik_ozgardi = True
+            logger.warning("SMS: rozilik talabi %s (%s)", "yoqildi" if kerak else "O'CHIRILDI", kim or "?")
+    s.updated_by = kim
     s.save()
     xabar = "Saqlandi."
+    if rozilik_ozgardi:
+        xabar += (" Rozilik talabi yoqildi — tabrik faqat «rozi» deb belgilangan mijozlarga ketadi."
+                  if s.rozilik_kerak else
+                  " Rozilik talabi o'chirildi — tabrik endi rozilik so'ralmagan mijozlarga ham ketadi "
+                  "(«rad etgan» mijozlarga ketmaydi).")
     if s.yoqilgan and p is None:
         xabar += " SMS xizmati hali ulanmagan — ulanmaguncha SMS ketmaydi."
     elif matn_ozgardi and p is not None:
@@ -135,7 +155,7 @@ def bosh(request):
         balans, balans_xato = xizmat.balans(p)
         shablon = xizmat.shablon_holati(p, s.matn)
     rang, holat = _holat_matni(s, p, shablon, local)
-    bugun = xizmat.bugungi_royxat(today)
+    bugun = xizmat.bugungi_royxat(today, s.rozilik_kerak)
     ketadigan = xizmat.haqiqiy_matn(p, s.matn) if p is not None else s.matn
     return render(request, "sms/bosh.html", {
         "s": s,
@@ -147,11 +167,11 @@ def bosh(request):
         "sinov_matni": getattr(p, "sinov_matni", "") if p is not None else "",
         "balans": balans, "balans_xato": balans_xato, "shablon": shablon,
         "rang": rang, "holat": holat,
-        "stat": xizmat.statistika(),
+        "stat": xizmat.statistika(s.rozilik_kerak),
         "bugun": bugun,
         "bugun_xato": sum(1 for r in bugun if r["xabar"] and r["xabar"].holat == SmsXabar.XATO),
         "qayta_mumkin": not xizmat.vaqt_tugadi(local),
-        "yaqin": xizmat.yaqin_kunlar(today),
+        "yaqin": xizmat.yaqin_kunlar(today, kerak=s.rozilik_kerak),
         "oy": xizmat.oy_hisobi(),
         "jurnal": SmsXabar.objects.select_related("customer")[:50],
         "today": today,

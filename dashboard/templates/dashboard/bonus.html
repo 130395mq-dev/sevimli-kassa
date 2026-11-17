@@ -104,7 +104,7 @@
 
   <h3 id="yaqin" style="margin:16px 0 6px;">Tug'ilgan kuni yaqin <span class="sec" style="font-weight:400;">— bugundan {{ yaqin.kun }} kun ichida</span></h3>
   <div class="sec" style="margin-bottom:8px;">{{ yaqin.jami }} ta mijoz, shundan SMS oladi: <b>{{ yaqin.sms }}</b> ta.
-    SMS ulanganda tabrik tug'ilgan kunining o'zida (kunduzi) o'zi yuboriladi. «Rozilik so'ralmagan» mijozdan kassada so'rab qoling yoki mijoz sahifasida belgilang.</div>
+    SMS ulanganda tabrik tug'ilgan kunining o'zida (kunduzi) o'zi yuboriladi. {% if yaqin.rozilik_kerak %}«Rozilik so'ralmagan» mijozdan kassada so'rab qoling yoki mijoz sahifasida belgilang.{% else %}Rozilik talabi o'chirilgan — tabrik «rad etgan»lardan boshqa har bir mijozga ketadi (<a href="{% url 'sms:bosh' %}">Mijozlarga SMS</a> sahifasida o'zgartiriladi).{% endif %}</div>
   <div class="tablewrap"><table id="tk-yaqin">
     <tr><th>Qachon</th><th>Mijoz</th><th>Telefon</th><th>Tug'ilgan kuni</th><th>SMS</th></tr>
     {% for r in yaqin.rows %}
@@ -159,13 +159,21 @@
   </div>
 
   <!-- ============ MIJOZLAR ============ -->
-  <h2 id="mijozlar">{% if tk == "yoq" %}Tug'ilgan kuni kiritilmagan kartali mijozlar{% elif tk == "bor" %}Tug'ilgan kuni kiritilgan mijozlar{% else %}Mijoz balanslari{% endif %}</h2>
+  <h2 id="mijozlar">{% if tel %}Telefoni tartibga tushmagan mijozlar{% elif tk == "yoq" %}Tug'ilgan kuni kiritilmagan kartali mijozlar{% elif tk == "bor" %}Tug'ilgan kuni kiritilgan mijozlar{% else %}Mijoz balanslari{% endif %}</h2>
   <form method="get" class="card" style="padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    {% if tk %}<input type="hidden" name="tk" value="{{ tk }}">{% endif %}
+    {% if tel %}<input type="hidden" name="tel" value="{{ tel }}">{% elif tk %}<input type="hidden" name="tk" value="{{ tk }}">{% endif %}
     <input name="q" value="{{ q }}" placeholder="Ism, telefon yoki karta raqami bo'yicha qidirish"
            style="flex:1;min-width:240px;box-sizing:border-box;">
-    {% if tk %}<a href="{% url 'dashboard:bonus' %}#mijozlar" class="sec">← Ball to'plaganlar</a>{% endif %}
+    {% if tk or tel %}<a href="{% url 'dashboard:bonus' %}#mijozlar" class="sec">← Ball to'plaganlar</a>{% endif %}
   </form>
+  {% if tel %}
+    <div class="sec" style="margin:-6px 0 10px;">Telefonlar bir xil ko'rinishda saqlanadi: <b>+998XXXXXXXXX</b>. Bu ro'yxatdagi
+      yozuvlarni dastur tushuna olmadi (raqami kam yoki ko'p, harf aralash, chet el raqami) — shuning uchun o'zgartirmadi.
+      Raqamni MoySklad'da mijoz kartochkasida to'g'rilang: bir necha daqiqada bu yerda ham yangilanadi.</div>
+  {% elif telefon_xato %}
+    <div class="sec" style="margin:-6px 0 10px;" id="telefon-xato">Telefoni tartibga tushmagan mijozlar: <b>{{ telefon_xato }}</b> ta —
+      <a href="?tel=xato#mijozlar">ro'yxatni ko'rish</a></div>
+  {% endif %}
 
   <table>
     <tr>
@@ -193,7 +201,7 @@
       </tr>
     {% empty %}
       <tr><td colspan="6" class="sec" style="padding:18px;text-align:center;">
-        {% if q %}«{{ q }}» bo'yicha mijoz topilmadi{% elif tk == "yoq" %}Hamma kartali mijozning tug'ilgan kuni kiritilgan{% elif tk == "bor" %}Hali birorta tug'ilgan kun kiritilmagan{% else %}Ball to'plagan mijoz yo'q{% endif %}
+        {% if q %}«{{ q }}» bo'yicha mijoz topilmadi{% elif tel %}Hamma telefon bir xil ko'rinishda{% elif tk == "yoq" %}Hamma kartali mijozning tug'ilgan kuni kiritilgan{% elif tk == "bor" %}Hali birorta tug'ilgan kun kiritilmagan{% else %}Ball to'plagan mijoz yo'q{% endif %}
       </td></tr>
     {% endfor %}
   </table>
@@ -202,11 +210,11 @@
     <div class="pager">
       <span class="count">{{ page.number }} / {{ page.paginator.num_pages }} sahifa</span>
       {% if page.has_previous %}
-        <a href="?{% if tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.previous_page_number }}#mijozlar">‹ Oldingi</a>
+        <a href="?{% if tel %}tel={{ tel }}&{% elif tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.previous_page_number }}#mijozlar">‹ Oldingi</a>
       {% else %}<span class="disabled">‹ Oldingi</span>{% endif %}
       <span class="cur">{{ page.number }}</span>
       {% if page.has_next %}
-        <a href="?{% if tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.next_page_number }}#mijozlar">Keyingi ›</a>
+        <a href="?{% if tel %}tel={{ tel }}&{% elif tk %}tk={{ tk }}&{% endif %}{% if q %}q={{ q }}&{% endif %}page={{ page.next_page_number }}#mijozlar">Keyingi ›</a>
       {% else %}<span class="disabled">Keyingi ›</span>{% endif %}
     </div>
   {% endif %}
