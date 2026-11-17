@@ -136,9 +136,12 @@ def bosh(request):
         shablon = xizmat.shablon_holati(p, s.matn)
     rang, holat = _holat_matni(s, p, shablon, local)
     bugun = xizmat.bugungi_royxat(today)
+    ketadigan = xizmat.haqiqiy_matn(p, s.matn) if p is not None else s.matn
     return render(request, "sms/bosh.html", {
         "s": s,
-        "kod": xizmat.kodlash(s.matn),
+        "kod": xizmat.kodlash(ketadigan),
+        # xizmat matnni o'z shablonidagi yozuv bilan yuboradi va u hisobni o'zgartiradi
+        "kod_xizmatdan": xizmat.kodlash(ketadigan) != xizmat.kodlash(s.matn),
         "soatlar": range(SmsSozlama.SOAT_MIN, SmsSozlama.SOAT_MAX + 1),
         "xizmat": p,
         "sinov_matni": getattr(p, "sinov_matni", "") if p is not None else "",

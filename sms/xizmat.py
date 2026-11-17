@@ -21,6 +21,7 @@ import logging
 import math
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time as dtime, timedelta
 from decimal import Decimal
@@ -171,7 +172,10 @@ def shablon_holati(p, matn: str, yangi: bool = False) -> ShablonHolati:
             h = ShablonHolati("tekshirilmaydi", True, "")
         else:
             want = _norm(matn)
-            holatlar = {r.holat for r in rows if want in (_norm(r.matn), _norm(r.asl))}
+            # Xizmat shablonida {o'zgaruvchi} bo'lsa (usms) — mosligini xizmatning o'zi aniqlaydi
+            mos = getattr(p, "shablonga_mos", None)
+            holatlar = {r.holat for r in rows
+                        if want in (_norm(r.matn), _norm(r.asl)) or (mos is not None and mos(r.matn, matn) is not None)}
             if "service" in holatlar:
                 h = ShablonHolati("ok", True, "Matn SMS xizmatida tasdiqlangan.")
             elif "reklama" in holatlar:
@@ -189,6 +193,18 @@ def shablon_holati(p, matn: str, yangi: bool = False) -> ShablonHolati:
                                                 "ungacha SMS yuborilmaydi.")
     kesh.set(kalit, (h.kod, h.ruxsat, h.izoh), muddat)
     return h
+
+
+def haqiqiy_matn(p, matn: str) -> str:
+    """SMS'da aslida ketadigan matn — xizmat uni o'z shablonidagi yozuv bilan yuborsa (usms),
+    SMS soni va narxi shunga qarab hisoblanadi. Aniqlab bo'lmasa — matnning o'zi."""
+    f = getattr(p, "haqiqiy_matn", None)
+    if f is None:
+        return matn
+    try:
+        return f(matn) or matn
+    except Exception:  # noqa: BLE001 — hisob uchun xolos: xizmat javob bermasa ham sahifa ochilsin
+        return matn
 
 
 def balans(p, yangi: bool = False) -> tuple[Decimal | None, str]:
@@ -219,8 +235,12 @@ def _yubor(x: SmsXabar, p, now, qayta_mumkin: bool = True) -> prov.Natija:
     balans tugagan bo'lsa, to'ldirilgach o'zi ketadi. Javob kelmagan bo'lsa
     («noma'lum») — qayta urinilmaydi, aks holda SMS ikki marta ketishi mumkin."""
     x.urinish += 1
+    # Takrorlanmas kalit (xizmat qo'llasa): bitta so'rov tarmoqda ikki marta yetib borsa ham
+    # bitta SMS bo'ladi. Har urinishga YANGI kalit: xizmat rad etilgan urinishni ham eslab
+    # qolishi mumkin — eski kalit bilan qayta urinilsa, SMS umuman ketmay qolardi.
+    kw = ({"kalit": f"sevimli-sms-{x.pk}-{uuid.uuid4().hex[:12]}"} if getattr(p, "idempotent", False) else {})
     try:
-        n = p.yubor(x.telefon, x.matn)
+        n = p.yubor(x.telefon, x.matn, **kw)
     except Exception as e:  # noqa: BLE001 — kutilmagan xato: yuborilgani noma'lum
         logger.exception("SMS #%s yuborishda kutilmagan xato", x.pk)
         n = prov.Natija(False, xato=f"Kutilmagan xato ({type(e).__name__}) — yuborilgani noma'lum", nomalum=True)
@@ -323,7 +343,7 @@ def tabriklarni_yubor(now=None, p=None) -> dict:
             holat["ketma_ket_xato"] += 1
         return n.qayta or n.nomalum
 
-    qism = kodlash(matn).qism
+    qism = kodlash(haqiqiy_matn(p, matn)).qism
     uzildi = False
     for x in qayta:
         if tamom():
@@ -436,7 +456,8 @@ def sinov_yubor(raw_telefon: str, kim: str = "", matn: str | None = None, now=No
         sh = shablon_holati(p, matn, yangi=True)
         if not sh.ruxsat:
             raise SmsXato(sh.izoh)
-    x = SmsXabar.objects.create(tur=SmsXabar.SINOV, telefon=tel, matn=matn, qismlar=kodlash(matn).qism,
+    x = SmsXabar.objects.create(tur=SmsXabar.SINOV, telefon=tel, matn=matn,
+                                qismlar=kodlash(haqiqiy_matn(p, matn)).qism,
                                 provayder=p.nom, kim=(kim or "")[:150], created_at=now)
     _yubor(x, p, now, qayta_mumkin=False)
     return x

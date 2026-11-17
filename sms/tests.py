@@ -1,12 +1,14 @@
 """Mijozlarga SMS (egasi, 2026-11-11): qoidalar (rozilik, vaqt, yiliga bitta),
-yuborish, Eskiz bilan gaplashish (soxta javoblar bilan), panel va kassa API."""
+yuborish, Eskiz va usms.uz bilan gaplashish (soxta javoblar bilan), panel va kassa API."""
 
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import patch
 
 import requests
@@ -635,6 +637,484 @@ class EskizTanlashTest(TestCase):
         self.assertEqual((e.sender, e.base, e.timeout), ("SEVIMLI", "https://notify.eskiz.uz/api", (3, 6)))
 
 
+# ==================================================================== usms
+
+#: usms «База шаблонов»dagi tayyor tabrik (ID 101) — kabinetdagidek, «‘» bilan
+USMS_101 = ("Hurmatli {client_name}, tavallud kuningiz bilan tabriklaymiz! Sizga mustahkam sog\u2018liq, baxt, "
+            "farovonlik va ulkan muvaffaqiyatlar tilaymiz. Hurmat bilan, {company_name}.")
+#: egasi panelga yozadigan ko'rinishi: o'zgaruvchilar o'rnida so'zlar, apostrof oddiy
+USMS_101_TAYYOR = ("Hurmatli mijoz, tavallud kuningiz bilan tabriklaymiz! Sizga mustahkam sog'liq, baxt, "
+                   "farovonlik va ulkan muvaffaqiyatlar tilaymiz. Hurmat bilan, Sevimli Market.")
+OZ_MATN = "Hurmatli mijoz! Sevimli Market sizni tug'ilgan kuningiz bilan tabriklaydi. Sog'liq va baxt tilaymiz!"
+
+
+def usms_shablonlar(*qoshimcha):
+    return Javob(200, {"items": [
+        {"id": 23, "title": "Тестовый", "text": "Testoviy sms ot usms.uz", "kind": "service", "variables": []},
+        {"id": "37", "title": None, "text": "Kirish kodi: {code} Kodni hech kimga bermang.", "kind": "service",
+         "variables": [{"key": "code", "type": "digits"}]},
+        {"id": 101, "title": "Табрик", "text": USMS_101, "kind": "service", "base": True,
+         "variables": [{"key": "client_name", "type": "text", "max_length": 80},
+                       {"key": "company_name", "type": "text", "max_length": 80}]},
+        *qoshimcha,
+    ]})
+
+
+def usms_ok(**kw):
+    return Javob(200, {"id": "1001", "template_id": 101, "parts": 3, "price": 480, "status": "sent", **kw})
+
+
+class ShablongaMosTest(SimpleTestCase):
+    def test_ozgaruvchisiz_aynan_shu_matn(self):
+        mos = prov.shablonga_mos
+        self.assertEqual(mos("Testoviy sms ot usms.uz", "Testoviy sms ot usms.uz"), {})
+        self.assertEqual(mos("Testoviy sms ot usms.uz", "  Testoviy   sms ot usms.uz\n"), {})      # bo'shliq farqi
+        self.assertEqual(mos("Sog\u2018liq tilaymiz", "Sog'liq tilaymiz"), {})                    # apostrof turi
+        self.assertEqual(mos("Sog'liq tilaymiz", "Sog\u02bbliq tilaymiz"), {})
+        self.assertIsNone(mos("Testoviy sms ot usms.uz", "Testoviy sms"))
+        self.assertIsNone(mos("Testoviy sms ot usms.uz", "testoviy sms ot usms.uz"))               # harf kattaligi
+        self.assertIsNone(mos("", "x"))
+        self.assertIsNone(mos("x", ""))
+
+    def test_ozgaruvchilar_ajratib_olinadi(self):
+        mos = prov.shablonga_mos
+        self.assertEqual(mos(USMS_101, USMS_101_TAYYOR), {"client_name": "mijoz", "company_name": "Sevimli Market"})
+        ism = USMS_101_TAYYOR.replace("Hurmatli mijoz,", "Hurmatli Aliyeva Dilnoza,")
+        self.assertEqual(mos(USMS_101, ism)["client_name"], "Aliyeva Dilnoza")
+        self.assertIsNone(mos(USMS_101, OZ_MATN))
+        self.assertIsNone(mos(USMS_101, "Salom! " + USMS_101_TAYYOR))                       # oldiga qo'shilgan gap
+        self.assertIsNone(mos(USMS_101, USMS_101_TAYYOR.replace("baxt,", "omad,")))         # o'zgargan so'z
+        # oxirgi o'zgaruvchi matn oxirigacha cho'ziladi — bu ham shablonga mos (qiymat 80 belgigacha)
+        self.assertEqual(mos(USMS_101, USMS_101_TAYYOR[:-1] + " jamoasi.")["company_name"], "Sevimli Market jamoasi")
+        # shablondagi maxsus belgilar oddiy matn sifatida solishtiriladi
+        self.assertEqual(mos("{a} va {a} (narx?) + {b}.", "olma va olma (narx?) + nok."), {"a": "olma", "b": "nok"})
+        self.assertIsNone(mos("{a} va {a}", "olma va nok"))                  # bitta o'zgaruvchi — bitta qiymat
+
+    def test_qiymat_qoidalari(self):
+        mos = prov.shablonga_mos
+        self.assertIsNone(mos("Salom, {name}!", "Salom, !"))                                 # bo'sh qiymat
+        self.assertIsNone(mos("Salom, {name}!", "Salom, " + "a" * 81 + "!"))                 # 80 belgidan uzun
+        self.assertEqual(mos("Salom, {name}!", "Salom, " + "a" * 80 + "!"), {"name": "a" * 80})
+        self.assertEqual(mos("Kod: {code}", "Kod: 4821", raqamli=["code"]), {"code": "4821"})
+        self.assertIsNone(mos("Kod: {code}", "Kod: 48a1", raqamli=["code"]))                 # faqat raqam
+
+
+class UsmsTest(SimpleTestCase):
+    def usms(self, *javoblar, kesh=None, **kw):
+        self.http = SoxtaHttp(*javoblar)
+        self.kesh = kesh if kesh is not None else Kesh()
+        return prov.Usms("usms_login1", "MAXFIY-KALIT", http=self.http, kesh=self.kesh, **kw)
+
+    def test_tayyor_matn_shablon_raqami_va_ozgaruvchilar_bilan_ketadi(self):
+        u = self.usms(usms_shablonlar(), usms_ok())
+        n = u.yubor("998901112233", USMS_101_TAYYOR, kalit="sevimli-sms-7-1")
+        self.assertEqual((n.ok, n.provayder_id, n.holat), (True, "1001", "sent"))
+        royxat, sms = self.http.sorovlar
+        self.assertEqual((royxat["method"], royxat["url"], royxat["params"]),
+                         ("GET", "https://usms.uz/api/v1/templates", {"include": "base"}))
+        self.assertEqual((sms["method"], sms["url"]), ("POST", "https://usms.uz/api/v1/send"))
+        self.assertEqual(sms["json"], {"phone": "998901112233", "template_id": 101,
+                                       "params": {"client_name": "mijoz", "company_name": "Sevimli Market"},
+                                       "idem_key": "sevimli-sms-7-1"})
+        for s in self.http.sorovlar:
+            self.assertEqual(s["headers"]["Authorization"], "Bearer usms_login1:MAXFIY-KALIT")
+            self.assertEqual(s["timeout"], (5, 15))
+
+    def test_oz_shabloni_bazadagidan_oldin_va_ozgaruvchisiz(self):
+        """Aynan shu matn o'zimizda tasdiqlangan bo'lsa — o'sha (bazadagi o'xshashidan oldin)."""
+        oz = {"id": 55, "text": USMS_101_TAYYOR, "kind": "service", "variables": []}
+        u = self.usms(usms_shablonlar(oz), usms_ok())
+        self.assertTrue(u.yubor("998901112233", USMS_101_TAYYOR).ok)
+        self.assertEqual(self.http.sorovlar[1]["json"], {"phone": "998901112233", "template_id": 55})
+
+    def test_xizmat_sinov_matni(self):
+        u = self.usms(usms_shablonlar(), usms_ok(id=7, status="queued"))
+        n = u.yubor("998901112233", u.sinov_matni)
+        self.assertEqual((n.ok, n.provayder_id, n.holat), (True, "7", "queued"))
+        self.assertEqual(self.http.sorovlar[1]["json"], {"phone": "998901112233", "template_id": 23})
+
+    def test_shablon_topilmasa_matnning_ozi_yuboriladi(self):
+        """Ro'yxatda yo'q matn: usms o'zi tekshiradi (mos kelmasa rad etadi) — biz to'qib chiqarmaymiz."""
+        u = self.usms(usms_shablonlar(), Javob(403, {"error": "Текст не совпадает с назначенным шаблоном"}))
+        n = u.yubor("998901112233", OZ_MATN, kalit="k-1")
+        self.assertEqual(self.http.sorovlar[1]["json"], {"phone": "998901112233", "text": OZ_MATN, "idem_key": "k-1"})
+        self.assertEqual((n.ok, n.qayta, n.nomalum, n.xato),
+                         (False, False, False, "Текст не совпадает с назначенным шаблоном"))
+
+    def test_royxat_olinmasa_ham_yuborishga_urinadi(self):
+        for birinchi in (requests.ConnectionError("x"), Javob(500, {})):
+            u = self.usms(birinchi, usms_ok())
+            self.assertTrue(u.yubor("998901112233", OZ_MATN).ok)
+            self.assertEqual(self.http.sorovlar[1]["json"], {"phone": "998901112233", "text": OZ_MATN})
+
+    def test_shablonlar_eslab_qolinadi(self):
+        u = self.usms(usms_shablonlar(), usms_ok(), usms_ok(id="1002"))
+        u.yubor("998901112233", USMS_101_TAYYOR)
+        u.yubor("998901112234", USMS_101_TAYYOR)
+        self.assertEqual([s["url"].rsplit("/", 1)[-1] for s in self.http.sorovlar], ["templates", "send", "send"])
+        # boshqa jarayon ham o'sha ro'yxatni ishlatadi; boshqa login — o'zinikini so'raydi
+        u2 = prov.Usms("usms_login1", "MAXFIY-KALIT", http=SoxtaHttp(usms_ok()), kesh=self.kesh)
+        self.assertTrue(u2.yubor("998901112235", USMS_101_TAYYOR).ok)
+        u3 = prov.Usms("boshqa_login", "K2", http=SoxtaHttp(usms_shablonlar(), usms_ok()), kesh=self.kesh)
+        self.assertTrue(u3.yubor("998901112236", USMS_101_TAYYOR).ok)
+        self.assertEqual(len(u3.http.sorovlar), 2)
+
+    def test_jonatuvchi_nomi(self):
+        u = self.usms(usms_shablonlar(), usms_ok(), sender="SEVIMLI")
+        u.yubor("998901112233", USMS_101_TAYYOR)
+        self.assertEqual(self.http.sorovlar[1]["json"]["from"], "SEVIMLI")
+
+    def test_test_kalit_bilan_yuborilgani_belgilanadi(self):
+        u = self.usms(usms_shablonlar(), usms_ok(test=True),
+                      Javob(200, {"id": "1001", "status": "delivered", "status_note": "DELIVRD", "test": True}))
+        self.assertEqual(u.yubor("998901112233", USMS_101_TAYYOR).holat, "test:sent")
+        self.assertEqual(u.holat("1001").xom, "TEST:DELIVRD")
+
+    def test_qabul_qilingan_javoblar(self):
+        """Yozuv raqami bor — SMS qabul qilingan (natijasi keyin holat so'rovida aniqlanadi)."""
+        for data, holat in (
+            ({"id": 5, "status": "queued"}, "queued"),
+            ({"id": "5", "status": "unknown", "pending": True}, "unknown"),
+            ({"id": "5", "status": "sent", "repeated": True}, "sent"),            # takror so'rov — yangi SMS emas
+            ({"id": "5", "status": "failed"}, "failed"),                          # pul yechilgan — qayta yuborilmaydi
+            ({"id": "5"}, "sent"),
+        ):
+            u = self.usms(usms_shablonlar(), Javob(200, data))
+            n = u.yubor("998901112233", USMS_101_TAYYOR)
+            self.assertEqual((n.ok, n.provayder_id, n.holat), (True, "5", holat), data)
+
+    def test_rad_etilsa(self):
+        for javob, qayta, nomalum, kutilgan in (
+            (Javob(400, {"error": "Неверный номер", "fields": ["phone"]}), False, False, "Неверный номер (phone)"),
+            (Javob(403, {"error": "Шаблон 101 не назначен клиенту"}), False, False, "Шаблон 101 не назначен клиенту"),
+            (Javob(403, None, text="<html>"), False, False, "HTTP 403"),
+            (Javob(200, {"id": "9", "status": "rejected", "status_note": "Запрещённое слово в тексте: aksiya"}),
+             False, False, "usms SMS'ni rad etdi: Запрещённое слово в тексте: aksiya"),
+            (Javob(200, {"status": "rejected"}), False, False, "usms SMS'ni rad etdi"),
+            # kalit, mablag', chegara: keyingi SMS ham o'tmaydi — navbat to'xtaydi, keyin qayta uriniladi
+            (Javob(401, {"error": "bad MAXFIY-KALIT"}), True, False,
+             "usms login yoki maxfiy kaliti noto'g'ri yoki bekor qilingan (USMS_LOGIN / USMS_SECRET)"),
+            (Javob(402, {"error": "Недостаточно средств"}), True, False,
+             "usms hisobida mablag' yetarli emas — balansni to'ldiring"),
+            (Javob(429, {"error": "quota", "retry_after": 12}), True, False,
+             "usms so'rovlar chegarasi to'ldi — birozdan keyin o'zi qayta urinadi"),
+        ):
+            u = self.usms(usms_shablonlar(), javob)
+            n = u.yubor("998901112233", USMS_101_TAYYOR)
+            self.assertEqual((n.ok, n.qayta, n.nomalum, n.xato), (False, qayta, nomalum, kutilgan))
+            self.assertNotIn("MAXFIY-KALIT", n.xato)
+
+    def test_javobsiz_qolsa_nomalum_ulanmasa_qayta(self):
+        ulanmadi = requests.ConnectionError(type("E", (), {"reason": NewConnectionError(None, "rad etildi")})())
+        for xato, qayta, nomalum in (
+            (requests.ReadTimeout("kutildi"), False, True),
+            (requests.ConnectionError("Connection aborted"), False, True),
+            (requests.ConnectTimeout("ulanmadi"), True, False),
+            (ulanmadi, True, False),
+            (Javob(502, None, text="Bad gateway"), False, True),
+            (Javob(200, {"status": "sent"}), False, True),                 # raqamsiz javob — nima bo'lgani noma'lum
+            (Javob(200, None, text="<html>"), False, True),
+        ):
+            u = self.usms(usms_shablonlar(), xato)
+            n = u.yubor("998901112233", USMS_101_TAYYOR)
+            self.assertEqual((n.ok, n.qayta, n.nomalum), (False, qayta, nomalum), xato)
+            self.assertNotIn("MAXFIY-KALIT", n.xato)
+
+    def test_holat(self):
+        u = self.usms(
+            Javob(200, {"id": "1001", "phone": "998901234567", "status": "delivered", "status_note": "DELIVRD",
+                        "price": "480.00", "parts": 3, "created_at": "2026-11-17T05:00:00.000Z"}),
+            Javob(200, {"id": "1001", "status": "failed", "status_note": "UNDELIV", "price": 160, "parts": "1"}),
+            Javob(200, {"id": "1001", "status": "rejected", "status_note": "Запрещённое слово в тексте: aksiya"}),
+            Javob(200, {"id": "1001", "status": "sent", "status_note": None}),
+            Javob(200, {"id": "1001", "status": "unknown"}),
+            Javob(404, {"error": "Сообщение не найдено"}),
+            Javob(200, {}),
+            Javob(401, {"error": "revoked"}),
+        )
+        self.assertEqual(u.holat("1001"), prov.Yetkazish("yetkazildi", "DELIVRD", Decimal("480.00"), None, 3))
+        self.assertEqual(self.http.sorovlar[0]["url"], "https://usms.uz/api/v1/status/1001")
+        self.assertEqual(u.holat("1001"), prov.Yetkazish("yetmadi", "UNDELIV", Decimal("160"), None, 1))
+        y = u.holat("1001")
+        self.assertEqual((y.holat, y.xom), ("yetmadi", "REJECTED"))        # uzun izoh emas — qisqa holat
+        self.assertEqual((u.holat("1001").holat, u.holat("1001").holat), ("", ""))     # hali aniq emas
+        self.assertIsNone(u.holat("1001"))
+        self.assertIsNone(u.holat("1001"))
+        with self.assertRaises(prov.ProvayderXato) as cm:
+            u.holat("1001")
+        self.assertNotIn("MAXFIY-KALIT", str(cm.exception))
+
+    def test_balans_va_shablonlar(self):
+        u = self.usms(
+            Javob(200, {"balance": 8695}), Javob(200, {"balance": "8695.50"}), Javob(500, {}),
+            Javob(401, {"error": "x"}),
+            usms_shablonlar({"id": 60, "text": "Aksiya! {name}, chegirma", "kind": "ad", "variables": []},
+                            {"id": "yoq", "text": "raqamsiz"}, "satr"),
+            Javob(403, {"error": "Аккаунт не одобрен"}),
+            Javob(200, {"items": {}}),
+            Javob(401, {"error": "x"}),
+        )
+        self.assertEqual(u.balans(), Decimal("8695"))
+        self.assertEqual(self.http.sorovlar[0]["url"], "https://usms.uz/api/v1/balance")
+        self.assertEqual(u.balans(), Decimal("8695.50"))
+        self.assertIsNone(u.balans())
+        with self.assertRaises(prov.ProvayderXato):
+            u.balans()
+        sh = u.shablonlar()
+        self.assertEqual([(s.id, s.holat, s.umumiy) for s in sh],
+                         [(23, "service", False), (37, "service", False), (101, "service", True), (60, "reklama", False)])
+        self.assertEqual((sh[2].matn, sh[2].asl), (USMS_101, USMS_101))
+        for kutilgan in ("usms shablonlar ro'yxatini bermadi: Аккаунт не одобрен",
+                         "usms shablonlar ro'yxatini kutilmagan ko'rinishda berdi",
+                         "usms login yoki maxfiy kaliti noto'g'ri yoki bekor qilingan (USMS_LOGIN / USMS_SECRET)"):
+            with self.assertRaises(prov.ProvayderXato) as cm:
+                u.shablonlar()
+            self.assertEqual(str(cm.exception), kutilgan)
+
+    def test_haqiqiy_matn_shablonning_oz_yozuvi(self):
+        """Hisob paneldagi yozuvga emas, aslida ketadigan matnga qarab: bazadagi tayyor matnda
+        «‘» bor — 160 belgilik bitta SMS o'rniga 3 ta SMS narxi."""
+        u = self.usms(usms_shablonlar())
+        ketadi = u.haqiqiy_matn(USMS_101_TAYYOR)
+        self.assertEqual(ketadi, USMS_101.replace("{client_name}", "mijoz").replace("{company_name}", "Sevimli Market"))
+        self.assertEqual((xizmat.kodlash(USMS_101_TAYYOR).qism, xizmat.kodlash(ketadi).qism), (1, 3))
+        self.assertEqual(u.haqiqiy_matn(OZ_MATN), OZ_MATN)                     # shablon topilmadi — o'zi
+        self.assertEqual(len(self.http.sorovlar), 1)                           # ro'yxat bir marta so'raldi
+        uzilgan = self.usms(requests.ConnectionError("x"))
+        self.assertEqual(xizmat.haqiqiy_matn(uzilgan, USMS_101_TAYYOR), USMS_101_TAYYOR)
+        self.assertEqual(xizmat.haqiqiy_matn(Soxta(), "Salom"), "Salom")       # boshqa xizmatlarda — o'zi
+
+    def test_raqamli_ozgaruvchi(self):
+        u = self.usms(usms_shablonlar(), usms_ok(), usms_ok())
+        u.yubor("998901112233", "Kirish kodi: 4821 Kodni hech kimga bermang.")
+        self.assertEqual(self.http.sorovlar[1]["json"], {"phone": "998901112233", "template_id": 37,
+                                                         "params": {"code": "4821"}})
+        u.yubor("998901112233", "Kirish kodi: 48a1 Kodni hech kimga bermang.")       # raqam emas — shablonga mos emas
+        self.assertEqual(self.http.sorovlar[2]["json"]["text"], "Kirish kodi: 48a1 Kodni hech kimga bermang.")
+
+    def test_qaysi_xizmat_tanlanadi(self):
+        usms = dict(USMS_LOGIN="usms_login1", USMS_SECRET="k", USMS_FROM="", USMS_URL="")
+        eskiz = dict(ESKIZ_EMAIL="a@b.uz", ESKIZ_PASSWORD="k")
+        yoq = dict(USMS_LOGIN="", USMS_SECRET="", ESKIZ_EMAIL="", ESKIZ_PASSWORD="")
+        with override_settings(SMS_PROVAYDER="", **{**yoq, **usms}):
+            u = prov.joriy(timeout=(3, 6))
+            self.assertIsInstance(u, prov.Usms)
+            self.assertEqual((u.login, u.sender, u.base, u.timeout), ("usms_login1", "", "https://usms.uz/api/v1", (3, 6)))
+        with override_settings(SMS_PROVAYDER="", **{**yoq, "USMS_LOGIN": "usms_login1"}):
+            self.assertIsNone(prov.joriy())                               # kalit yarim — ulanmagan
+        with override_settings(SMS_PROVAYDER="", **usms, **eskiz):
+            self.assertIsInstance(prov.joriy(), prov.Usms)                # ikkalasi bor — usms
+        with override_settings(SMS_PROVAYDER="eskiz", **usms, **eskiz):
+            self.assertIsInstance(prov.joriy(), prov.Eskiz)
+        with override_settings(SMS_PROVAYDER="usms", **{**yoq, **eskiz}):
+            self.assertIsNone(prov.joriy())
+        with override_settings(SMS_PROVAYDER="", **{**yoq, **eskiz}):
+            self.assertIsInstance(prov.joriy(), prov.Eskiz)
+        with override_settings(SMS_PROVAYDER="sinov", **usms):
+            self.assertIsInstance(prov.joriy(), prov.Sinov)
+
+
+class UsmsTarmoqTest(SimpleTestCase):
+    """Haqiqiy `requests` bilan, lokal soxta server orqali: sarlavha, manzil va JSON
+    hujjatdagidek ketadi (SoxtaHttp buni ko'rsata olmaydi)."""
+
+    def setUp(self):
+        korilgan = self.korilgan = []
+
+        class Server(BaseHTTPRequestHandler):
+            def _javob(self, kod, data):
+                raw = json.dumps(data).encode()
+                self.send_response(kod)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def _kirdi(self) -> bool:
+                if self.headers.get("Authorization") == "Bearer usms_login1:MAXFIY-KALIT":
+                    return True
+                self._javob(401, {"error": "Неверный ключ"})
+                return False
+
+            def do_GET(self):
+                korilgan.append(("GET", self.path, None))
+                if not self._kirdi():
+                    return
+                if self.path == "/api/v1/templates?include=base":
+                    self._javob(200, usms_shablonlar()._data)
+                elif self.path == "/api/v1/balance":
+                    self._javob(200, {"balance": "8695.00"})
+                elif self.path == "/api/v1/status/1001":
+                    self._javob(200, {"id": "1001", "status": "delivered", "status_note": "DELIVRD",
+                                      "price": "480.00", "parts": 3, "test": True})
+                else:
+                    self._javob(404, {"error": "Не найдено"})
+
+            def do_POST(self):
+                tana = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                korilgan.append(("POST", self.path, tana, self.headers.get("Content-Type")))
+                if self._kirdi():
+                    self._javob(200, {"id": 1001, "template_id": tana.get("template_id"), "parts": 3,
+                                      "price": 480, "status": "queued", "test": True})
+
+            def log_message(self, *a):                   # test chiqishini to'ldirmasin
+                pass
+
+        self.server = HTTPServer(("127.0.0.1", 0), Server)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.http = requests.Session()
+        self.http.trust_env = False                      # muhitdagi proksi lokal serverga aralashmasin
+        self.addCleanup(self.http.close)
+
+    def usms(self, secret="MAXFIY-KALIT"):
+        return prov.Usms("usms_login1", secret, base=f"http://127.0.0.1:{self.server.server_port}/api/v1",
+                         http=self.http, kesh=Kesh(), timeout=(2, 5))
+
+    def test_toliq_yol(self):
+        u = self.usms()
+        self.assertEqual(u.balans(), Decimal("8695.00"))
+        n = u.yubor("998901112233", USMS_101_TAYYOR, kalit="sevimli-sms-1-1")
+        self.assertEqual((n.ok, n.provayder_id, n.holat), (True, "1001", "test:queued"))
+        self.assertEqual(u.holat(n.provayder_id), prov.Yetkazish("yetkazildi", "TEST:DELIVRD", Decimal("480.00"), None, 3))
+        self.assertEqual(self.korilgan, [
+            ("GET", "/api/v1/balance", None),
+            ("GET", "/api/v1/templates?include=base", None),
+            ("POST", "/api/v1/send", {"phone": "998901112233", "template_id": 101,
+                                      "params": {"client_name": "mijoz", "company_name": "Sevimli Market"},
+                                      "idem_key": "sevimli-sms-1-1"}, "application/json"),
+            ("GET", "/api/v1/status/1001", None),
+        ])
+
+    def test_notogri_kalit(self):
+        u = self.usms(secret="BOSHQA-KALIT")
+        n = u.yubor("998901112233", USMS_101_TAYYOR)
+        self.assertEqual((n.ok, n.qayta), (False, True))
+        self.assertIn("USMS_LOGIN / USMS_SECRET", n.xato)
+        self.assertNotIn("BOSHQA-KALIT", n.xato)
+
+    def test_server_yoq(self):
+        self.server.shutdown()
+        self.server.server_close()
+        n = self.usms().yubor("998901112233", USMS_101_TAYYOR)
+        self.assertEqual((n.ok, n.qayta, n.nomalum), (False, True, False))      # ulanmadi — SMS ketmagan, qayta urinsa bo'ladi
+
+
+class UsmsXizmatTest(TestCase):
+    """usms qoidalar bilan birga: tasdiqlangan shablonga mos matn ketadi, mos emasi ketmaydi."""
+
+    def setUp(self):
+        self.s = SmsSozlama.get()
+        self.s.yoqilgan, self.s.soat, self.s.matn = True, 10, USMS_101_TAYYOR
+        self.s.save()
+        self.now = vaqt(11)
+
+    def usms(self, *javoblar):
+        self.http = SoxtaHttp(*javoblar)
+        return prov.Usms("usms_login1", "MAXFIY-KALIT", http=self.http, kesh=Kesh())
+
+    def test_bazadagi_tayyor_matn_bilan_tabrik_ketadi(self):
+        c = mijoz()
+        u = self.usms(usms_shablonlar(), usms_ok())
+        h = xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        self.assertEqual((h.kod, h.ruxsat), ("ok", True))
+        out = xizmat.tabriklarni_yubor(self.now, u)
+        self.assertEqual((out["yuborildi"], out["xato"]), (1, 0))
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.customer, x.holat, x.provayder, x.provayder_id, x.provayder_holat),
+                         (c, SmsXabar.YUBORILDI, "usms", "1001", "sent"))
+        self.assertEqual(x.qismlar, 3)                # tayyor shablondagi «‘» tufayli — 3 ta SMS narxi
+        sms = self.http.sorovlar[-1]
+        self.assertEqual(sms["url"], "https://usms.uz/api/v1/send")
+        kalit = sms["json"].pop("idem_key")
+        self.assertRegex(kalit, rf"^sevimli-sms-{x.pk}-[0-9a-f]{{12}}$")
+        self.assertEqual(sms["json"], {"phone": "998901112233", "template_id": 101,
+                                       "params": {"client_name": "mijoz", "company_name": "Sevimli Market"}})
+
+    def test_tasdiqlanmagan_matn_bilan_ketmaydi(self):
+        mijoz()
+        self.s.matn = OZ_MATN
+        self.s.save()
+        u = self.usms(usms_shablonlar())
+        h = xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        self.assertEqual((h.kod, h.ruxsat), ("yoq", False))
+        out = xizmat.tabriklarni_yubor(self.now, u)
+        self.assertEqual((out["yuborildi"], out["sabab"]), (0, h.izoh))
+        self.assertEqual([s["method"] for s in self.http.sorovlar], ["GET"])         # hech narsa yuborilmagan
+        self.assertFalse(SmsXabar.objects.exists())
+
+    def test_reklama_shabloni(self):
+        mijoz()
+        u = self.usms(usms_shablonlar({"id": 77, "text": self.s.matn, "kind": "ad", "variables": []}))
+        h = xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        self.assertEqual((h.kod, h.ruxsat), ("ok", True))        # bazadagi xizmat shabloni ham mos — «xizmat» ustun
+        self.http.javoblar.append(usms_ok())
+        self.assertEqual(xizmat.tabriklarni_yubor(self.now, u)["yuborildi"], 1)
+        self.assertEqual(self.http.sorovlar[-1]["json"]["template_id"], 101)       # yuborishda ham o'sha tanlanadi
+
+        self.s.matn = "Aksiya! Bugun hamma narsaga chegirma."
+        self.s.save()
+        u = self.usms(usms_shablonlar({"id": 78, "text": self.s.matn, "kind": "ad", "variables": []}))
+        h = xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        self.assertEqual((h.kod, h.ruxsat), ("reklama", True))
+
+    def test_rad_etilgan_sms_keyingi_urinishda_yangi_kalit_bilan(self):
+        mijoz()
+        u = self.usms(usms_shablonlar(), Javob(400, {"error": "Неверный номер", "fields": ["phone"]}), usms_ok())
+        xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        self.assertEqual(xizmat.tabriklarni_yubor(self.now, u)["xato"], 1)
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.xato, x.urinish), (SmsXabar.QAYTA, "Неверный номер (phone)", 1))
+        self.assertEqual(xizmat.tabriklarni_yubor(self.now + timedelta(minutes=5), u)["yuborildi"], 1)
+        x.refresh_from_db()
+        self.assertEqual((x.holat, x.urinish), (SmsXabar.YUBORILDI, 2))
+        # har urinishga yangi kalit — rad etilgan urinishning kaliti qayta ishlatilmaydi
+        kalitlar = [s["json"]["idem_key"] for s in self.http.sorovlar if s["method"] == "POST"]
+        self.assertEqual(len(set(kalitlar)), 2)
+        self.assertTrue(all(k.startswith(f"sevimli-sms-{x.pk}-") and len(k) <= 64 for k in kalitlar))
+
+    def test_mablag_tugasa_navbat_toxtaydi(self):
+        mijoz("Birinchi")
+        mijoz("Ikkinchi", phone="901112244")
+        u = self.usms(usms_shablonlar(), Javob(402, {"error": "Недостаточно средств"}))
+        xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        out = xizmat.tabriklarni_yubor(self.now, u)
+        self.assertEqual((out["yuborildi"], out["xato"]), (0, 1))
+        self.assertEqual(len([s for s in self.http.sorovlar if s["method"] == "POST"]), 1)   # ikkinchisiga urinilmadi
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.xato), (SmsXabar.QAYTA, "usms hisobida mablag' yetarli emas — balansni to'ldiring"))
+
+    def test_yetkazilgani_va_narxi_yoziladi(self):
+        mijoz()
+        u = self.usms(usms_shablonlar(), usms_ok(),
+                      Javob(200, {"id": "1001", "status": "delivered", "status_note": "DELIVRD",
+                                  "price": "480.00", "parts": 3}))
+        xizmat.shablon_holati(u, self.s.matn, yangi=True)
+        xizmat.tabriklarni_yubor(self.now, u)
+        self.assertEqual(xizmat.holatlarni_yangila(self.now + timedelta(minutes=2), u), 1)
+        x = SmsXabar.objects.get()
+        self.assertEqual((x.holat, x.provayder_holat, x.narx, x.qismlar),
+                         ("yetkazildi", "DELIVRD", Decimal("480.00"), 3))
+
+    def test_sinov_sms_xizmat_matni_bilan(self):
+        u = self.usms(usms_shablonlar(), usms_ok(id="55", status="queued", test=True))
+        x = xizmat.sinov_yubor("90 111 22 33", kim="egasi", matn=u.sinov_matni, now=self.now, p=u)
+        self.assertEqual((x.holat, x.provayder, x.provayder_id, x.provayder_holat),
+                         (SmsXabar.YUBORILDI, "usms", "55", "test:queued"))
+        tana = self.http.sorovlar[-1]["json"]
+        self.assertTrue(tana.pop("idem_key").startswith(f"sevimli-sms-{x.pk}-"))
+        self.assertEqual(tana, {"phone": "998901112233", "template_id": 23})
+
+    def test_eski_xizmatlarga_kalit_berilmaydi(self):
+        """Eskiz va boshqalar `yubor(telefon, matn)` bilan qoladi."""
+        mijoz()
+        p = Soxta()
+        self.s.matn = standart_matn()
+        self.s.save()
+        self.assertEqual(xizmat.tabriklarni_yubor(self.now, p)["yuborildi"], 1)
+
+
 # =================================================================== panel
 
 @override_settings(SMS_PROVAYDER="sinov")
@@ -652,11 +1132,31 @@ class PanelTest(TestCase):
         self.assertContains(r, "Tabrik o&#x27;chirilgan")
 
     def test_xizmat_ulanmagan_bolsa_aytadi(self):
-        with override_settings(SMS_PROVAYDER="", ESKIZ_EMAIL="", ESKIZ_PASSWORD=""):
+        with override_settings(SMS_PROVAYDER="", ESKIZ_EMAIL="", ESKIZ_PASSWORD="", USMS_LOGIN="", USMS_SECRET=""):
             r = self.client.get("/sms/")
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "SMS xizmati ulanmagan")
         self.assertContains(r, "SMS yuborish uchun SMS xizmati kerak")
+        self.assertContains(r, "USMS_LOGIN va")                          # qaysi kalitlar kerakligi aytilgan
+        self.assertContains(r, "ESKIZ_EMAIL va ESKIZ_PASSWORD")
+
+    def test_usms_ulangan_sahifa(self):
+        s = SmsSozlama.get()
+        s.matn = USMS_101_TAYYOR
+        s.save()
+        u = prov.Usms("usms_login1", "MAXFIY-KALIT", kesh=Kesh(),
+                      http=SoxtaHttp(Javob(200, {"balance": "8695.00"}), usms_shablonlar()))
+        with patch.object(prov, "joriy", return_value=u):
+            r = self.client.get("/sms/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "SMS xizmati: <b>usms.uz</b>")
+        self.assertContains(r, "balans: <b>8\u00a0695 so")
+        self.assertContains(r, "Xizmat sinov matni: «Testoviy sms ot usms.uz»")
+        self.assertContains(r, "<b>3 ta SMS</b> hisoblanadi")             # paneldagi yozuv bo'yicha 1 ta bo'lardi
+        self.assertContains(r, "Har bir tabrik 3 ta SMS narxida turadi.")
+        self.assertContains(r, "tayyor shablonidagi yozuv bilan yuboradi")
+        self.assertNotContains(r, "MAXFIY-KALIT")
+        self.assertNotContains(r, "usms_login1")
 
     def test_faqat_egasi(self):
         self.client.logout()

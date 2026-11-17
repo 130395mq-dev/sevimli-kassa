@@ -7,6 +7,7 @@
   <title>{% block title %}Sevimli Kassa{% endblock %}</title>
   {# Tungi rejim tanlangan bo'lsa — sahifa chizilishidan OLDIN qo'yiladi (oq «chaqnash» bo'lmasin) #}
   <script>try{if(localStorage.getItem("sevimli-theme")==="dark")document.documentElement.setAttribute("data-theme","dark")}catch(e){}</script>
+  {% include "dashboard/_shrift.html" %}
   <style>
     /*
       SEVIMLI boshqaruv paneli — «Klassik ERP» design system
@@ -564,16 +565,35 @@
       .dot { animation: none !important; }
       * { transition: none !important; }
     }
-    @media (max-width: 1180px) {
+    /* Tor ekranda tepa qator bosqichma-bosqich siqiladi — bo'limlar hech qachon kesilmasin
+       (16.11.2026: 1280 px va planshetda «Nazorat» bilan «Sozlash» ko'rinmay qolgan edi).
+       Chegaralar eng keng holatda o'lchangan (egasi — 6 bo'lim, «10/11») va ustiga zaxira
+       qo'yilgan. Shrift kengroq chiqsa yoki bo'lim qo'shilsa, pastdagi skript («fit») keyingi
+       bosqichni o'zi yoqadi — docs/DESIGN_SYSTEM.md, 4-bo'lim. */
+    @media (max-width: 1400px) {             /* 1: sana, soat va «Chiqish» yozuvi */
       .topnav .hide-md { display: none; }
     }
+    @media (max-width: 1240px) {             /* 2: «kassa ulangan» yozuvi va MoySklad chirog'i (ro'yxatda bor) */
+      .topnav .aloqa .hide-sm { display: none; }
+    }
+    @media (min-width: 941px) and (max-width: 1060px) {   /* 3: bo'lim belgilari */
+      nav.mainnav a.item .icon { display: none; }
+    }
+    .topnav.fit1 .hide-md, .topnav.fit2 .aloqa .hide-sm, .topnav.fit3 nav.mainnav a.item .icon { display: none; }
+    @media (max-width: 940px) {
+      /* 4: bo'limlar ikkinchi qatorga tushadi. Menyu yopishmaydi (ikki qator ekranning ko'p joyini
+         egallab qo'yardi); telefonda bo'limlar barmoq bilan suriladigan qatorda */
+      :root { --head-h: 0px; }
+      header.topnav { position: static; flex-wrap: wrap; height: auto; padding: 8px var(--wrap-x) 0; gap: 0 8px; }
+      nav.mainnav {
+        order: 3; flex: 0 0 calc(100% + 2 * var(--wrap-x)); margin: 8px calc(-1 * var(--wrap-x)) 0;
+        padding: 0 calc(var(--wrap-x) - 8px); height: 44px;
+      }
+      nav.subnav { padding: 0 calc(var(--wrap-x) - 8px); }
+    }
     @media (max-width: 760px) {
-      :root { --head-h: 0px; --wrap-x: 12px; --wrap-top: 12px; }
-      /* Telefonda menyu yopishmaydi (ekranning uchdan birini egallab qo'yardi); bo'limlar
-         barmoq bilan suriladigan qatorda */
-      header.topnav { position: static; flex-wrap: wrap; height: auto; padding: 8px 12px 0; gap: 0 8px; }
-      nav.mainnav { order: 3; flex: 0 0 calc(100% + 24px); margin: 8px -12px 0; padding: 0 4px; height: 44px; }
-      nav.subnav { min-height: 44px; padding: 0 4px; }
+      :root { --wrap-x: 12px; --wrap-top: 12px; }
+      nav.subnav { min-height: 44px; }
       .topnav .hide-sm, .topnav .when, .topnav .clock { display: none; }
       .tiles { grid-template-columns: 1fr; }
       .tile .value { font-size: var(--fs-6); }
@@ -627,7 +647,7 @@
 
     /* -------------------------------------------- ikki ustunli tarmoq */
     .grid2 {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
       gap: 12px; margin-bottom: 12px;
     }
     .grid2 .card { margin-bottom: 0; }
@@ -1175,6 +1195,26 @@
   };
   window.sevimliFitCharts();
   window.addEventListener("resize", window.sevimliFitCharts);
+
+  // Tepa qator: bo'limlar sig'masa (kengroq shrift, yangi bo'lim) — keyingi siqish bosqichi yoqiladi:
+  // fit1 — sana, soat, «Chiqish» yozuvi; fit2 — «kassa ulangan» va MoySklad; fit3 — bo'lim belgilari.
+  // Odatda CSS chegaralari yetadi; bu — ular yetmay qolgan holat uchun (menyu kesilmasin).
+  (function () {
+    var hdr = document.querySelector("header.topnav"), nav = hdr && hdr.querySelector("nav.mainnav");
+    if (!nav) return;
+    var queued = false;
+    function fit() {
+      queued = false;
+      hdr.classList.remove("fit1", "fit2", "fit3");
+      if (getComputedStyle(hdr).position !== "sticky") return;   // tor ekran: bo'limlar o'z qatorida
+      for (var i = 1; i <= 3 && nav.scrollWidth > nav.clientWidth + 1; i++) hdr.classList.add("fit" + i);
+    }
+    function later() { if (!queued) { queued = true; requestAnimationFrame(fit); } }
+    fit();
+    window.addEventListener("resize", later);
+    if (window.ResizeObserver) new ResizeObserver(later).observe(nav);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  })();
 
   // Tanlangan bo'lim telefonda ko'rinib tursin (menyu qatori suriladi)
   var on = document.querySelector("nav.mainnav a.item.on");

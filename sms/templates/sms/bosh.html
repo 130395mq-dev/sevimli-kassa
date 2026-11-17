@@ -40,9 +40,11 @@
   {% if not xizmat %}
     <div class="alert warn"><span>!</span><div>
       <b>SMS yuborish uchun SMS xizmati kerak</b>
-      1. SMS xizmatida (masalan Eskiz) ro'yxatdan o'ting va shartnoma tuzing.<br>
-      2. Pastdagi tabrik matnini o'sha xizmat kabinetida aynan shunday yozib, tasdiqlating.<br>
-      3. Xizmat bergan login va maxfiy kalitni serverga (Railway) yozing: ESKIZ_EMAIL va ESKIZ_PASSWORD.<br>
+      1. SMS xizmatida (usms.uz yoki Eskiz) ro'yxatdan o'ting va shartnoma tuzing.<br>
+      2. Pastdagi tabrik matnini o'sha xizmat kabinetida aynan shunday yozib, tasdiqlating
+         (usms.uz da tayyor tabrik matnlari ham bor — «База шаблонов»).<br>
+      3. Xizmat bergan login va maxfiy kalitni serverga (Railway) yozing: usms.uz uchun USMS_LOGIN va
+         USMS_SECRET, Eskiz uchun ESKIZ_EMAIL va ESKIZ_PASSWORD.<br>
       Ungacha bu sahifada hammasini sozlab qo'yish mumkin, lekin SMS ketmaydi.
     </div></div>
   {% endif %}
@@ -89,7 +91,10 @@
     <div class="sec" style="margin:10px 0 12px;" id="sms-uzunlik">
       Matn uzunligi: <b>{{ kod.belgi }}</b> belgi — <b>{{ kod.qism }} ta SMS</b> hisoblanadi
       (bitta SMS — {{ kod.chegara }} belgigacha).
-      {% if kod.unicode %}Matnda oddiy lotin harflaridan boshqa belgi bor (kirill harfi yoki «ʻ», «’» kabi) —
+      {% if kod_xizmatdan %}SMS xizmati bu matnni o'zining tayyor shablonidagi yozuv bilan yuboradi; unda oddiy
+        «'» o'rniga «‘» belgisi bor — shuning uchun bitta SMS'ga atigi 70 belgi sig'adi. Arzonroq bo'lishi uchun
+        o'z matningizni («'» bilan, 160 belgigacha) SMS xizmati kabinetida tasdiqlating.
+      {% elif kod.unicode %}Matnda oddiy lotin harflaridan boshqa belgi bor (kirill harfi yoki «ʻ», «’» kabi) —
         shuning uchun bitta SMS'ga atigi 70 belgi sig'adi. Oddiy lotin harflari va «'» bilan yozilsa — 160 belgi.{% endif %}
       {% if kod.qism > 1 %}<span style="color:var(--warn);">Har bir tabrik {{ kod.qism }} ta SMS narxida turadi.</span>{% endif %}
     </div>
@@ -172,8 +177,8 @@
         </select>
       </label>
     </div>
-    {% if sinov_matni %}<div class="sec" style="margin:8px 0 12px;">Shartnoma tuzilgunicha SMS xizmati faqat o'zining
-      sinov matnini yuboradi — ulanishni tekshirish uchun shuni tanlang.</div>{% endif %}
+    {% if sinov_matni %}<div class="sec" style="margin:8px 0 12px;">Ulanishni tekshirish uchun xizmatning o'z sinov
+      matnini tanlang — u tabrik matni tasdiqlanmasidan oldin ham ketadi.</div>{% endif %}
     <button type="submit" {% if not xizmat %}disabled{% endif %}>Sinov SMS yuborish</button>
     {% if not xizmat %}<span class="sec" style="margin-left:12px;">SMS xizmati ulangach ishlaydi</span>{% endif %}
   </form>

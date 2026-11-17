@@ -67,12 +67,25 @@
     table.kassalar th.noSort { cursor: default; }
     table.kassalar td { padding: 6px 10px; }
     table.kassalar th { padding: 8px 10px; }
-    table.kassalar td.actions { white-space: nowrap; }
-    table.kassalar td.actions form.inline { margin-left: 4px; vertical-align: middle; }
-    table.kassalar td.actions a.iconbtn { height: 30px; min-width: 0; padding: 0 10px; font-weight: 600; vertical-align: middle; }
+    /* Amallar doim ikki qatorda: [Sozlash][yangi parol + Almashtirish] / [Aloqani uzish][O'chirish] —
+       ustun tor, tugmalar jadval chetida yashirinib qolmaydi (16.11.2026: 1440 px da «O'chirish»
+       ko'rinmasdi). «Kim kirgan» joy yetmasa bo'lak-bo'lak pastga tushadi. */
+    table.kassalar td.actions .acts {
+      display: grid; grid-template-columns: auto auto; justify-content: start; justify-items: start;
+      align-items: center; gap: 4px;
+    }
+    table.kassalar td.actions form.inline { margin: 0; flex-wrap: nowrap; }
+    table.kassalar td.actions a.iconbtn { height: 30px; min-width: 0; padding: 0 10px; font-weight: 600; }
     table.kassalar td.actions input { width: 92px; }
+    table.kassalar td.who { white-space: normal; min-width: 176px; }
+    table.kassalar td.who .nb { white-space: nowrap; }
+    table.kassalar td.hint { min-width: 84px; }
     table.kassalar td.who form.inline { display: inline-block; margin: 0 0 0 6px; }
     table.kassalar td.who button.small { min-height: 26px; padding: 0 8px; }
+    @media (max-width: 760px) {   /* telefonda barmoq uchun */
+      table.kassalar td.who button.small { min-height: 40px; }
+      table.kassalar td.actions a.iconbtn { height: 40px; }
+    }
   </style>
   <table class="kassalar" id="kassalar">
     <thead>
@@ -100,7 +113,7 @@
           {% elif not r.active %}<span class="badge off">bloklangan</span>{% endif %}
         </td>
         <td class="num tight"><code class="token">{{ r.login|default:"—" }}</code></td>
-        <td class="num tight">
+        <td class="hint">
           <span class="sec">yangilaganda ko'rinadi</span>
         </td>
         <td><span class="badge {{ r.version_state }}">{{ r.app_version|default:"—" }}</span></td>
@@ -108,7 +121,7 @@
         <td class="tight who">
           {% if r.session %}
             <b>{{ r.session.cashier_name|default:r.name }}</b>
-            <span class="sec">· {{ r.session.device_name|default:"kompyuter" }} · {{ r.session.started_at|date:"H:i" }} dan</span>
+            <span class="sec nb">· {{ r.session.device_name|default:"kompyuter" }} · {{ r.session.started_at|date:"H:i" }} dan</span>
             <form method="post" class="inline" style="margin-top:4px;">
               {% csrf_token %}
               <input type="hidden" name="action" value="release">
@@ -118,7 +131,7 @@
           {% else %}<span class="sec">—</span>{% endif %}
           {% if r.device %}
             <div class="sec" style="margin-top:4px;">
-              Kompyuter: {{ r.device_name|default:"nomsiz" }}
+              <span class="nb">Kompyuter: {{ r.device_name|default:"nomsiz" }}</span>
               <form method="post" class="inline"
                     onsubmit="return confirm('«{{ r.name }}» kompyuterdan bo\'shatilsinmi?\n\nShundan keyin bu kassani istalgan kompyuterda ochish mumkin — birinchi ulangani o\'ziga biriktiradi.');">
                 {% csrf_token %}
@@ -129,7 +142,7 @@
             </div>
           {% endif %}
         </td>
-        <td class="actions">
+        <td class="actions"><div class="acts">
           <a href="{% url 'dashboard:register-edit' r.pk %}" class="iconbtn">Sozlash</a>
           <form method="post" class="inline">
             {% csrf_token %}
@@ -168,7 +181,7 @@
               </form>
             {% endif %}
           {% endif %}
-        </td>
+        </div></td>
       </tr>
     {% empty %}
       <tr><td colspan="8" class="empty">Kassa qo'shilmagan.</td></tr>

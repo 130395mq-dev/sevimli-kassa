@@ -208,10 +208,15 @@ MEDIA_URL = "/media/"
 # Chek sarlavhasida chiqadigan nom
 MARKET_NAME = env("MARKET_NAME", "Sevimli Market")
 
-# Mijozlarga SMS (sms/provayder.py). ESKIZ_EMAIL va ESKIZ_PASSWORD
-# bo'lmasa SMS xizmati «ulanmagan» — hech narsa yuborilmaydi.
-# SMS_PROVAYDER=sinov — soxta xizmat (faqat lokal sinov uchun).
+# Mijozlarga SMS (sms/provayder.py). usms.uz: USMS_LOGIN va USMS_SECRET;
+# Eskiz: ESKIZ_EMAIL va ESKIZ_PASSWORD. Hech biri bo'lmasa SMS xizmati
+# «ulanmagan» — hech narsa yuborilmaydi. Ikkalasi bo'lsa — usms.
+# SMS_PROVAYDER=eskiz|usms — majburlash; sinov — soxta xizmat (faqat lokal).
 SMS_PROVAYDER = env("SMS_PROVAYDER", "").strip().lower()
+USMS_LOGIN = env("USMS_LOGIN", "").strip()
+USMS_SECRET = env("USMS_SECRET", "").strip()
+USMS_FROM = env("USMS_FROM", "").strip()
+USMS_URL = env("USMS_URL", "https://usms.uz/api/v1").strip()
 ESKIZ_EMAIL = env("ESKIZ_EMAIL", "").strip()
 ESKIZ_PASSWORD = env("ESKIZ_PASSWORD", "").strip()
 ESKIZ_FROM = env("ESKIZ_FROM", "4546").strip()

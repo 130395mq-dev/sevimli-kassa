@@ -29,7 +29,12 @@ uchun token qo'shiladi va `test_dizayn.py` dagi kontrast ro'yxatiga yoziladi (ma
 
 ## 2. O'lcham
 
-- Shrift — 7 pog'ona: `--fs-1` 11 (jadval sarlavhasi, belgi) · `--fs-2` 12 (izoh) · `--fs-3` 13 (asosiy)
+- Shrift — **Inter** (egasi tanlagan, 2026-11-16). Fayllar saytning o'zida:
+  `dashboard/static/dashboard/fonts/` (4 bo'lak: lotin, lotin-kengaytma, kirill, kirill-kengaytma;
+  bitta fayl hamma qalinlikni beradi; litsenziya `OFL.txt`). E'lon bitta joyda —
+  `dashboard/_shrift.html` (panel va kirish sahifasi ulaydi). Tashqi saytdan shrift olinmaydi.
+  Raqamlar ustun bo'lib tursin desangiz — `.num` (tabular-nums).
+- Shrift o'lchami — 7 pog'ona: `--fs-1` 11 (jadval sarlavhasi, belgi) · `--fs-2` 12 (izoh) · `--fs-3` 13 (asosiy)
   · `--fs-4` 14 · `--fs-5` 16 · `--fs-6` 20 (sahifa nomi) · `--fs-7` 24 (katta raqam).
 - Oraliq — 4/8 qadam: 4, 8, 12, 16, 24. Kartalar orasi 12, sahifa cheti `--wrap-x` (20; telefonda 12).
 - Burchak: `--radius` 6 (karta, jadval), `--radius-sm` 4 (tugma, maydon).
@@ -45,7 +50,8 @@ uchun token qo'shiladi va `test_dizayn.py` dagi kontrast ro'yxatiga yoziladi (ma
 | Maydon | `input`, `select`, `textarea`; guruh — `.fields label` | xato matni maydon ostida, nima qilish kerakligi bilan |
 | Belgi | `.badge.ok / .warn / .err / .off` | |
 | Xabar | `.alert.ok / .warn / .err`; yo'riqnoma — `.alert.note` | «Qanday ishlaydi» bloklari `note`, sariq emas |
-| Jadval | `table` — zich; `.right`, `.tight`, `.num`, `tr.total` | keng jadval o'z qutisida suriladi (skript `.tablewrap` ga oladi) |
+| Jadval | `table` — zich; `.right`, `.tight`, `.num`, `tr.total` | keng jadval o'z qutisida suriladi (skript `.tablewrap` ga oladi); 1280 px dan keng ekranda surilmasligi kerak |
+| Qatordagi amallar | `td.actions`; uchtadan ko'p bo'lsa — ikki ustunli to'r (Kassalar: `.acts`) | tugma jadval chetida yashirinib qolmasin |
 | Karta | `.card`; raqam plitasi — `.tile` (`.tiles`, bir qator bo'lib — `.tiles.strip`) | |
 | Yorliqlar | `.tabs a.on` | |
 | Davr filtri | `form.davr` + `.chip` | |
@@ -58,13 +64,28 @@ uchun token qo'shiladi va `test_dizayn.py` dagi kontrast ro'yxatiga yoziladi (ma
 - Menyu `dashboard/menu.py` da: yangi sahifa qo'shilsa — tegishli bo'limga `Item(...)` yoziladi.
   Kim nimani ko'rishi `dashboard/access.py` dagi ro'yxatlardan olinadi (menyu 403 sahifaga havola bermaydi).
 - Aloqa: tepada «7/8 kassa ulangan» va MoySklad; bosilganda har bir kassa ro'yxati.
+- Tepa qator tor ekranda bosqichma-bosqich siqiladi — **bo'limlar hech qachon kesilmaydi**:
+
+  | Ekran kengligi | Nima bo'ladi |
+  |----------------|--------------|
+  | 1400 px dan tor | sana, soat va «Chiqish» yozuvi yashirinadi |
+  | 1240 px dan tor | «kassa ulangan» yozuvi va MoySklad chirog'i (ro'yxatda qoladi) |
+  | 1060 px dan tor | bo'lim belgilari (faqat nomi qoladi) |
+  | 940 px dan tor | bo'limlar ikkinchi qatorga tushadi, menyu yopishmaydi |
+
+  Chegaralar eng keng holatda o'lchangan (egasi — 6 bo'lim, «10/11» kassa) va ustiga zaxira
+  qo'yilgan. Shrift kengroq chiqsa yoki bo'lim qo'shilsa, `base.html` dagi «fit» skripti keyingi
+  bosqichni o'zi yoqadi. Yangi bo'lim yoki tepa qatorga yangi narsa qo'shilganda 1536, 1366,
+  1280, 1024 va 800 px kenglikda ko'rib chiqing: hamma bo'lim to'liq ko'rinishi shart
+  (16.11.2026 da 1280 px va planshetda «Nazorat» bilan «Sozlash» ko'rinmay qolgan edi).
 - Bosh sahifa uch yorliq: **Umumiy** (bugungi savdo), **Kunlar bo'yicha**, **Tizim holati** (texnik).
   Ogohlantirishlar va davr filtri yorliqlardan tepada — doim ko'rinadi.
 
 ## 5. Telefon
 
-- 760 px dan tor ekranda: menyu yopishmaydi, bo'limlar barmoq bilan suriladigan qatorda;
-  raqam plitalari bir ustunda; jadvallar o'z qutisida yonga suriladi — sahifa yonga surilmaydi.
+- 940 px dan tor ekranda menyu yopishmaydi va bo'limlar o'z qatorida turadi; 760 px dan torida
+  (telefon) ular barmoq bilan suriladigan qatorda; raqam plitalari bir ustunda; jadvallar o'z
+  qutisida yonga suriladi — sahifa yonga surilmaydi (eng tor 320 px telefonda ham).
 - Tovaroved telefonda tepa menyuni ko'rmaydi — KPI yorliqlari yetarli.
 
 ## 6. Hali qilinmagan (keyingi bosqichlar)
@@ -72,4 +93,5 @@ uchun token qo'shiladi va `test_dizayn.py` dagi kontrast ro'yxatiga yoziladi (ma
 - Sahifalardagi `style="…"` larni sinflarga ko'chirish (bonus, SMS, kassa sozlamasi).
 - Kirish sahifasi va kassa o'rnatish sahifasi (mustaqil uslubda turibdi).
 - Telefon uchun grafiklarning alohida ixcham ko'rinishi.
+- Kassalar sahifasi: 1366 px dan tor ekranda qatorlar baland (amallarni ixcham menyuga yig'ish).
 - Matnlar (xato va bo'sh holat xabarlari), «Katalog» jadvalidagi inglizcha nomlar.
